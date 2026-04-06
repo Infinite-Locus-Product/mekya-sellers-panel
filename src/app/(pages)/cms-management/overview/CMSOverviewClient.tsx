@@ -67,7 +67,7 @@ export function CMSOverviewClient({ stats, recentActivities, topBlogs }: CMSOver
     <div className="space-y-6">
       <div>
         <nav className="text-sm text-muted-foreground mb-4" aria-label="Breadcrumb">
-          Admin Dashboard &gt; CMS Management &gt; Overview
+          Seller Dashboard &gt; CMS Management &gt; Overview
         </nav>
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-foreground">CMS Overview</h1>

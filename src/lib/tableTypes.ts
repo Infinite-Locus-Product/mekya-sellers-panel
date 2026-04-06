@@ -4,12 +4,9 @@
  */
 
 export type OrderStatus =
-  | "delivered"
-  | "pending"
-  | "shipped"
-  | "processing"
-  | "canceled"
-  | "returned"
+  | "Completed"
+  | "Pending"
+  | "Canceled"
 
 export type OrderType = "B2B" | "B2C"
 export type PaymentStatus = "Paid" | "Pending" | "Refunded"

@@ -227,7 +227,7 @@ export function ReturnsClient({ initialReturns }: ReturnsClientProps) {
     <div className="space-y-6">
       <Breadcrumb
         items={[
-          { label: "Admin Dashboard", href: "/" },
+          { label: "Seller Dashboard", href: "/" },
           { label: "Order Management", href: "/order-management" },
           { label: "Returns & Exchanges" },
         ]}

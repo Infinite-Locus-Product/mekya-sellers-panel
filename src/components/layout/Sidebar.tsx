@@ -88,7 +88,7 @@ export function Sidebar() {
           <div className="flex items-center gap-2">
             <Image
               src="/logo/mekyalogo.png"
-              alt="Mekya Admin Dashboard"
+              alt="Mekya Seller Dashboard"
               width={24}
               height={24}
               className="shrink-0 opacity-100"
@@ -98,7 +98,7 @@ export function Sidebar() {
               className="font-semibold text-[#004C5E]"
               
             >
-              Mekya Admin Dashboard
+              Mekya Seller Dashboard
             </span>
           </div>
         </div>

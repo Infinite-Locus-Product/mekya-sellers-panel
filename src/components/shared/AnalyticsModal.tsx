@@ -1,16 +1,11 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogCloseButton } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { SubKpiCard } from "@/components/shared/SubKpiCard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { LoadingSpinner } from "@/components/shared"
 import {
-  LineChart,
-  BarChart,
-  PieChart,
-  CategoryBreakdown,
   type ChartDataPoint,
   type MultiLineChartDataPoint,
 } from "@/components/analytics"
@@ -19,6 +14,7 @@ import {
   CategoryBreakdownTab,
   RegionalPerformanceTab,
   ColorTrendsTab,
+  SalesChannelTab,
   DeviceHeatmapTab,
   PageAnalysisTab,
   InsightsTab,
@@ -27,15 +23,15 @@ import {
   UserSegmentTab,
   type PageAnalysisDataPoint,
   type UserGrowthDataPoint,
+  type SalesChannelDataPoint,
 } from "@/app/(pages)/dashboard/_components/tabs"
 import type { HeatmapDataPoint } from "@/components/analytics"
-import { Download, BarChart3, type LucideIcon } from "lucide-react"
+import { Download, BarChart3, Info, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TabList } from "@/components/shared/TabList"
 import { Filter, DEFAULT_FILTER_VALUES } from "@/components/shared/Filter"
 import type { FilterValues } from "@/components/shared/FilterPanel"
 
-/** Re-export for backward compatibility; prefer importing from TimeRangeSelector */
 export type { TimeRange } from "@/components/shared/TimeRangeSelector"
 
 export interface TabConfig {
@@ -43,32 +39,34 @@ export interface TabConfig {
   label: string
 }
 
-/** Config for SubKPI cards shown in detail modals (e.g. "Total Sales Volume - Detailed Analytics") */
 export interface SubKpiCardConfig {
-  /** Optional unique id; used as React key when provided (avoids key collisions if titles duplicate) */
   id?: string
   title: string
   value: string
   subtitle?: string
   variant: "success" | "warning" | "error" | "info" | "accent"
   icon?: LucideIcon
-  /** Custom icon element (e.g. SVG); when set, used instead of icon */
   customIcon?: ReactNode
   change?: string
   changeType?: "positive" | "negative"
   background?: string
   image?: string
-  /** Optional class for the card image/decoration area */
   imageClassName?: string
-  /** When true, subtitle is shown below the value (title → value → subtitle layout) */
   subtitleBelowValue?: boolean
 }
 
-/** @deprecated Use SubKpiCardConfig for detail modal KPIs */
 export type KPICardConfig = SubKpiCardConfig
+export interface KpiDefinitionPurposeConfig {
+  sectionTitle: string
+  definition: string
+  purpose: string
+  definitionLabel?: string
+  purposeLabel?: string
+}
 
 export interface AnalyticsModalConfig {
   title: string
+  kpiDefinitionPurpose?: KpiDefinitionPurposeConfig
   kpiCards: SubKpiCardConfig[]
   tabs: TabConfig[]
   chartTitle: string
@@ -97,12 +95,12 @@ export interface AnalyticsModalConfig {
     percentage: number
     hexCode: string
   }>
+  salesChannelData?: SalesChannelDataPoint[]
   deviceHeatmapData?: HeatmapDataPoint[]
   pageAnalysisData?: PageAnalysisDataPoint[]
   sellerGrowthData?: MultiLineChartDataPoint[]
   engagementData?: UserGrowthDataPoint[]
   userSegmentData?: { buyersCount: number; sellersCount: number }
-  /** Optional class for the main content area (e.g. bg-gray-50 for Total Sales) */
   contentClassName?: string
 }
 
@@ -146,6 +144,8 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
             chartData={config.chartData}
           />
         )
+      case "sales-channel":
+        return <SalesChannelTab data={config.salesChannelData} />
       case "color-trends":
         return <ColorTrendsTab data={config.colorTrendsData} chartData={config.chartData} />
       case "device-heatmap":
@@ -177,7 +177,6 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
           />
         )
       default:
-        // Fallback to old behavior for backward compatibility
         return (
           <Card>
             <CardHeader>
@@ -222,6 +221,44 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
         <div className="w-full border-b border-border" aria-hidden />
 
         <div className={cn("p-4 space-y-6", config.contentClassName)}>
+          {config.kpiDefinitionPurpose && (
+            <div className="overflow-hidden rounded-lg  bg-[#F2F2F2]">
+              <div className="flex items-center gap-2 bg-[#F2F2F2] px-4 py-3">
+                <div
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted-foreground/15"
+                  aria-hidden
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9.99785 14.67H3.33118V13.3367H9.99785V14.67ZM14.6645 2.66536L11.5078 6.63536L11.3612 6.81536L7.60785 11.6087C7.48397 11.7326 7.3369 11.8308 7.17505 11.8979C7.01319 11.9649 6.83971 11.9994 6.66452 11.9994C6.48932 11.9994 6.31585 11.9649 6.15399 11.8979C5.99213 11.8308 5.84506 11.7326 5.72118 11.6087C5.5973 11.4848 5.49904 11.3378 5.43199 11.1759C5.36495 11.014 5.33044 10.8406 5.33044 10.6654C5.33044 10.4902 5.36495 10.3167 5.43199 10.1548C5.49904 9.99298 5.5973 9.84591 5.72118 9.72203L14.6645 2.66536ZM1.76118 4.82136C0.798019 6.36365 0.451657 8.21235 0.791184 9.9987H1.33118V9.33203C1.32455 8.01945 1.71752 6.73592 2.45785 5.65203L1.76118 4.82136ZM7.99785 1.33203C6.97827 1.33197 5.96996 1.5453 5.03777 1.95829C4.10558 2.37128 3.27014 2.9748 2.58518 3.73003L3.34785 4.6387C4.25294 3.80663 5.43511 3.34089 6.66452 3.33203C7.9006 3.34052 9.08884 3.81087 9.99585 4.6507L12.3625 2.7827C11.1022 1.84104 9.57112 1.33217 7.99785 1.33203ZM12.5512 7.46536L12.3959 7.6567L11.9105 8.2767C11.9676 8.6256 11.9968 8.97849 11.9979 9.33203V9.9987H15.2045C15.5208 8.33029 15.2417 6.6038 14.4159 5.12003L12.5512 7.46536Z" fill="black" />
+                  </svg>
+
+                </div>
+                <span className="text-sm font-medium text-foreground">
+                  {config.kpiDefinitionPurpose.sectionTitle}
+                </span>
+              </div>
+              <div className="border-b border-border" aria-hidden />
+              <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <p className="text-sm text-foreground leading-relaxed">
+                    <span className="block font-semibold text-foreground">
+                      {config.kpiDefinitionPurpose.definitionLabel ?? "Definition :"}
+                    </span>
+                    <span className="block">{config.kpiDefinitionPurpose.definition}</span>
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <p className="text-sm text-foreground leading-relaxed">
+                    <span className="font-semibold text-foreground">
+                      {config.kpiDefinitionPurpose.purposeLabel ?? "Purpose :"}
+                    </span>{" "}
+                    <span className="block">{config.kpiDefinitionPurpose.purpose}</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {config.kpiCards.map((card) => {
               const Icon = card.icon
@@ -274,12 +311,7 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
               onValueChange={setActiveTab}
               variant="pill"
             />
-            <Filter
-              filters={filters}
-              onFilterChange={handleFilterChange}
-              onReset={handleFilterReset}
-              onApply={handleFilterApply}
-            />
+            
           </div>
 
           {renderTabContent()}

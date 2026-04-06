@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Mekya Admin Portal",
-  description: "Mekya Admin Portal",
+  title: "Mekya Seller Portal",
+  description: "Mekya Seller Portal",
 }
 
 export default function RootLayout({

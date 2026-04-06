@@ -241,7 +241,7 @@ export function ProfileClient({ initialData, onLogout }: ProfileClientProps) {
     <div className="flex min-h-0 w-full flex-col px-4 py-6 sm:px-6 md:px-8 lg:px-10 xl:px-12">
       <div className="flex w-full flex-col space-y-6 md:space-y-8 lg:space-y-10">
         <nav className="text-sm text-muted-foreground mb-4" aria-label="Breadcrumb">
-          Admin Dashboard &gt; Profile
+          Seller Dashboard &gt; Profile
         </nav>
         <div className="flex flex-row justify-between items-center">
           <div className="flex flex-col gap-1">
@@ -596,7 +596,7 @@ export function ProfileClient({ initialData, onLogout }: ProfileClientProps) {
                       : "text-muted-foreground"
                   )}
                 >
-                    Update your password to keep your account secure.
+                  Update your password to keep your account secure.
                 </p>
               </div>
 

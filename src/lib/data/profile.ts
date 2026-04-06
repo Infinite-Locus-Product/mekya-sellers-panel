@@ -30,7 +30,7 @@ const mockProfile: ProfileData = {
   name: "Shubham Sharma",
   email: "shubhamsharma@mekya.in",
   phone: "+91 8920851538",
-  role: "Super Admin",
+  role: "Super Seller",
 };
 
 const mockPersonal: PersonalInfo = {
@@ -40,9 +40,9 @@ const mockPersonal: PersonalInfo = {
   phoneCode: "+91",
   phone: "8920851547",
   company: "Mekya",
-  designation: "Super Admin",
+  designation: "Super Seller",
   address: "Ludhiana, Punjab, India",
-  bio: "Experienced platform administrator with 10+ years in e-commerce operations and user management.",
+  bio: "Experienced platform selleristrator with 10+ years in e-commerce operations and user management.",
 };
 
 export async function getProfile(): Promise<ProfilePageData> {

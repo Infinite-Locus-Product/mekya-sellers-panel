@@ -19,7 +19,13 @@ export type { TabItem, TabListProps } from "./TabList"
 export { TimeRangeSelector } from "./TimeRangeSelector"
 export type { TimeRange, TimeRangeSelectorProps } from "./TimeRangeSelector"
 export { AnalyticsModal } from "./AnalyticsModal"
-export type { AnalyticsModalConfig, TabConfig, SubKpiCardConfig, KPICardConfig } from "./AnalyticsModal"
+export type {
+  AnalyticsModalConfig,
+  KpiDefinitionPurposeConfig,
+  TabConfig,
+  SubKpiCardConfig,
+  KPICardConfig,
+} from "./AnalyticsModal"
 export { OrderDetails } from "./OrderDetails"
 export type {
   OrderDetailsData,

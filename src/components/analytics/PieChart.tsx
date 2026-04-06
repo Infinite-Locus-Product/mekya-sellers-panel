@@ -192,7 +192,7 @@ export function PieChart({
   )
 
   return (
-    <div className={cn("flex flex-col gap-3 rounded-lg border bg-muted/30 p-4 w-full", className)}>
+    <div className={cn("flex flex-col gap-3 p-4 w-full", className)}>
       {showTitle && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>{title}</span>

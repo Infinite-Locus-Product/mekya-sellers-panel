@@ -82,10 +82,9 @@ const DEFAULT_CONFIG: FilterConfig = {
     { value: "b2c", label: "B2C" },
   ],
   orderStatus: [
-    { value: "delivered", label: "Delivered" },
-    { value: "shipped", label: "Shipped" },
-    { value: "pending", label: "Pending" },
-    { value: "canceled", label: "Canceled" },
+    { value: "Completed", label: "Completed" },
+    { value: "Pending", label: "Pending" },
+    { value: "Canceled", label: "Canceled" },
   ],
   paymentMethod: [
     { value: "card", label: "Cards" },

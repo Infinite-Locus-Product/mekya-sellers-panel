@@ -151,7 +151,7 @@ export default function ContributorsPage() {
     <div className="flex flex-col w-full max-w-6xl space-y-8">
       <div className="flex flex-col gap-4">
         <nav className="text-sm text-muted-foreground">
-          Admin Dashboard &gt; CMS Management &gt; Contributors
+          Seller Dashboard &gt; CMS Management &gt; Contributors
         </nav>
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-foreground">Contributors</h1>
@@ -444,11 +444,10 @@ export default function ContributorsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                            c.status === "Active"
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${c.status === "Active"
                               ? "bg-emerald-50 text-emerald-700"
                               : "bg-red-50 text-red-700"
-                          }`}
+                            }`}
                         >
                           {c.status}
                         </span>

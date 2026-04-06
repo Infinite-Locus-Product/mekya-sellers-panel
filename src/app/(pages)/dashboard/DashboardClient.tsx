@@ -1,49 +1,30 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { KPICard } from "@/components/shared/KPICard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { Clock } from "lucide-react";
 import {
-  Clock,
-  Eye,
-  Download,
-  Search,
-} from "lucide-react";
-import {
-  ArrowExternalIcon,
   KpiSaleTrendIcon,
-  KpiUsersGroupIcon,
-  KpiBounceRateIcon,
-  KpiStoreSellersIcon,
+  KpiRupeeFlowIcon,
+  KpiOrdersBagIcon,
+  KpiReturnUndoIcon,
 } from "@/assets/icons";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import type { AllOrder, PaymentStatus } from "@/lib/tableTypes";
-import { Filter, DEFAULT_FILTER_VALUES } from "@/components/shared/Filter";
+import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge";
+import { DEFAULT_FILTER_VALUES } from "@/components/shared/Filter";
 import type { FilterValues } from "@/components/shared/FilterPanel";
 import { Pagination } from "@/components/shared/Pagination";
 import { usePagination } from "@/hooks";
-
-const SalesAnalyticsModal = dynamic(
-  () => import("@/components/modals/SalesAnalyticsModal").then((m) => ({ default: m.SalesAnalyticsModal })),
-  { ssr: false }
-);
-const ActiveUsersAnalyticsModal = dynamic(
-  () => import("@/components/modals/ActiveUsersAnalyticsModal").then((m) => ({ default: m.ActiveUsersAnalyticsModal })),
-  { ssr: false }
-);
-const BounceRateAnalyticsModal = dynamic(
-  () => import("./_components/modals/BounceRateAnalyticsModal").then((m) => ({ default: m.BounceRateAnalyticsModal })),
-  { ssr: false }
-);
-const ActiveSellersAnalyticsModal = dynamic(
-  () => import("./_components/modals/ActiveSellersAnalyticsModal").then((m) => ({ default: m.ActiveSellersAnalyticsModal })),
-  { ssr: false }
-);
+import { SalesAnalyticsModal } from "@/components/modals/SalesAnalyticsModal";
+import { ActiveUsersAnalyticsModal } from "@/components/modals/ActiveUsersAnalyticsModal";
+import { BounceRateAnalyticsModal } from "./_components/modals/BounceRateAnalyticsModal";
+import { ActiveSellersAnalyticsModal } from "./_components/modals/ActiveSellersAnalyticsModal";
+import { AppSelect } from "@/components/shared/AppSelect";
 
 const PAGE_SIZE = 10;
 
@@ -52,13 +33,14 @@ export interface DashboardClientProps {
 }
 
 export function DashboardClient({ initialOrders }: DashboardClientProps) {
-  const router = useRouter();
   const [isSalesModalOpen, setIsSalesModalOpen] = useState(false);
   const [isActiveUsersModalOpen, setIsActiveUsersModalOpen] = useState(false);
   const [isBounceRateModalOpen, setIsBounceRateModalOpen] = useState(false);
   const [isActiveSellersModalOpen, setIsActiveSellersModalOpen] = useState(false);
   const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTER_VALUES);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateRange, setDateRange] = useState("last_30_days");
 
   const filteredOrders = useMemo(() => {
     let filtered = [...initialOrders];
@@ -69,6 +51,9 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
           order.id.toLowerCase().includes(q) ||
           order.vendor.toLowerCase().includes(q)
       );
+    }
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((order) => order.status === statusFilter);
     }
     if (filters.orderStatus.length > 0) {
       filtered = filtered.filter((order) => filters.orderStatus.includes(order.status));
@@ -86,7 +71,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
       return amount >= minPrice && amount <= maxPrice;
     });
     return filtered;
-  }, [initialOrders, searchQuery, filters]);
+  }, [initialOrders, searchQuery, statusFilter, filters]);
 
   const pagination = usePagination({ totalCount: filteredOrders.length, pageSize: PAGE_SIZE });
   const paginatedOrders = useMemo(
@@ -94,21 +79,43 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
     [filteredOrders, pagination.startIndex, pagination.endIndex]
   );
 
-  const handleFilterChange = (newFilters: Partial<FilterValues>) => {
-    setFilters((prev) => ({ ...prev, ...newFilters }));
-  };
-  const handleFilterReset = () => setFilters(DEFAULT_FILTER_VALUES);
 
   const columns: TableColumn<AllOrder>[] = useMemo(
     () => [
       { key: "id", header: "Order ID" },
       { key: "vendor", header: "Vendor Name" },
-      { key: "date", header: "Order Date" },
-      { key: "amount", header: "Total Amount" },
-      { key: "status", header: "Order Status", cell: (row) => <StatusBadge variant={row.status}>{row.status}</StatusBadge> },
-      { key: "payment", header: "Payment Method" },
-      { key: "delivery", header: "Delivery Date" },
-      { key: "actions", header: "Actions", cell: () => <Button variant="ghost" size="icon" aria-label="View order"><Eye className="h-4 w-4" /></Button>, align: "center" },
+      { key: "date", header: "Order Date", sortable: true },
+      { key: "amount", header: "Total Amount", sortable: true },
+      {
+        key: "status",
+        header: "Order Status",
+        cell: (row) => (
+          <StatusBadge variant={orderStatusToBadgeVariant(row.status)}>{row.status}</StatusBadge>
+        ),
+      },
+      {
+        key: "actions", header: "Actions", cell: () => (
+          <Button variant="ghost" size="icon" aria-label="View order">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M12.001 5C5.69398 5 2.63398 10.683 2.09098 11.808C2.06195 11.8678 2.04688 11.9335 2.04688 12C2.04688 12.0665 2.06195 12.1322 2.09098 12.192C2.63298 13.317 5.69298 19 12.001 19C18.309 19 21.368 13.317 21.911 12.192C21.94 12.1322 21.9551 12.0665 21.9551 12C21.9551 11.9335 21.94 11.8678 21.911 11.808C21.369 10.683 18.309 5 12.001 5Z"
+                stroke="#004C5E"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
+                stroke="#004C5E"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </Button>
+        ),
+        align: "center",
+      },
     ],
     []
   );
@@ -117,17 +124,34 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
     <div className="space-y-6">
       <Breadcrumb
         items={[
-          { label: "Admin Dashboard", href: "/" },
+          { label: "Seller Dashboard", href: "/" },
           { label: "Dashboard" },
         ]}
       />
-      <div>
+      <div className="flex items-center justify-between">
         <h1 className="text-xl font-medium text-foreground mb-2">Key Performance Summary</h1>
+        <div className="flex items-center gap-2">
+          Date range : <AppSelect
+            placeholder="Last 30 days"
+            value={dateRange}
+            onChange={(value: string) => setDateRange(value)}
+            options={[
+              { label: "Today", value: "today" },
+              { label: "Yesterday", value: "yesterday" },
+              { label: "Last 7 days", value: "last_7_days" },
+              { label: "Last 30 days", value: "last_30_days" },
+              { label: "This Week", value: "this_week" },
+              { label: "Last Week", value: "last_week" },
+              { label: "This Month", value: "this_month" },
+              { label: "Last Month", value: "last_month" },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <KPICard
-          title="Total Sale Volume"
+          title="Total Sales"
           value="₹50,000,"
           change="+12.5% From Last Month"
           changeType="positive"
@@ -137,31 +161,31 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
           image="/kpi/kpi1.png"
         />
         <KPICard
-          title="Active Users"
+          title="Average Order Value"
           value="1,546"
           change="+12.5% From Last Month"
           changeType="positive"
-          icon={<KpiUsersGroupIcon />}
+          icon={<KpiRupeeFlowIcon />}
           onClick={() => setIsActiveUsersModalOpen(true)}
           background="linear-gradient(100.31deg, #FFF4DE -0.8%, #FFF0D3 63.46%, #FFD177 101.6%)"
           image="/kpi/kpi2.png"
         />
         <KPICard
-          title="Bounce Rate"
+          title="Total Orders"
           value="32.9%"
           change="-2.1% From Last Month"
           changeType="negative"
-          icon={<KpiBounceRateIcon />}
+          icon={<KpiOrdersBagIcon />}
           onClick={() => setIsBounceRateModalOpen(true)}
           background="linear-gradient(100.25deg, #FFB9B9 0.53%, #FFE6E7 55.38%, #FF7477 101.5%)"
           image="/kpi/kpi3.png"
         />
         <KPICard
-          title="Active Sellers"
+          title="Return Orders"
           value="248"
           change="+12.5% From Last Month"
           changeType="positive"
-          icon={<KpiStoreSellersIcon />}
+          icon={<KpiReturnUndoIcon />}
           onClick={() => setIsActiveSellersModalOpen(true)}
           background="linear-gradient(100.63deg, #DFE3FF -1.02%, #FEEDFF 50.22%, #FF8EE4 101.47%)"
           image="/kpi/kpi4.png"
@@ -176,34 +200,21 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
                 <Clock className="h-5 w-5" />
                 Recent Orders
               </CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">Monitor incoming orders in real-time</p>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <Button variant="default" size="default" className="bg-primary" onClick={() => router.push("/order-management")}>
-                View All Orders
-                <ArrowExternalIcon className="ml-2 h-[11px] w-[11px] shrink-0 text-white" aria-hidden />
-              </Button>
+              <p className="text-sm text-muted-foreground mt-1">View and manage your recent orders with sorting and filtering options</p>
             </div>
           </div>
-          <div className="relative flex items-center gap-3 mt-4 pb-4">
-            <div className="relative flex-1 min-w-0">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden />
-              <input
-                type="search"
-                placeholder="Search by order ID, vendor name or product name"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-md border border-input bg-[#E8E9E8] px-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                aria-label="Search orders"
-              />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Button variant="outline" size="default" className="bg-white border-0 shadow-none hover:bg-gray-50 hover:border-0">
-                <Download className="h-4 w-4 mr-2" aria-hidden />
-                Export
-              </Button>
-              <Filter filters={filters} onFilterChange={handleFilterChange} onReset={handleFilterReset} onApply={() => { }} />
-            </div>
+          <div className="flex items-center gap-2 my-4">
+            Filter by Status  <AppSelect
+              placeholder="All Status"
+              value={statusFilter}
+              onChange={(value: string) => setStatusFilter(value)}
+              options={[
+                { label: "All Status", value: "all" },
+                { label: "Completed", value: "Completed" },
+                { label: "Pending", value: "Pending" },
+                { label: "Canceled", value: "Canceled" },
+              ]}
+            />
           </div>
         </div>
         <CardContent className="relative pt-4 bg-[#F9FAF9]">

@@ -7,6 +7,7 @@ import { KPICard } from "@/components/shared/KPICard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge";
 import { PaymentStatusBadge } from "@/components/shared/PaymentStatusBadge";
 import { AppSelect } from "@/components/shared/AppSelect";
 import {
@@ -18,7 +19,7 @@ import { Pagination, ExportDropdown } from "@/components/shared";
 import { usePagination } from "@/hooks";
 import { FileText, Eye, Search } from "lucide-react";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
-import type { AllOrder, OrderStatus, PaymentStatus } from "@/lib/tableTypes";
+import type { AllOrder, PaymentStatus } from "@/lib/tableTypes";
 import {
   KpiOrdersBagIcon,
   KpiPendingClipboardIcon,
@@ -191,7 +192,7 @@ export function OrderManagementClient({ initialOrders }: OrderManagementClientPr
       key: "status",
       header: "Order Status",
       cell: (row) => (
-        <StatusBadge variant={row.status as OrderStatus}>
+        <StatusBadge variant={orderStatusToBadgeVariant(row.status)}>
           {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
         </StatusBadge>
       ),
@@ -222,7 +223,7 @@ export function OrderManagementClient({ initialOrders }: OrderManagementClientPr
     <div className="space-y-6">
       <Breadcrumb
         items={[
-          { label: "Admin Dashboard", href: "/" },
+          { label: "Seller Dashboard", href: "/" },
           { label: "Order Management" },
         ]}
       />
@@ -247,7 +248,7 @@ export function OrderManagementClient({ initialOrders }: OrderManagementClientPr
         />
         <KPICard
           title="Pending Orders"
-          value={initialOrders.filter((o) => o.status === "pending").length.toString()}
+          value={initialOrders.filter((o) => o.status === "Pending").length.toString()}
           change="Awaiting processing"
           changeType="positive"
           changeDisplay="text"
@@ -267,7 +268,7 @@ export function OrderManagementClient({ initialOrders }: OrderManagementClientPr
         />
         <KPICard
           title="Return & Exchanges"
-          value={initialOrders.filter((o) => o.status === "returned").length.toString()}
+          value="0"
           change="Needs Attention"
           changeDisplay="text"
           changeType="negative"
@@ -305,12 +306,9 @@ export function OrderManagementClient({ initialOrders }: OrderManagementClientPr
                 onChange={(value: string) => setStatusFilter(value)}
                 options={[
                   { label: "All Status", value: "all" },
-                  { label: "Pending", value: "pending" },
-                  { label: "Processing", value: "processing" },
-                  { label: "Shipped", value: "shipped" },
-                  { label: "Delivered", value: "delivered" },
-                  { label: "Canceled", value: "canceled" },
-                  { label: "Returned", value: "returned" },
+                  { label: "Completed", value: "Completed" },
+                  { label: "Pending", value: "Pending" },
+                  { label: "Canceled", value: "Canceled" },
                 ]}
                 className="w-[140px]"
               />

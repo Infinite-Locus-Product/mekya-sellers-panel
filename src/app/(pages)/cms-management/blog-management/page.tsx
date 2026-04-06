@@ -41,7 +41,7 @@ const MOCK_BLOG_POSTS: BlogPostRow[] = [
     title: "5 Key Advantages of Buying Fashion in Bulk...",
     subtitle:
       "Buying in bulk doesn't mean compromising on quality or variety — not when you're using Mekya. Our platfo...",
-    author: "Admin",
+    author: "Seller",
     category: "Buying",
     publishDate: "01-Jan-2025",
     views: 1854,
@@ -53,7 +53,7 @@ const MOCK_BLOG_POSTS: BlogPostRow[] = [
     title: "5 Key Advantages of Buying Fashion in Bulk...",
     subtitle:
       "Buying in bulk doesn't mean compromising on quality or variety — not when you're using Mekya. Our platfo...",
-    author: "Admin",
+    author: "Seller",
     category: "Buying",
     publishDate: "01-Jan-2025",
     views: 110,
@@ -65,7 +65,7 @@ const MOCK_BLOG_POSTS: BlogPostRow[] = [
     title: "5 Key Advantages of Buying Fashion in Bulk...",
     subtitle:
       "Buying in bulk doesn't mean compromising on quality or variety — not when you're using Mekya. Our platfo...",
-    author: "Admin",
+    author: "Seller",
     category: "Buying",
     publishDate: "01-Jan-2025",
     views: 49,
@@ -77,7 +77,7 @@ const MOCK_BLOG_POSTS: BlogPostRow[] = [
     title: "5 Key Advantages of Buying Fashion in Bulk...",
     subtitle:
       "Buying in bulk doesn't mean compromising on quality or variety — not when you're using Mekya. Our platfo...",
-    author: "Admin",
+    author: "Seller",
     category: "Buying",
     publishDate: "01-Jan-2025",
     views: 48,
@@ -86,7 +86,7 @@ const MOCK_BLOG_POSTS: BlogPostRow[] = [
   },
 ]
 
-const BLOG_CATEGORY_OPTIONS = ["Selling", "Buying", "Manufacturing","Retailer"] as const
+const BLOG_CATEGORY_OPTIONS = ["Selling", "Buying", "Manufacturing", "Retailer"] as const
 
 const IMAGE_MAX_SIZE_MB = 2
 const VIDEO_MAX_SIZE_MB = 80

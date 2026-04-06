@@ -7,6 +7,7 @@
 export {
   AnalyticsModal,
   type AnalyticsModalConfig,
+  type KpiDefinitionPurposeConfig,
   type TabConfig,
   type SubKpiCardConfig,
   type KPICardConfig,

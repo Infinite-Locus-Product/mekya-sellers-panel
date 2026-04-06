@@ -1,5 +1,6 @@
 "use client"
 
+import { useId } from "react"
 import { cn, formatCurrencyINR } from "@/lib/utils"
 import {
   LineChart as RechartsLineChart,
@@ -19,6 +20,31 @@ export type ChartDataPoint = {
 }
 
 const LINE_COLOR = "#2563eb"
+
+function parseHexColor(value: string) {
+  if (!value.startsWith("#")) return null
+  const normalized = value.slice(1)
+  const expanded =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : normalized
+  if (expanded.length !== 6 || /[^0-9a-fA-F]/.test(expanded)) return null
+  return {
+    r: parseInt(expanded.slice(0, 2), 16),
+    g: parseInt(expanded.slice(2, 4), 16),
+    b: parseInt(expanded.slice(4, 6), 16),
+  }
+}
+
+function lightenHexColor(hex: string, amount: number) {
+  const rgb = parseHexColor(hex)
+  if (!rgb) return hex
+  const lightenChannel = (channel: number) => Math.min(255, Math.round(channel + (255 - channel) * amount))
+  return `rgb(${lightenChannel(rgb.r)}, ${lightenChannel(rgb.g)}, ${lightenChannel(rgb.b)})`
+}
 
 /** Vertical dashed line at cursor band (Recharts passes x, y, width, height). */
 function VerticalLineCursor(props: {
@@ -60,9 +86,6 @@ interface LineChartProps {
   color?: string
 }
 
-/** Uniform soft light blue for area under the line (matches reference). */
-const AREA_FILL = "rgba(118, 183, 255, 0.38)"
-
 export function LineChart({
   data,
   className,
@@ -72,6 +95,10 @@ export function LineChart({
     name: item.label,
     value: item.value,
   }))
+  const idSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
+  const gradientId = `line-area-${idSuffix || "default"}`
+  const gradientTopColor = lightenHexColor(color, 0.3)
+  const gradientMidColor = lightenHexColor(color, 0.15)
 
   const renderTooltipContent: TooltipProps<number, string>["content"] = ({ active, payload, label }) => {
     if (!active || !payload?.length || label == null) return null
@@ -140,11 +167,18 @@ export function LineChart({
               cursor={<VerticalLineCursor />}
               wrapperStyle={{ outline: "none" }}
             />
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={gradientTopColor} stopOpacity={0.9} />
+                <stop offset="55%" stopColor={gradientMidColor} stopOpacity={0.55} />
+                <stop offset="100%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
             <Area
               type="basis"
               dataKey="value"
               stroke="none"
-              fill={AREA_FILL}
+              fill={`url(#${gradientId})`}
               baseValue={0}
             />
             <Line

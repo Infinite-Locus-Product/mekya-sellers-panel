@@ -2,6 +2,7 @@ export { SalesAnalyticsModal, ActiveUsersAnalyticsModal } from "@/components/mod
 export {
   AnalyticsModal,
   type AnalyticsModalConfig,
+  type KpiDefinitionPurposeConfig,
   type TabConfig,
   type KPICardConfig,
   type TimeRange,

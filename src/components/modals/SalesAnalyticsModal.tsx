@@ -41,22 +41,36 @@ export function SalesAnalyticsModal({ open, onOpenChange }: SalesAnalyticsModalP
     { region: "Central India", sales: 650000, growth: 5.2, color: "#660101" },
   ]
 
-  const colorTrendsData = [
-    { color: "Light Blue", name: "Light Blue", units: 650, percentage: 22, hexCode: "#76CAF3" },
-    { color: "Black", name: "Black", units: 612, percentage: 20, hexCode: "#000000" },
-    { color: "White", name: "White", units: 512, percentage: 18, hexCode: "#FFFFFF" },
-    { color: "Orange", name: "Orange", units: 432, percentage: 15, hexCode: "#F8946A" },
-    { color: "Light Green", name: "Light Green", units: 320, percentage: 12, hexCode: "#9FFF8C" },
-    { color: "Dark Blue", name: "Dark Blue", units: 120, percentage: 10, hexCode: "#2C4FBF" },
-    { color: "Grey", name: "Other", units: 100, percentage: 9, hexCode: "#9CA3AF" },
+  const salesChannelData = [
+    {
+      channel: "mobile",
+      label: "Mobile App",
+      orders: 40000,
+      color: "#86D97B",
+      description: "Orders from Mobile app",
+    },
+    {
+      channel: "website",
+      label: "Website",
+      orders: 60000,
+      color: "#D45A5A",
+      description: "Orders from Website",
+    },
   ]
 
   const config: AnalyticsModalConfig = {
     title: "Total Sales Volume - Detailed Analytics",
+    kpiDefinitionPurpose: {
+      sectionTitle: "KPI Definition & Purpose",
+      definition:
+        "The total monetary value of all confirmed purchases made by customers within the selected time period.",
+      purpose:
+        "This KPI (Key performance indicator) tracks the overall revenue generated from all orders placed, which is a critical measure of business performance and growth.",
+    },
     kpiCards: [
       {
-        title: "This Week",
-        subtitle: "Current Week",
+        title: "Current Period",
+        subtitle: "Current Period",
         subtitleBelowValue: true,
         value: "₹5,000,00",
         variant: "info",
@@ -66,8 +80,8 @@ export function SalesAnalyticsModal({ open, onOpenChange }: SalesAnalyticsModalP
         imageClassName: "!w-[113px] !h-[98px] !right-0 !bottom-0 -mr-5 -mb-5 opacity-100 object-contain",
       },
       {
-        title: "Last Week",
-        subtitle: "Previous Week",
+        title: "Previous Period",
+        subtitle: "Previous Period",
         subtitleBelowValue: true,
         value: "₹2,000,00",
         variant: "warning",
@@ -77,8 +91,8 @@ export function SalesAnalyticsModal({ open, onOpenChange }: SalesAnalyticsModalP
         imageClassName: "!w-[113px] !h-[98px] opacity-100",
       },
       {
-        title: "Week over Week",
-        subtitle: "Week over Week",
+        title: "Change",
+        subtitle: "Change",
         subtitleBelowValue: true,
         value: "+150%",
         changeType: "positive",
@@ -93,7 +107,7 @@ export function SalesAnalyticsModal({ open, onOpenChange }: SalesAnalyticsModalP
       { id: "sales-trends", label: "Sales Trends" },
       { id: "category-breakdown", label: "Category Breakdown" },
       { id: "regional-performance", label: "Regional Performance" },
-      { id: "color-trends", label: "Color Trends" },
+      { id: "sales-channel", label: "Sales Channel" },
     ],
     chartTitle: "Sales Trends Over Time",
     chartIcon: BarChart3,
@@ -101,7 +115,7 @@ export function SalesAnalyticsModal({ open, onOpenChange }: SalesAnalyticsModalP
     chartData: trendData,
     categoryBreakdownData,
     regionalPerformanceData,
-    colorTrendsData,
+    salesChannelData,
     contentClassName: "bg-gray-50",
   }
 

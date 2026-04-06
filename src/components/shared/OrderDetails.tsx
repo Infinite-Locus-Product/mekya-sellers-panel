@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge";
 import { PaymentStatusBadge } from "@/components/shared/PaymentStatusBadge";
 import {
   Select,
@@ -75,7 +76,7 @@ export interface OrderDetailsData {
   payment: PaymentInfo;
   items: OrderItem[];
   timeline: FulfillmentTimelineItem[];
-  adminNotes?: string;
+  sellerNotes?: string;
 }
 
 interface OrderDetailsProps {
@@ -119,10 +120,10 @@ export function OrderDetails({
   const [selectedStatus, setSelectedStatus] = useState<OrderStatus>(
     order.status
   );
-  const [adminNotes, setAdminNotes] = useState(order.adminNotes || "");
+  const [sellerNotes, setSellerNotes] = useState(order.sellerNotes || "");
 
   const handleStatusUpdate = () => {
-    onStatusUpdate?.(order.id, selectedStatus, adminNotes);
+    onStatusUpdate?.(order.id, selectedStatus, sellerNotes);
   };
 
   const formatCurrency = (amount: number) => {
@@ -211,11 +212,10 @@ export function OrderDetails({
                       <div className="relative flex h-[3.75rem] w-full items-center justify-center overflow-visible">
                         {!isLast && (
                           <div
-                            className={`absolute left-1/2 top-1/2 z-0 h-0.5 w-full -translate-y-1/2 ${
-                              segmentToNextIsComplete
-                                ? "bg-green-500"
-                                : "bg-gray-300"
-                            }`}
+                            className={`absolute left-1/2 top-1/2 z-0 h-0.5 w-full -translate-y-1/2 ${segmentToNextIsComplete
+                              ? "bg-green-500"
+                              : "bg-gray-300"
+                              }`}
                             aria-hidden
                           />
                         )}
@@ -243,16 +243,14 @@ export function OrderDetails({
                           </div>
                         ) : (
                           <div
-                            className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-2 ${
-                              isCompleted
-                                ? "border-green-500 bg-green-500"
-                                : "border-gray-300 bg-white"
-                            }`}
+                            className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-2 ${isCompleted
+                              ? "border-green-500 bg-green-500"
+                              : "border-gray-300 bg-white"
+                              }`}
                           >
                             <Icon
-                              className={`h-5 w-5 ${
-                                isCompleted ? "text-white" : "text-gray-400"
-                              }`}
+                              className={`h-5 w-5 ${isCompleted ? "text-white" : "text-gray-400"
+                                }`}
                               aria-hidden
                             />
                           </div>
@@ -335,7 +333,7 @@ export function OrderDetails({
               <p className="text-sm font-medium text-foreground mb-2">
                 Current Status
               </p>
-              <StatusBadge variant={order.status}>
+              <StatusBadge variant={orderStatusToBadgeVariant(order.status)}>
                 {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
               </StatusBadge>
             </div>
@@ -364,11 +362,11 @@ export function OrderDetails({
             </div>
             <div>
               <p className="text-sm font-medium text-foreground mb-2">
-                Admin Notes
+                Seller Notes
               </p>
               <textarea
-                value={adminNotes}
-                onChange={(e) => setAdminNotes(e.target.value)}
+                value={sellerNotes}
+                onChange={(e) => setSellerNotes(e.target.value)}
                 placeholder="Add notes of status update..."
                 className="w-full min-h-[100px] p-3 border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none bg-[#E8E9E8]"
               />

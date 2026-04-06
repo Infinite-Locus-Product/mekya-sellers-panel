@@ -228,7 +228,7 @@ export function ColorTrendsTab({ data = DEFAULT_COLOR_DATA, chartData }: ColorTr
 
           <div className="flex-1 space-y-3 pt-2 min-w-0">
             {sortedData.map((item) => (
-              <div key={item.name} className="flex items-center gap-3 text-sm">
+              <div key={item.name} className="flex items-center gap-3 text-sm rounded-full">
                 <div
                   className="w-4 h-4 rounded-full flex-shrink-0"
                   style={{
