@@ -1,0 +1,133 @@
+{
+  "trendData": [
+    { "label": "Jan", "value": 35 },
+    { "label": "Feb", "value": 33 },
+    { "label": "Mar", "value": 34 },
+    { "label": "Apr", "value": 32 },
+    { "label": "May", "value": 31 },
+    { "label": "Jun", "value": 30 },
+    { "label": "Jul", "value": 33 },
+    { "label": "Aug", "value": 32 },
+    { "label": "Sep", "value": 31 },
+    { "label": "Oct", "value": 30 },
+    { "label": "Nov", "value": 29 },
+    { "label": "Dec", "value": 28 }
+  ],
+  "kpiCards": {
+    "currentWeek": {
+      "title": "This Week",
+      "value": "33,506",
+      "subtitle": "Current Week",
+      "variant": "info"
+    },
+    "previousWeek": {
+      "title": "Last Week",
+      "value": "26,894",
+      "subtitle": "Previous Week",
+      "variant": "warning"
+    },
+    "change": {
+      "title": "Change",
+      "value": "+150%",
+      "subtitle": "Week over Week",
+      "changeType": "positive",
+      "variant": "error"
+    }
+  },
+  "deviceHeatmap": [
+    {
+      "page": "Home",
+      "mobile": 15.2,
+      "tablet": 15.2,
+      "desktop": 15.2
+    },
+    {
+      "page": "Cart",
+      "mobile": 28.1,
+      "tablet": 20.22,
+      "desktop": 19.4
+    },
+    {
+      "page": "Checkout",
+      "mobile": 28.1,
+      "tablet": 52.3,
+      "desktop": 52.3
+    },
+    {
+      "page": "Profile",
+      "mobile": 52.3,
+      "tablet": 28.1,
+      "desktop": 47.8
+    },
+    {
+      "page": "Search",
+      "mobile": 42.8,
+      "tablet": 52.3,
+      "desktop": 28.1
+    },
+    {
+      "page": "Product Listing Page",
+      "mobile": 48.5,
+      "tablet": 28.1,
+      "desktop": 52.3
+    }
+  ],
+  "pageAnalysis": [
+    {
+      "page": "Home page",
+      "bounceRate": 18.2,
+      "visitors": 8940,
+      "avgTimeOnPage": 75,
+      "exitRate": 12.5,
+      "trend": "down"
+    },
+    {
+      "page": "Product Listings",
+      "bounceRate": 22.1,
+      "visitors": 8940,
+      "avgTimeOnPage": 75,
+      "exitRate": 18.3,
+      "trend": "up"
+    },
+    {
+      "page": "Product Details",
+      "bounceRate": 15.8,
+      "visitors": 8940,
+      "avgTimeOnPage": 75,
+      "exitRate": 12.5,
+      "trend": "down"
+    },
+    {
+      "page": "Cart",
+      "bounceRate": 45.3,
+      "visitors": 8940,
+      "avgTimeOnPage": 75,
+      "exitRate": 35.7,
+      "trend": "up"
+    },
+    {
+      "page": "Checkout",
+      "bounceRate": 52.7,
+      "visitors": 8940,
+      "avgTimeOnPage": 75,
+      "exitRate": 38.2,
+      "trend": "up"
+    },
+    {
+      "page": "Profile",
+      "bounceRate": 42.7,
+      "visitors": 8940,
+      "avgTimeOnPage": 75,
+      "exitRate": 28.9,
+      "trend": "down"
+    },
+    {
+      "page": "Search",
+      "bounceRate": 41.1,
+      "visitors": 8940,
+      "avgTimeOnPage": 75,
+      "exitRate": 32.4,
+      "trend": "stable"
+    }
+  ]
+}

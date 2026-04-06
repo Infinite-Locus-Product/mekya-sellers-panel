@@ -1,13 +1,16 @@
 import type { NextConfig } from "next";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
-  // Avoid picking ~/package-lock.json when another lockfile exists above this app
-  turbopack: {
-    root: projectRoot,
+  reactStrictMode: true,
+  // Use Webpack for dev (default) to avoid Turbopack panics on order-management; use `pnpm dev:turbo` to try Turbopack
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "@dnd-kit/core",
+      "@dnd-kit/sortable",
+      "@dnd-kit/utilities",
+      "recharts",
+    ],
   },
 };
 
