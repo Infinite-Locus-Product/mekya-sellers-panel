@@ -67,35 +67,28 @@ export function LineChart({
   timeRange,
   color = LINE_COLOR,
 }: LineChartProps) {
-  const chartData = data.map((item, index) => {
-    let newLabel = item.label
+  const chartData = (() => {
     switch (timeRange) {
       case "1D": {
-        const hours = ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"]
-        newLabel = hours[index % hours.length] || item.label
-        break
+        const hours = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
+        return data.slice(0, hours.length).map((item, index) => ({ name: hours[index], value: item.value }))
       }
       case "1W": {
         const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-        newLabel = days[index % days.length] || item.label
-        break
+        return data.slice(0, days.length).map((item, index) => ({ name: days[index], value: item.value }))
       }
       case "1M": {
-        const dates = ["00", "05", "10", "15", "20", "25" , "30"]
-        newLabel = dates[index % dates.length] || item.label
-        break
+        const dates = ["05", "10", "15", "20", "25", "30"]
+        return data.slice(0, dates.length).map((item, index) => ({ name: dates[index], value: item.value }))
       }
       case "1Y": {
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        newLabel = months[index % months.length] || item.label
-        break
+        return data.slice(0, months.length).map((item, index) => ({ name: months[index], value: item.value }))
       }
+      default:
+        return data.map(item => ({ name: item.label, value: item.value }))
     }
-    return {
-      name: newLabel,
-      value: item.value,
-    }
-  })
+  })()
   const idSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
   const gradientId = `line-area-${idSuffix || "default"}`
 
