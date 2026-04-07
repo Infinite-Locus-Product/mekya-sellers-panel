@@ -10,9 +10,7 @@ interface ErrorProps {
 
 export default function PagesError({ error, reset }: ErrorProps) {
   useEffect(() => {
-    // Log for debugging; in production send to error reporting (e.g. digest)
     if (process.env.NODE_ENV === "development") {
-      // eslint-disable-next-line no-console
       console.error("Pages route error:", error?.message ?? error, error?.digest)
     }
   }, [error])

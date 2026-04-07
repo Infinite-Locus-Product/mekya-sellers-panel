@@ -75,7 +75,7 @@ export function SalesTrendsTab({
             >
               <SelectTrigger className="w-[140px] bg-white border-border px-3" size="sm">
                 <SelectValue />
-                <div className="h-4 w-px bg-gray-300 flex-shrink-0" aria-hidden />
+                <div className="h-4 w-px bg-gray-300" aria-hidden />
               </SelectTrigger>
               <SelectContent>
                 {CHART_TYPE_OPTIONS.map(({ value, Icon }) => (

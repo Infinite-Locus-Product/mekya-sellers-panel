@@ -31,14 +31,14 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-fit items-center justify-between gap-2 rounded-md border border-border bg-[#E8E9E8] px-3 py-2 text-md whitespace-nowrap shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "group flex w-fit items-center justify-between gap-2 rounded-md border border-border bg-[#E8E9E8] px-3 py-2 text-md whitespace-nowrap shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-4 opacity-100" />
+        <ChevronDownIcon className="size-4 opacity-100 transition-transform duration-200 ease-out group-data-[state=open]:rotate-180" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )
@@ -47,8 +47,9 @@ function SelectTrigger({
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
-  align = "center",
+  position = "popper",
+  align = "start",
+  sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -63,6 +64,7 @@ function SelectContent({
         )}
         position={position}
         align={align}
+        sideOffset={sideOffset}
         {...props}
       >
         <SelectScrollUpButton />

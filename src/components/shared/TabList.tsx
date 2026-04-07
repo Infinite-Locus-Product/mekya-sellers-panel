@@ -23,7 +23,7 @@ const variantStyles = {
     list: "flex items-center gap-1 rounded-full p-2 bg-[#E4E4E4]",
     tab: "px-8 py-1 text-xs font-medium transition-colors rounded-full",
     active: "bg-white text-foreground shadow-sm",
-    inactive: "bg-transparent text-foreground hover:bg-white/50",
+    inactive: "bg-transparent text-foreground hover:bg-white/50 cursor-pointer",
   },
   muted: {
     list: "inline-flex rounded-full bg-[#E8E9E8] p-2",

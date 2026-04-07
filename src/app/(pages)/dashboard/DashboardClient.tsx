@@ -152,7 +152,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <KPICard
           title="Total Sales"
-          value="₹50,000,"
+          value="₹50,000"
           change="+12.5% From Last Month"
           changeType="positive"
           icon={<KpiSaleTrendIcon />}

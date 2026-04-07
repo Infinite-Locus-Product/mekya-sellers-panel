@@ -13,19 +13,15 @@ interface KPICardProps {
   subtitle?: string
   change?: string
   changeType?: "positive" | "negative"
-  /** When "text", change is shown as plain text without pill background or trend icon */
   changeDisplay?: "pill" | "text"
   icon?: ReactNode
   variant?: KPICardVariant
   className?: string
   onClick?: () => void
-  /** When set, the card navigates as a link (keyboard-accessible). */
   href?: string
   background?: string
   image?: string
-  /** Optional class for the image/decoration element */
   imageClassName?: string
-  /** When true, subtitle is rendered below the value (and change) for layout like: title → value → subtitle */
   subtitleBelowValue?: boolean
 }
 
@@ -38,7 +34,7 @@ const variantStyles: Record<KPICardVariant, string> = {
 }
 
 const DEFAULT_IMAGE_CLASS =
-  "absolute -right-7 -bottom-5 w-[140px] h-[120px] md:w-[120px] md:h-[110px] sm:w-[110px] sm:h-[100px] object-contain select-none pointer-events-none kpi-spin-img scale-[1.2]"
+  "absolute -right-7 -bottom-5 w-[120px] h-[120px] md:w-[120px] md:h-[110px] sm:w-[110px] sm:h-[100px] object-contain select-none pointer-events-none kpi-spin-img scale-[1.2]"
 
 export function KPICard({
   title,
