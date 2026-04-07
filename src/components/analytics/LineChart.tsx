@@ -21,31 +21,6 @@ export type ChartDataPoint = {
 
 const LINE_COLOR = "#2563eb"
 
-function parseHexColor(value: string) {
-  if (!value.startsWith("#")) return null
-  const normalized = value.slice(1)
-  const expanded =
-    normalized.length === 3
-      ? normalized
-          .split("")
-          .map((char) => char + char)
-          .join("")
-      : normalized
-  if (expanded.length !== 6 || /[^0-9a-fA-F]/.test(expanded)) return null
-  return {
-    r: parseInt(expanded.slice(0, 2), 16),
-    g: parseInt(expanded.slice(2, 4), 16),
-    b: parseInt(expanded.slice(4, 6), 16),
-  }
-}
-
-function lightenHexColor(hex: string, amount: number) {
-  const rgb = parseHexColor(hex)
-  if (!rgb) return hex
-  const lightenChannel = (channel: number) => Math.min(255, Math.round(channel + (255 - channel) * amount))
-  return `rgb(${lightenChannel(rgb.r)}, ${lightenChannel(rgb.g)}, ${lightenChannel(rgb.b)})`
-}
-
 /** Vertical dashed line at cursor band (Recharts passes x, y, width, height). */
 function VerticalLineCursor(props: {
   x?: number
@@ -106,7 +81,7 @@ export function LineChart({
         break
       }
       case "1M": {
-        const dates = ["00", "10", "20", "30"]
+        const dates = ["00", "05", "10", "15", "20", "25" , "30"]
         newLabel = dates[index % dates.length] || item.label
         break
       }
@@ -123,8 +98,6 @@ export function LineChart({
   })
   const idSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
   const gradientId = `line-area-${idSuffix || "default"}`
-  const gradientTopColor = lightenHexColor(color, 0.3)
-  const gradientMidColor = lightenHexColor(color, 0.15)
 
   const renderTooltipContent: TooltipProps<number, string>["content"] = ({ active, payload, label }) => {
     if (!active || !payload?.length || label == null) return null
@@ -195,9 +168,9 @@ export function LineChart({
             />
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={gradientTopColor} stopOpacity={0.9} />
-                <stop offset="55%" stopColor={gradientMidColor} stopOpacity={0.55} />
-                <stop offset="100%" stopColor={color} stopOpacity={0} />
+                <stop offset="-0.19%" stopColor="rgba(0, 122, 255, 0)" />
+                <stop offset="59.55%" stopColor="rgba(118, 183, 255, 0.38)" />
+                <stop offset="100%" stopColor="rgba(118, 183, 255, 0)" />
               </linearGradient>
             </defs>
             <Area
@@ -205,6 +178,7 @@ export function LineChart({
               dataKey="value"
               stroke="none"
               fill={`url(#${gradientId})`}
+              fillOpacity={1}
               baseValue={0}
             />
             <Line

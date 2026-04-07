@@ -1,6 +1,5 @@
 import type { SVGProps } from "react"
 
-/** 17×10 icon for "Sales Trends Over Time" title */
 export function SalesTrendsTitleIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
@@ -20,7 +19,6 @@ export function SalesTrendsTitleIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-/** 16×16 icon for Line Chart option */
 export function LineChartIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
@@ -40,7 +38,6 @@ export function LineChartIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-/** 16×16 icon for Pie Chart option */
 export function PieChartIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
@@ -62,7 +59,6 @@ export function PieChartIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-/** 16×16 icon for Bar Chart option */
 export function BarChartIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg

@@ -30,7 +30,7 @@ export function TimeRangeSelector({
     "radial-gradient(52.59% 160.7% at 51.96% 52.59%, #136CC8 0%, #98C9FF 94.99%)"
 
   return (
-    <div className={cn("flex items-center gap-1", className)} role="group" aria-label="Time range">
+    <div className={cn("flex gap-1 bg-[#E8E9E8] p-1 rounded-md", className)} role="group" aria-label="Time range">
       {TIME_RANGES.map((range) => (
         <Button
           key={range}

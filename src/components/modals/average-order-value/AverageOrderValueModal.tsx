@@ -75,8 +75,8 @@ export function AverageOrderValueModal({ open, onOpenChange }: AverageOrderValue
         variant: "info",
         customIcon: <CurrentWeekKpiIcon className="h-10 w-10 shrink-0 opacity-100" />,
         background: "linear-gradient(280.39deg, #AFEAFF 3.59%, #EBF9FF 51.27%, #D8EFFF 98.94%)",
-        image: "/kpi/kpi2.png",
-        imageClassName: "!w-[140px] !h-[120px] !right-0 !bottom-0 -mr-6 -mb-6 opacity-100 object-contain scale-[1.2]",
+        image: "/kpi/kpi1.png",
+        imageClassName: "!w-[140px] !h-[120px] !bottom-0 -mr-6 -mb-6 opacity-100 object-contain scale-[1.2]",
       },
       {
         title: "Previous Period",
@@ -86,8 +86,8 @@ export function AverageOrderValueModal({ open, onOpenChange }: AverageOrderValue
         variant: "warning",
         customIcon: <PreviousWeekKpiIcon className="h-10 w-10 shrink-0 opacity-100" />,
         background: "linear-gradient(100.31deg, #FFF4DE -0.8%, #FFF0D3 63.46%, #FFD177 101.6%)",
-        image: "/kpi/kpi1.png",
-        imageClassName: "!w-[140px] !h-[120px] opacity-100 object-contain scale-[1.18]",
+        image: "/kpi/kpi2.png",
+        imageClassName: "!w-[140px] !h-[120px] !bottom-0 -mr-6 -mb-6 opacity-100 object-contain scale-[1.2]",
       },
       {
         title: "Change",
@@ -99,7 +99,7 @@ export function AverageOrderValueModal({ open, onOpenChange }: AverageOrderValue
         customIcon: <WeekOverWeekKpiIcon className="h-10 w-10 shrink-0 opacity-100" />,
         background: "linear-gradient(100.25deg, #FFB9B9 0.53%, #FFE6E7 55.38%, #FF7477 101.5%)",
         image: "/kpi/kpi3.png",
-        imageClassName: "!w-[140px] !h-[120px] opacity-100 object-contain scale-[1.18]",
+        imageClassName: "!w-[140px] !h-[120px] !bottom-0 -mr-6 -mb-6 opacity-100 object-contain scale-[1.2]",
       },
     ],
     tabs: [
