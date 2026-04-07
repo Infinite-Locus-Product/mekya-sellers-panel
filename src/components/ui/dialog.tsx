@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { DialogCloseIcon } from "@/assets/icons"
 
@@ -16,6 +17,18 @@ interface DialogContextValue {
 }
 
 const DialogContext = React.createContext<DialogContextValue | undefined>(undefined)
+
+const DialogPortal = ({ children }: { children: React.ReactNode }) => {
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) return null
+
+  return createPortal(children, document.body)
+}
 
 function useDialogContext() {
   const context = React.useContext(DialogContext)
@@ -85,7 +98,10 @@ const DialogOverlay = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
     return (
       <div
         ref={ref}
-        className={cn("fixed inset-0 z-50 bg-black/80 animate-in fade-in-0", className)}
+        className={cn(
+          "fixed inset-0 z-40 h-screen w-screen bg-black/60 animate-in fade-in-0",
+          className
+        )}
         onClick={() => onOpenChange(false)}
         {...props}
       />
@@ -107,7 +123,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     if (!open) return null
 
     return (
-      <>
+      <DialogPortal>
         <DialogOverlay />
         <div
           ref={ref}
@@ -133,7 +149,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
             </button>
           )}
         </div>
-      </>
+      </DialogPortal>
     )
   }
 )

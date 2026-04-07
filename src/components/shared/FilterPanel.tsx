@@ -1,43 +1,8 @@
 "use client"
-
-import { useRef, useEffect } from "react"
-
-/**
- * FilterPanel - A reusable filter component for data tables
- *
- * @example
- * ```tsx
- * import { FilterPanel, type FilterValues } from "@/components/shared"
- *
- * const [isFilterOpen, setIsFilterOpen] = useState(false)
- * const [filters, setFilters] = useState<FilterValues>({
- *   orderStatus: [],
- *   paymentMethod: [],
- *   dateFrom: "",
- *   dateTo: "",
- *   priceMin: "0",
- *   priceMax: "100000",
- * })
- *
- * const handleFilterChange = (newFilters: Partial<FilterValues>) => {
- *   setFilters((prev) => ({ ...prev, ...newFilters }))
- * }
- *
- * return (
- *   <FilterPanel
- *     isOpen={isFilterOpen}
- *     onClose={() => setIsFilterOpen(false)}
- *     onReset={() => setFilters(defaultFilters)}
- *     onApply={() => {}}
- *     filters={filters}
- *     onFilterChange={handleFilterChange}
- *   />
- * )
- * ```
- */
-
+import { ChangeEvent, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { X, Filter, Calendar, RotateCcw, FilterIcon } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 export interface FilterOption {
   value: string
@@ -50,12 +15,14 @@ export interface FilterConfig {
   paymentMethod?: FilterOption[]
   showDateRange?: boolean
   showPriceRange?: boolean
+  timeRange?: FilterOption[]
 }
 
 export interface FilterValues {
   type: string[]
   orderStatus: string[]
   paymentMethod: string[]
+  timeRange: string
   dateFrom: string
   dateTo: string
   priceMin: string
@@ -76,6 +43,8 @@ interface FilterPanelProps {
   resetAsLink?: boolean
 }
 
+type DateInputWithPicker = HTMLInputElement & { showPicker?: () => void }
+
 const DEFAULT_CONFIG: FilterConfig = {
   type: [
     { value: "b2b", label: "B2B" },
@@ -94,6 +63,79 @@ const DEFAULT_CONFIG: FilterConfig = {
   ],
   showDateRange: true,
   showPriceRange: true,
+}
+
+function toIsoDate(value: string) {
+  const cleaned = value.split("/").map((part) => part.trim())
+  if (cleaned.length !== 3) return ""
+  const [day, month, year] = cleaned
+  if (!day || !month || !year) return ""
+  return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`
+}
+
+function toDisplayDate(value: string) {
+  const parts = value.split("-")
+  if (parts.length !== 3) return value
+  const [year, month, day] = parts
+  if (!day || !month || !year) return value
+  return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`
+}
+
+interface DatePickerFieldProps {
+  label: string
+  value: string
+  placeholder?: string
+  onChange: (value: string) => void
+}
+
+function DatePickerField({ label, value, placeholder, onChange }: DatePickerFieldProps) {
+  const nativeRef = useRef<DateInputWithPicker>(null)
+
+  const handleIconClick = () => {
+    if (!nativeRef.current) return
+    const isoValue = toIsoDate(value)
+    if (isoValue) {
+      nativeRef.current.value = isoValue
+    }
+    if (nativeRef.current.showPicker) {
+      nativeRef.current.showPicker()
+      return
+    }
+    nativeRef.current.focus()
+  }
+
+  const handleDateChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onChange(toDisplayDate(event.target.value))
+  }
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-muted-foreground">{label}</label>
+      <div className="relative">
+        <input
+          type="text"
+          placeholder={placeholder}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full rounded-md border border-input bg-[#E8E9E8] pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <button
+          type="button"
+          onClick={handleIconClick}
+          className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded"
+          aria-label="Open calendar"
+        >
+          <Calendar className="h-4 w-4 text-muted-foreground" aria-hidden />
+        </button>
+        <input
+          ref={nativeRef}
+          type="date"
+          className="sr-only"
+          onChange={handleDateChange}
+        />
+      </div>
+    </div>
+  )
 }
 
 export function FilterPanel({
@@ -131,6 +173,10 @@ export function FilterPanel({
     onFilterChange({ [category]: newValues })
   }
 
+  const handleTimeRangeChange = (value: string) => {
+    onFilterChange({ timeRange: value })
+  }
+
   const handleInputChange = (field: keyof FilterValues, value: string) => {
     onFilterChange({ [field]: value })
   }
@@ -142,7 +188,7 @@ export function FilterPanel({
       ref={panelRef}
       className="absolute right-0 top-0 w-80 bg-background border-l shadow-lg z-20 max-h-[calc(100vh-300px)] overflow-y-auto"
     >
-      <div className="p-6 space-y-6">
+      <div className="p-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
           <FilterIcon className="h-4 w-4 mr-2" />
@@ -172,57 +218,29 @@ export function FilterPanel({
           </div>
         </div>
 
-        {mergedConfig.type && mergedConfig.type.length > 0 && (
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium ">Type</h4>
-            <div className="flex flex-wrap gap-22">
-              {mergedConfig.type.map((option) => (
-                <label key={option.value} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filters.type.includes(option.value)}
-                    onChange={() => handleCheckboxChange("type", option.value)}
-                    className="h-4 w-4 rounded border-input"
-                  />
-                  <span className="text-sm">{option.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {mergedConfig.orderStatus && mergedConfig.orderStatus.length > 0 && (
+        {mergedConfig.timeRange && mergedConfig.timeRange.length > 0 && (
           <div className="space-y-3">
-            <h4 className="text-sm font-medium">Order Status</h4>
+            <h4 className="text-sm font-medium">Time Range</h4>
             <div className="grid grid-cols-2 gap-2">
-              {mergedConfig.orderStatus.map((status) => (
-                <label key={status.value} className="flex items-center gap-2 cursor-pointer">
+              {mergedConfig.timeRange.map((option) => (
+                <label
+                  key={option.value}
+                  className={cn(
+                    "flex items-center gap-2 px-3 text-sm transition-colors cursor-pointer",
+                    filters.timeRange === option.value &&
+                      "border-primary text-primary"
+                  )}
+                >
                   <input
-                    type="checkbox"
-                    checked={filters.orderStatus.includes(status.value)}
-                    onChange={() => handleCheckboxChange("orderStatus", status.value)}
-                    className="h-4 w-4 rounded border-input"
+                    type="radio"
+                    name="filter-time-range"
+                    value={option.value}
+                    checked={filters.timeRange === option.value}
+                    onChange={() => handleTimeRangeChange(option.value)}
+                    className="h-4 w-4 cursor-pointer accent-primary"
                   />
-                  <span className="text-sm">{status.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {mergedConfig.paymentMethod && mergedConfig.paymentMethod.length > 0 && (
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium">Payment Method</h4>
-            <div className="grid grid-cols-2 gap-2">
-              {mergedConfig.paymentMethod.map((method) => (
-                <label key={method.value} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filters.paymentMethod.includes(method.value)}
-                    onChange={() => handleCheckboxChange("paymentMethod", method.value)}
-                    className="h-4 w-4 rounded border-input"
-                  />
-                  <span className="text-sm">{method.label}</span>
+                  {option.label}
                 </label>
               ))}
             </div>
@@ -232,62 +250,23 @@ export function FilterPanel({
         {mergedConfig.showDateRange && (
           <div className="space-y-3">
             <h4 className="text-sm font-medium">Date Range</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">From</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="dd/mm/yyyy"
-                    value={filters.dateFrom}
-                    onChange={(e) => handleInputChange("dateFrom", e.target.value)}
-                    className="w-full rounded-md border border-input bg-[#E8E9E8] pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  <Calendar className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">To</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="dd/mm/yyyy"
-                    value={filters.dateTo}
-                    onChange={(e) => handleInputChange("dateTo", e.target.value)}
-                    className="w-full rounded-md border border-input bg-[#E8E9E8] pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  <Calendar className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden />
-                </div>
-              </div>
-            </div>
+        <div className="grid grid-cols-2 gap-2">
+          <DatePickerField
+            label="From"
+            value={filters.dateFrom}
+            placeholder="dd/mm/yyyy"
+            onChange={(value) => handleInputChange("dateFrom", value)}
+          />
+          <DatePickerField
+            label="To"
+            value={filters.dateTo}
+            placeholder="dd/mm/yyyy"
+            onChange={(value) => handleInputChange("dateTo", value)}
+          />
+        </div>
           </div>
         )}
 
-        {mergedConfig.showPriceRange && (
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium">Price Range</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Min</label>
-                <input
-                  type="number"
-                  value={filters.priceMin}
-                  onChange={(e) => handleInputChange("priceMin", e.target.value)}
-                  className="w-full rounded-md border border-input bg-[#E8E9E8] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Max</label>
-                <input
-                  type="number"
-                  value={filters.priceMax}
-                  onChange={(e) => handleInputChange("priceMax", e.target.value)}
-                  className="w-full rounded-md border border-input bg-[#E8E9E8] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-            </div>
-          </div>
-        )}
 
         <Button variant="default" className="w-full bg-primary text-primary-foreground" onClick={onApply}>
           Apply

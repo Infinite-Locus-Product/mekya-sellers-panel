@@ -26,11 +26,15 @@ import {
   type SalesChannelDataPoint,
 } from "@/app/(pages)/dashboard/_components/tabs"
 import type { HeatmapDataPoint } from "@/components/analytics"
+import { CustomerTypeAnalyticsModal, type CustomerTypeDataPoint } from "@/components/modals/CustomerTypeAnalyticsModal"
+import { HistoricalTrendsAnalyticsModal } from "@/components/modals/HistoricalTrendsAnalyticsModal"
+import { OrderTypeAnalyticsModal } from "@/components/modals/OrderTypeAnalyticsModal"
+import { ImpactOfPromotionsAnalyticsModal } from "@/components/modals/ImpactOfPromotionsAnalyticsModal"
 import { Download, BarChart3, Info, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TabList } from "@/components/shared/TabList"
 import { Filter, DEFAULT_FILTER_VALUES } from "@/components/shared/Filter"
-import type { FilterValues } from "@/components/shared/FilterPanel"
+import type { FilterValues, FilterOption } from "@/components/shared/FilterPanel"
 
 export type { TimeRange } from "@/components/shared/TimeRangeSelector"
 
@@ -101,7 +105,23 @@ export interface AnalyticsModalConfig {
   sellerGrowthData?: MultiLineChartDataPoint[]
   engagementData?: UserGrowthDataPoint[]
   userSegmentData?: { buyersCount: number; sellersCount: number }
+  customerTypeData?: CustomerTypeDataPoint[]
   contentClassName?: string
+}
+
+const ANALYTICS_TIME_RANGE_OPTIONS: FilterOption[] = [
+  { value: "today", label: "Today" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "last_7_days", label: "Last 7 Days" },
+  { value: "last_30_days", label: "Last 30 Days" },
+  { value: "this_month", label: "This Month" },
+  { value: "last_month", label: "Last Month" },
+  { value: "last_3_months", label: "Last 3 Months" },
+  { value: "custom_range", label: "Custom Range" },
+]
+
+const ANALYTICS_FILTER_CONFIG = {
+  timeRange: ANALYTICS_TIME_RANGE_OPTIONS,
 }
 
 interface AnalyticsModalProps {
@@ -126,6 +146,14 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
 
   const renderTabContent = () => {
     switch (activeTab) {
+      case "historical-trends":
+        return (
+          <HistoricalTrendsAnalyticsModal
+            chartData={config.chartData}
+            chartTitle={config.chartTitle}
+            chartIcon={ChartIcon}
+          />
+        )
       case "sales-trends":
       case "bounce-rate-trends":
         return (
@@ -146,6 +174,12 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
         )
       case "sales-channel":
         return <SalesChannelTab data={config.salesChannelData} />
+      case "customer-type":
+        return <CustomerTypeAnalyticsModal data={config.customerTypeData} />
+      case "order-type":
+        return <OrderTypeAnalyticsModal />
+      case "impact-of-promotions":
+        return <ImpactOfPromotionsAnalyticsModal />
       case "color-trends":
         return <ColorTrendsTab data={config.colorTrendsData} chartData={config.chartData} />
       case "device-heatmap":
@@ -225,7 +259,7 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
             <div className="overflow-hidden rounded-lg  bg-[#F2F2F2]">
               <div className="flex items-center gap-2 bg-[#F2F2F2] px-4 py-3">
                 <div
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted-foreground/15"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center"
                   aria-hidden
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -311,7 +345,13 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
               onValueChange={setActiveTab}
               variant="pill"
             />
-            
+            <Filter
+              filters={filters}
+              onFilterChange={handleFilterChange}
+              onReset={handleFilterReset}
+              onApply={handleFilterApply}
+              config={ANALYTICS_FILTER_CONFIG}
+            />
           </div>
 
           {renderTabContent()}

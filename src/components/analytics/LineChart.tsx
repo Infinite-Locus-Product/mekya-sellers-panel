@@ -89,12 +89,38 @@ interface LineChartProps {
 export function LineChart({
   data,
   className,
+  timeRange,
   color = LINE_COLOR,
 }: LineChartProps) {
-  const chartData = data.map((item) => ({
-    name: item.label,
-    value: item.value,
-  }))
+  const chartData = data.map((item, index) => {
+    let newLabel = item.label
+    switch (timeRange) {
+      case "1D": {
+        const hours = ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"]
+        newLabel = hours[index % hours.length] || item.label
+        break
+      }
+      case "1W": {
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        newLabel = days[index % days.length] || item.label
+        break
+      }
+      case "1M": {
+        const dates = ["00", "10", "20", "30"]
+        newLabel = dates[index % dates.length] || item.label
+        break
+      }
+      case "1Y": {
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        newLabel = months[index % months.length] || item.label
+        break
+      }
+    }
+    return {
+      name: newLabel,
+      value: item.value,
+    }
+  })
   const idSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
   const gradientId = `line-area-${idSuffix || "default"}`
   const gradientTopColor = lightenHexColor(color, 0.3)
