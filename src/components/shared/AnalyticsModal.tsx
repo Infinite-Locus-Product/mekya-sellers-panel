@@ -26,10 +26,20 @@ import {
   type SalesChannelDataPoint,
 } from "@/app/(pages)/dashboard/_components/tabs"
 import type { HeatmapDataPoint } from "@/components/analytics"
-import { CustomerTypeAnalyticsModal, type CustomerTypeDataPoint } from "@/components/modals/CustomerTypeAnalyticsModal"
-import { HistoricalTrendsAnalyticsModal } from "@/components/modals/HistoricalTrendsAnalyticsModal"
-import { OrderTypeAnalyticsModal } from "@/components/modals/OrderTypeAnalyticsModal"
-import { ImpactOfPromotionsAnalyticsModal } from "@/components/modals/ImpactOfPromotionsAnalyticsModal"
+import { CustomerTypeAnalyticsModal, type CustomerTypeDataPoint } from "@/components/modals/average-order-value/tabs/CustomerTypeAnalyticsModal"
+import { HistoricalTrendsAnalyticsModal } from "@/components/modals/average-order-value/tabs/HistoricalTrendsAnalyticsModal"
+import { OrderTypeAnalyticsModal } from "@/components/modals/average-order-value/tabs/OrderTypeAnalyticsModal"
+import { ImpactOfPromotionsAnalyticsModal } from "@/components/modals/average-order-value/tabs/ImpactOfPromotionsAnalyticsModal"
+
+import { HistoricalTrendsTab as TOHistoricalTrendsTab } from "@/components/modals/total-orders/tabs/HistoricalTrendsTab"
+import { OrderTypeTab as TOOrderTypeTab } from "@/components/modals/total-orders/tabs/OrderTypeTab"
+import { OrderStatusTab as TOOrderStatusTab } from "@/components/modals/total-orders/tabs/OrderStatusTab"
+import { CustomerTypeTab as TOCustomerTypeTab } from "@/components/modals/total-orders/tabs/CustomerTypeTab"
+
+import { HistoricalTrendsTab as ROHistoricalTrendsTab } from "@/components/modals/return-orders/tabs/HistoricalTrendsTab"
+import { ReturnReasonsTab as ROReturnReasonsTab } from "@/components/modals/return-orders/tabs/ReturnReasonsTab"
+import { ProductCategoriesTab as ROProductCategoriesTab } from "@/components/modals/return-orders/tabs/ProductCategoriesTab"
+import { ReturnRateTab as ROReturnRateTab } from "@/components/modals/return-orders/tabs/ReturnRateTab"
 import { Download, BarChart3, Info, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TabList } from "@/components/shared/TabList"
@@ -180,6 +190,38 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
         return <OrderTypeAnalyticsModal />
       case "impact-of-promotions":
         return <ImpactOfPromotionsAnalyticsModal />
+
+      // Total Orders Tabs
+      case "to-historical-trends":
+        return (
+          <TOHistoricalTrendsTab
+            chartData={config.chartData}
+            chartTitle={config.chartTitle}
+            chartIcon={ChartIcon}
+          />
+        )
+      case "to-order-type":
+        return <TOOrderTypeTab />
+      case "to-order-status":
+        return <TOOrderStatusTab />
+      case "to-customer-type":
+        return <TOCustomerTypeTab />
+
+      // Return Orders Tabs
+      case "ro-historical-trends":
+        return (
+          <ROHistoricalTrendsTab
+            chartData={config.chartData}
+            chartTitle={config.chartTitle}
+            chartIcon={ChartIcon}
+          />
+        )
+      case "ro-return-reasons":
+        return <ROReturnReasonsTab />
+      case "ro-product-categories":
+        return <ROProductCategoriesTab />
+      case "ro-return-rate":
+        return <ROReturnRateTab />
       case "color-trends":
         return <ColorTrendsTab data={config.colorTrendsData} chartData={config.chartData} />
       case "device-heatmap":

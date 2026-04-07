@@ -1,11 +1,12 @@
-export { SalesAnalyticsModal } from "./SalesAnalyticsModal"
-export { ActiveUsersAnalyticsModal } from "./ActiveUsersAnalyticsModal"
-export { AverageOrderValueModal } from "./AverageOrderValueModal"
-export { AnalyticsModal } from "./AnalyticsModal"
+export { SalesAnalyticsModal } from "./sales/SalesAnalyticsModal"
+export { AverageOrderValueModal } from "./average-order-value/AverageOrderValueModal"
+export { TotalOrdersAnalyticsModal } from "./total-orders/TotalOrdersAnalyticsModal"
+export { ReturnOrdersAnalyticsModal } from "./return-orders/ReturnOrdersAnalyticsModal"
+export { AnalyticsModal } from "../shared/AnalyticsModal"
 export type {
   AnalyticsModalConfig,
   KpiDefinitionPurposeConfig,
   KPICardConfig,
   TabConfig,
   TimeRange,
-} from "./AnalyticsModal"
+} from "../shared/AnalyticsModal"
