@@ -1,27 +1,21 @@
-"use client";
+"use client"
 
-import { Download, FileText } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Download, FileSpreadsheet, FileText } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@/components/ui/dropdown-menu"
 
 export interface ExportDropdownProps {
- 
-  onExportPDF?: () => void;
- 
-  onExportCSV?: () => void;
-  
-  variant?: "default" | "outline" | "ghost" | "secondary";
- 
-  size?: "default" | "sm" | "lg" | "icon";
-  
-  className?: string;
-
-  showIcon?: boolean;
+  onExportPDF?: () => void
+  onExportCSV?: () => void
+  variant?: "default" | "outline" | "ghost" | "secondary"
+  size?: "default" | "sm" | "lg" | "icon"
+  className?: string
+  showIcon?: boolean
 }
 
 export function ExportDropdown({
@@ -32,44 +26,32 @@ export function ExportDropdown({
   className,
   showIcon = true,
 }: ExportDropdownProps) {
-  const hasAnyExport = onExportPDF || onExportCSV;
-
-  if (!hasAnyExport) {
-    return null;
-  }
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant={variant}
-          size={size}
-          className={`gap-2 ${className || ""}`}
-        >
-          {showIcon && <Download className="h-4 w-4" />}
+        <Button variant={variant} size={size} className={["gap-2", className].filter(Boolean).join(" ")}>
+          {showIcon && <Download className="h-4 w-4" aria-hidden />}
           Export
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        {onExportPDF && (
-          <DropdownMenuItem
-            onClick={onExportPDF}
-            className="cursor-pointer focus:bg-accent"
-          >
-            <FileText className="h-4 w-4 mr-2 text-muted-foreground" />
-            <span>Export PDF</span>
-          </DropdownMenuItem>
-        )}
-        {onExportCSV && (
-          <DropdownMenuItem
-            onClick={onExportCSV}
-            className="cursor-pointer focus:bg-accent"
-          >
-            <FileText className="h-4 w-4 mr-2 text-muted-foreground" />
-            <span>Export CSV</span>
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem
+          onClick={onExportPDF}
+          disabled={!onExportPDF}
+          className="cursor-pointer focus:bg-accent"
+        >
+          <FileText className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <span>Export PDF</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onExportCSV}
+          disabled={!onExportCSV}
+          className="cursor-pointer focus:bg-accent"
+        >
+          <FileSpreadsheet className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <span>Export CSV</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }

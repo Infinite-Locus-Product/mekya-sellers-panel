@@ -46,7 +46,7 @@ function CustomTooltip({ active, payload, label }: TooltipProps<number, string>)
             <span className="text-sm text-muted-foreground">
               {String(entry.name ?? entry.dataKey ?? "Value")} :{" "}
               <span className="text-foreground">
-                ₹{formatNumber(typeof entry.value === "number" ? entry.value : Number(entry.value ?? 0))}
+                {formatNumber(typeof entry.value === "number" ? entry.value : Number(entry.value ?? 0))} Orders
               </span>
             </span>
           </div>
@@ -126,8 +126,8 @@ export function OrderTypeTab({ data }: OrderTypeTabProps) {
       <CardHeader className="px-0 pt-0">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-foreground font-medium text-lg">
-            <TrendingUp className="h-5 w-5" />
-            AOV by Order Type (B2B/B2C)
+            <TrendingUp className="h-5 w-5"/>
+            Type (B2B/B2C)
           </CardTitle>
           <div className="flex items-center gap-2">
             <Select
@@ -145,7 +145,7 @@ export function OrderTypeTab({ data }: OrderTypeTabProps) {
               <SelectContent>
                 <SelectItem value="Line Chart">
                   <span className="flex items-center gap-2 text-sm text-foreground">
-                    <LineChartIcon className="h-4 w-4 shrink-0" />
+                    <LineChartIcon className="h-4 w-4 shrink-0"/>
                     Line Chart
                   </span>
                 </SelectItem>

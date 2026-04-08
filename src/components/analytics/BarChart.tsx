@@ -9,7 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts"
 
 export type ChartDataPoint = {
@@ -79,20 +78,21 @@ export function BarChart({ data, timeRange, className, color = "#76B7FF" }: BarC
               }}
             />
             <Tooltip
+              cursor={{ fill: "rgba(0, 0, 0, 0.03)" }}
               contentStyle={{
-                backgroundColor: "hsl(var(--background))",
-                border: "1px solid hsl(var(--border))",
+                backgroundColor: "#ffffff",
+                border: "1px solid #e5e7eb",
                 borderRadius: "6px",
-                color: "hsl(var(--foreground))",
+                color: "#111827",
                 boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
               }}
-              labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: "4px" }}
+              labelStyle={{ color: "#6b7280", marginBottom: "4px" }}
               formatter={(value: number | string) => [
                 typeof value === "number" ? formatNumber(value) : value,
                 "Sales",
               ]}
             />
-            <Bar dataKey="value" fill={color} radius={[6, 6, 0, 0]} barSize={42} />
+            <Bar dataKey="value" fill={color} radius={[6, 6, 0, 0]} barSize={42} activeBar={false} />
           </RechartsBarChart>
         </ResponsiveContainer>
       </div>

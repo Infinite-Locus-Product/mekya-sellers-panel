@@ -2,7 +2,6 @@
 
 import { useState, type ReactNode } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogCloseButton } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
 import { SubKpiCard } from "@/components/shared/SubKpiCard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -40,11 +39,12 @@ import { HistoricalTrendsTab as ROHistoricalTrendsTab } from "@/components/modal
 import { ReturnReasonsTab as ROReturnReasonsTab } from "@/components/modals/return-orders/tabs/ReturnReasonsTab"
 import { ProductCategoriesTab as ROProductCategoriesTab } from "@/components/modals/return-orders/tabs/ProductCategoriesTab"
 import { ReturnRateTab as ROReturnRateTab } from "@/components/modals/return-orders/tabs/ReturnRateTab"
-import { Download, BarChart3, Info, type LucideIcon } from "lucide-react"
+import { BarChart3, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TabList } from "@/components/shared/TabList"
 import { Filter, DEFAULT_FILTER_VALUES } from "@/components/shared/Filter"
 import type { FilterValues, FilterOption } from "@/components/shared/FilterPanel"
+import { ExportDropdown } from "@/components/shared/ExportDropdown"
 
 export type { TimeRange } from "@/components/shared/TimeRangeSelector"
 
@@ -152,6 +152,32 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
   }
   const handleFilterReset = () => setFilters(DEFAULT_FILTER_VALUES)
   const handleFilterApply = () => {
+  }
+
+  const downloadFile = (filename: string, mimeType: string, content: string) => {
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportPDF = () => {
+    window.print()
+  }
+
+  const handleExportCSV = () => {
+    const rows: Array<[string, string]> = [
+      ["title", config.title],
+      ["tab", activeTab],
+      ["filters", JSON.stringify(filters)],
+    ]
+    const csv = ["key,value", ...rows.map(([k, v]) => `${JSON.stringify(k)},${JSON.stringify(v)}`)].join("\n")
+    downloadFile("analytics-export.csv", "text/csv;charset=utf-8", csv)
   }
 
   const renderTabContent = () => {
@@ -281,14 +307,13 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
           <div className="flex items-center justify-between">
             <DialogTitle className="text-2xl font-bold">{config.title}</DialogTitle>
             <div className="flex items-center gap-2">
-              <Button
+              <ExportDropdown
+                onExportPDF={handleExportPDF}
+                onExportCSV={handleExportCSV}
                 variant="outline"
                 size="sm"
                 className="bg-[#F2F2F2] hover:bg-[#E5E5E5] border-0"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
+              />
               <DialogCloseButton />
             </div>
           </div>

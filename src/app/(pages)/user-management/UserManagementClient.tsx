@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { KPICard } from "@/components/shared/KPICard";
 import { Button } from "@/components/ui/button";
+import { ExportDropdown } from "@/components/shared/ExportDropdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   SalesAnalyticsModal,
@@ -14,7 +15,6 @@ import {
 import {
   History,
   Plus,
-  Download,
   Search,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
@@ -91,6 +91,46 @@ export function UserManagementClient({ initialUsers }: UserManagementClientProps
     if (selected) next.add(row);
     else next.delete(row);
     setSelectedRows(next);
+  };
+
+  const downloadFile = (filename: string, mimeType: string, content: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPDF = () => {
+    toast.info("Preparing PDF export…");
+    window.print();
+  };
+
+  const handleExportCSV = () => {
+    const rowsToExport = selectedRows.size ? Array.from(selectedRows) : filteredUsers;
+    const header = ["id", "vendor", "email", "role", "status", "onboardingdate"];
+    const csvLines = [
+      header.join(","),
+      ...rowsToExport.map((u) =>
+        [
+          u.id,
+          u.vendor,
+          u.email,
+          u.role,
+          u.status,
+          u.onboardingdate,
+        ]
+          .map((cell) => JSON.stringify(String(cell ?? "")))
+          .join(",")
+      ),
+    ];
+
+    downloadFile("users-export.csv", "text/csv;charset=utf-8", csvLines.join("\n"));
+    toast.success("CSV downloaded");
   };
 
   const columns: TableColumn<UserRow>[] = [
@@ -223,10 +263,12 @@ export function UserManagementClient({ initialUsers }: UserManagementClientProps
               </CardTitle>
               <p className="text-sm text-muted-foreground mt-1">Monitor users in real-time</p>
             </div>
-            <Button variant="outline" size="lg">
-              <Download className="h-4 w-4" aria-hidden />
-              Export CSV
-            </Button>
+            <ExportDropdown
+              onExportPDF={handleExportPDF}
+              onExportCSV={handleExportCSV}
+              variant="outline"
+              size="lg"
+            />
           </div>
         </CardHeader>
         <CardContent>
