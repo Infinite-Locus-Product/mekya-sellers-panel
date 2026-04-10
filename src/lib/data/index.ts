@@ -8,7 +8,6 @@ export { getReturns, getReturnDetails, type ReturnItem } from "./returns";
 export { getCustomOrders, type CustomOrder } from "./customOrders";
 export { getProfile, type ProfilePageData } from "./profile";
 export {
-  getCmsSections,
   getCmsLandingData,
   getCmsOverviewData,
   type CmsSection,

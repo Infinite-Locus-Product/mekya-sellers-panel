@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 
-export const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 10;
 
 export interface UsePaginationOptions {
   totalCount: number;

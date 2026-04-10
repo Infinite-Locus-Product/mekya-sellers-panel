@@ -14,10 +14,8 @@ import {
   KpiReturnUndoIcon,
 } from "@/assets/icons";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
-import type { AllOrder, PaymentStatus } from "@/lib/tableTypes";
+import type { AllOrder } from "@/lib/tableTypes";
 import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge";
-import { DEFAULT_FILTER_VALUES } from "@/components/shared/Filter";
-import type { FilterValues } from "@/components/shared/FilterPanel";
 import { Pagination } from "@/components/shared/Pagination";
 import { usePagination } from "@/hooks";
 import { SalesAnalyticsModal } from "@/components/modals/sales/SalesAnalyticsModal";
@@ -37,41 +35,13 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
   const [isAverageOrderValueModalOpen, setIsAverageOrderValueModalOpen] = useState(false);
   const [isTotalOrdersModalOpen, setIsTotalOrdersModalOpen] = useState(false);
   const [isReturnOrdersModalOpen, setIsReturnOrdersModalOpen] = useState(false);
-  const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTER_VALUES);
-  const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateRange, setDateRange] = useState("last_30_days");
 
   const filteredOrders = useMemo(() => {
-    let filtered = [...initialOrders];
-    const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      filtered = filtered.filter(
-        (order) =>
-          order.id.toLowerCase().includes(q) ||
-          order.vendor.toLowerCase().includes(q)
-      );
-    }
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((order) => order.status === statusFilter);
-    }
-    if (filters.orderStatus.length > 0) {
-      filtered = filtered.filter((order) => filters.orderStatus.includes(order.status));
-    }
-    if (filters.paymentMethod.length > 0) {
-      const paymentMap: Record<string, PaymentStatus> = { card: "Paid", bank_transfer: "Paid", upi: "Paid", cash: "Pending" };
-      filtered = filtered.filter((order) =>
-        filters.paymentMethod.some((method) => order.paymentStatus === paymentMap[method])
-      );
-    }
-    const minPrice = parseFloat(filters.priceMin) || 0;
-    const maxPrice = parseFloat(filters.priceMax) || Infinity;
-    filtered = filtered.filter((order) => {
-      const amount = parseFloat(order.amount.replace(/[₹,]/g, "")) || 0;
-      return amount >= minPrice && amount <= maxPrice;
-    });
-    return filtered;
-  }, [initialOrders, searchQuery, statusFilter, filters]);
+    if (statusFilter === "all") return initialOrders;
+    return initialOrders.filter((order) => order.status === statusFilter);
+  }, [initialOrders, statusFilter]);
 
   const pagination = usePagination({ totalCount: filteredOrders.length, pageSize: PAGE_SIZE });
   const paginatedOrders = useMemo(

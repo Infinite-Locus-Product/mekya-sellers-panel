@@ -13,6 +13,7 @@ export const DEFAULT_ORDER_FILTER_VALUES: FilterValues = {
   type: [],
   orderStatus: [],
   paymentMethod: [],
+  timeRange: "custom_range",
   dateFrom: "",
   dateTo: "",
   priceMin: "0",

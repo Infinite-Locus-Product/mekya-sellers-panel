@@ -61,10 +61,6 @@ const mockTopBlogs: TopBlogEntry[] = [
   { imageSrc: "/images/cms5.jpg", title: "Complete Guide to Sustainable Fashion", views: 12500 },
 ];
 
-export async function getCmsSections(): Promise<CmsSection[]> {
-  return Promise.resolve(mockSections);
-}
-
 export interface CmsLandingData {
   sections: CmsSection[];
   totalPages: number;
