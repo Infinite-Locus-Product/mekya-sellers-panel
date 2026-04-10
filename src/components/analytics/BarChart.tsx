@@ -9,7 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts"
 
 export type ChartDataPoint = {
@@ -25,10 +24,28 @@ interface BarChartProps {
 }
 
 export function BarChart({ data, timeRange, className, color = "#76B7FF" }: BarChartProps) {
-  const chartData = data.map((item) => ({
-    name: item.label,
-    value: item.value,
-  }))
+  const chartData = (() => {
+    switch (timeRange) {
+      case "1D": {
+        const hours = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
+        return data.slice(0, hours.length).map((item, index) => ({ name: hours[index], value: item.value }))
+      }
+      case "1W": {
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return data.slice(0, days.length).map((item, index) => ({ name: days[index], value: item.value }))
+      }
+      case "1M": {
+        const dates = ["05", "10", "15", "20", "25", "30"]
+        return data.slice(0, dates.length).map((item, index) => ({ name: dates[index], value: item.value }))
+      }
+      case "1Y": {
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return data.slice(0, months.length).map((item, index) => ({ name: months[index], value: item.value }))
+      }
+      default:
+        return data.map(item => ({ name: item.label, value: item.value }))
+    }
+  })()
 
   return (
     <div className={cn("flex flex-col gap-3 rounded-lg w-full", className)}>
@@ -61,20 +78,21 @@ export function BarChart({ data, timeRange, className, color = "#76B7FF" }: BarC
               }}
             />
             <Tooltip
+              cursor={{ fill: "rgba(0, 0, 0, 0.03)" }}
               contentStyle={{
-                backgroundColor: "hsl(var(--background))",
-                border: "1px solid hsl(var(--border))",
+                backgroundColor: "#ffffff",
+                border: "1px solid #e5e7eb",
                 borderRadius: "6px",
-                color: "hsl(var(--foreground))",
+                color: "#111827",
                 boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
               }}
-              labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: "4px" }}
+              labelStyle={{ color: "#6b7280", marginBottom: "4px" }}
               formatter={(value: number | string) => [
                 typeof value === "number" ? formatNumber(value) : value,
                 "Sales",
               ]}
             />
-            <Bar dataKey="value" fill={color} radius={[6, 6, 0, 0]} barSize={42} />
+            <Bar dataKey="value" fill={color} radius={[6, 6, 0, 0]} barSize={42} activeBar={false} />
           </RechartsBarChart>
         </ResponsiveContainer>
       </div>

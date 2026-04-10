@@ -340,7 +340,6 @@ export function CustomOrdersClient({ initialOrders }: CustomOrdersClientProps) {
       </Card>
 
       <SalesAnalyticsModal open={isSalesModalOpen} onOpenChange={setIsSalesModalOpen} />
-      <ActiveUsersAnalyticsModal open={isActiveUsersModalOpen} onOpenChange={setIsActiveUsersModalOpen} />
       <CustomizationRequestDetailModal
         open={selectedOrder !== null}
         onOpenChange={(open) => !open && setSelectedOrder(null)}

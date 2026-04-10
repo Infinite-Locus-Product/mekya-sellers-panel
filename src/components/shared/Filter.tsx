@@ -12,6 +12,7 @@ export const DEFAULT_FILTER_VALUES: FilterValues = {
   type: [],
   orderStatus: [],
   paymentMethod: [],
+  timeRange: "custom_range",
   dateFrom: "",
   dateTo: "",
   priceMin: "0",
@@ -104,7 +105,7 @@ function FilterTrigger({
         variant={variant}
         size={size}
         onClick={onClick}
-        className={cn("bg-white border-0 shadow-none hover:bg-gray-50 hover:border-0", className)}
+        className={cn("bg-[#E4E4E4] border-0 shadow-none hover:bg-gray-50 hover:border-0", className)}
       >
         <FilterIcon className="h-4 w-4 mr-2" />
         {label}
@@ -118,7 +119,6 @@ function FilterTrigger({
   )
 }
 
-/** Reusable Filter: trigger button + FilterPanel. Wrap toolbar + table in a container with position relative so the panel anchors correctly. */
 export const Filter = Object.assign(FilterRoot, {
   Trigger: FilterTrigger,
 })

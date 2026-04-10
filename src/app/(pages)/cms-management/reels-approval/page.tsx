@@ -31,7 +31,6 @@ import {
   Bell,
   Check,
   CircleStop,
-  Play,
   Pencil,
   ArrowLeft,
   Calendar,

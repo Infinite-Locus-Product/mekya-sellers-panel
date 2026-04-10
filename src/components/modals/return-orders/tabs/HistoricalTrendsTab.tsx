@@ -16,17 +16,17 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-interface SalesTrendsTabProps {
+export interface HistoricalTrendsTabProps {
   chartData?: ChartDataPoint[]
   chartTitle?: string
   chartIcon?: React.ComponentType<{ className?: string }>
 }
 
-export function SalesTrendsTab({
+export function HistoricalTrendsTab({
   chartData,
-  chartTitle = "Sales Trends Over Time",
+  chartTitle = "Historical Trends",
   chartIcon: ChartIconProp,
-}: SalesTrendsTabProps) {
+}: HistoricalTrendsTabProps) {
   const isSalesTrends = chartTitle === "Sales Trends Over Time"
   const ChartIcon = isSalesTrends ? SalesTrendsTitleIcon : (ChartIconProp ?? BarChart3)
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>("1Y")
@@ -53,10 +53,10 @@ export function SalesTrendsTab({
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="bg-transparent border-0 shadow-none">
+      <CardHeader className="px-0 pt-0">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-foreground">
             {ChartIcon ? (
               <span className={cn("flex shrink-0", isSalesTrends ? "h-5 w-[17px]" : "h-5 w-5")}>
                 <ChartIcon className="h-full w-full" />
@@ -75,7 +75,7 @@ export function SalesTrendsTab({
             >
               <SelectTrigger className="w-[140px] bg-white border-border px-3" size="sm">
                 <SelectValue />
-                <div className="h-4 w-px bg-gray-300" aria-hidden />
+                <div className="h-4 w-px bg-gray-300 flex-shrink-0" aria-hidden />
               </SelectTrigger>
               <SelectContent>
                 {CHART_TYPE_OPTIONS.map(({ value, Icon }) => (
@@ -99,10 +99,10 @@ export function SalesTrendsTab({
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="relative h-96">
+      <CardContent className="px-0 pb-0">
+        <div className="relative h-96 bg-white/70 p-6">
           {isChartLoading ? (
-            <div className="flex h-96 items-center justify-center rounded-lg bg-muted/30">
+            <div className="flex h-full items-center justify-center rounded-lg bg-muted/30">
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
                 <LoadingSpinner />
                 <p className="text-sm font-medium">Loading...</p>
@@ -111,9 +111,9 @@ export function SalesTrendsTab({
           ) : chartData ? (
             renderChart()
           ) : (
-            <div className="flex h-96 flex-col items-center justify-center rounded-lg bg-muted/30 text-center space-y-3">
+            <div className="flex h-full flex-col items-center justify-center rounded-lg bg-muted/30 text-center space-y-3">
               <ChartIcon className="h-12 w-12 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Sales Trends (placeholder)</p>
+              <p className="text-sm text-muted-foreground">Historical Trends (placeholder)</p>
               <p className="text-xs text-muted-foreground">
                 Data range: Jan - Dec ({activeTimeRange} view)
               </p>

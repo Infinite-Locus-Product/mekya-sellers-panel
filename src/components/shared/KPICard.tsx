@@ -13,19 +13,15 @@ interface KPICardProps {
   subtitle?: string
   change?: string
   changeType?: "positive" | "negative"
-  /** When "text", change is shown as plain text without pill background or trend icon */
   changeDisplay?: "pill" | "text"
   icon?: ReactNode
   variant?: KPICardVariant
   className?: string
   onClick?: () => void
-  /** When set, the card navigates as a link (keyboard-accessible). */
   href?: string
   background?: string
   image?: string
-  /** Optional class for the image/decoration element */
   imageClassName?: string
-  /** When true, subtitle is rendered below the value (and change) for layout like: title → value → subtitle */
   subtitleBelowValue?: boolean
 }
 
@@ -36,6 +32,9 @@ const variantStyles: Record<KPICardVariant, string> = {
   info: "bg-gradient-to-br from-[var(--info-light)] to-[var(--info-light)]/50",
   accent: "bg-gradient-to-br from-[var(--accent-light)] to-[var(--accent-light)]/50",
 }
+
+const DEFAULT_IMAGE_CLASS =
+  "absolute -right-7 -bottom-5 w-[120px] h-[120px] md:w-[120px] md:h-[110px] sm:w-[110px] sm:h-[100px] object-contain select-none pointer-events-none kpi-spin-img scale-[1.2]"
 
 export function KPICard({
   title,
@@ -123,11 +122,11 @@ export function KPICard({
         {image && (
           <Image
             src={image}
-            width={110}
-            height={110}
-            sizes="(max-width: 640px) 75px, (max-width: 768px) 90px, 110px"
+            width={120}
+            height={120}
+            sizes="(max-width: 640px) 90px, (max-width: 768px) 110px, 140px"
             alt="KPI Card Decoration"
-            className="absolute -right-7 -bottom-6 w-[110px] h-[110px] md:w-[90px] md:h-[90px] sm:w-[75px] sm:h-[75px] object-contain select-none pointer-events-none kpi-spin-img scale-120"
+            className={cn(DEFAULT_IMAGE_CLASS, imageClassName)}
             draggable="false"
             unoptimized
           />

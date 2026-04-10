@@ -2,7 +2,6 @@
 
 import { useState, type ReactNode } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogCloseButton } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
 import { SubKpiCard } from "@/components/shared/SubKpiCard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -26,11 +25,26 @@ import {
   type SalesChannelDataPoint,
 } from "@/app/(pages)/dashboard/_components/tabs"
 import type { HeatmapDataPoint } from "@/components/analytics"
-import { Download, BarChart3, Info, type LucideIcon } from "lucide-react"
+import { CustomerTypeAnalyticsModal, type CustomerTypeDataPoint } from "@/components/modals/average-order-value/tabs/CustomerTypeAnalyticsModal"
+import { HistoricalTrendsAnalyticsModal } from "@/components/modals/average-order-value/tabs/HistoricalTrendsAnalyticsModal"
+import { OrderTypeAnalyticsModal } from "@/components/modals/average-order-value/tabs/OrderTypeAnalyticsModal"
+import { ImpactOfPromotionsAnalyticsModal } from "@/components/modals/average-order-value/tabs/ImpactOfPromotionsAnalyticsModal"
+
+import { HistoricalTrendsTab as TOHistoricalTrendsTab } from "@/components/modals/total-orders/tabs/HistoricalTrendsTab"
+import { OrderTypeTab as TOOrderTypeTab } from "@/components/modals/total-orders/tabs/OrderTypeTab"
+import { OrderStatusTab as TOOrderStatusTab } from "@/components/modals/total-orders/tabs/OrderStatusTab"
+import { CustomerTypeTab as TOCustomerTypeTab } from "@/components/modals/total-orders/tabs/CustomerTypeTab"
+
+import { HistoricalTrendsTab as ROHistoricalTrendsTab } from "@/components/modals/return-orders/tabs/HistoricalTrendsTab"
+import { ReturnReasonsTab as ROReturnReasonsTab } from "@/components/modals/return-orders/tabs/ReturnReasonsTab"
+import { ProductCategoriesTab as ROProductCategoriesTab } from "@/components/modals/return-orders/tabs/ProductCategoriesTab"
+import { ReturnRateTab as ROReturnRateTab } from "@/components/modals/return-orders/tabs/ReturnRateTab"
+import { BarChart3, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TabList } from "@/components/shared/TabList"
 import { Filter, DEFAULT_FILTER_VALUES } from "@/components/shared/Filter"
-import type { FilterValues } from "@/components/shared/FilterPanel"
+import type { FilterValues, FilterOption } from "@/components/shared/FilterPanel"
+import { ExportDropdown } from "@/components/shared/ExportDropdown"
 
 export type { TimeRange } from "@/components/shared/TimeRangeSelector"
 
@@ -101,7 +115,23 @@ export interface AnalyticsModalConfig {
   sellerGrowthData?: MultiLineChartDataPoint[]
   engagementData?: UserGrowthDataPoint[]
   userSegmentData?: { buyersCount: number; sellersCount: number }
+  customerTypeData?: CustomerTypeDataPoint[]
   contentClassName?: string
+}
+
+const ANALYTICS_TIME_RANGE_OPTIONS: FilterOption[] = [
+  { value: "today", label: "Today" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "last_7_days", label: "Last 7 Days" },
+  { value: "last_30_days", label: "Last 30 Days" },
+  { value: "this_month", label: "This Month" },
+  { value: "last_month", label: "Last Month" },
+  { value: "last_3_months", label: "Last 3 Months" },
+  { value: "custom_range", label: "Custom Range" },
+]
+
+const ANALYTICS_FILTER_CONFIG = {
+  timeRange: ANALYTICS_TIME_RANGE_OPTIONS,
 }
 
 interface AnalyticsModalProps {
@@ -124,8 +154,42 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
   const handleFilterApply = () => {
   }
 
+  const downloadFile = (filename: string, mimeType: string, content: string) => {
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportPDF = () => {
+    window.print()
+  }
+
+  const handleExportCSV = () => {
+    const rows: Array<[string, string]> = [
+      ["title", config.title],
+      ["tab", activeTab],
+      ["filters", JSON.stringify(filters)],
+    ]
+    const csv = ["key,value", ...rows.map(([k, v]) => `${JSON.stringify(k)},${JSON.stringify(v)}`)].join("\n")
+    downloadFile("analytics-export.csv", "text/csv;charset=utf-8", csv)
+  }
+
   const renderTabContent = () => {
     switch (activeTab) {
+      case "historical-trends":
+        return (
+          <HistoricalTrendsAnalyticsModal
+            chartData={config.chartData}
+            chartTitle={config.chartTitle}
+            chartIcon={ChartIcon}
+          />
+        )
       case "sales-trends":
       case "bounce-rate-trends":
         return (
@@ -146,6 +210,44 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
         )
       case "sales-channel":
         return <SalesChannelTab data={config.salesChannelData} />
+      case "customer-type":
+        return <CustomerTypeAnalyticsModal data={config.customerTypeData} />
+      case "order-type":
+        return <OrderTypeAnalyticsModal />
+      case "impact-of-promotions":
+        return <ImpactOfPromotionsAnalyticsModal />
+
+      // Total Orders Tabs
+      case "to-historical-trends":
+        return (
+          <TOHistoricalTrendsTab
+            chartData={config.chartData}
+            chartTitle={config.chartTitle}
+            chartIcon={ChartIcon}
+          />
+        )
+      case "to-order-type":
+        return <TOOrderTypeTab />
+      case "to-order-status":
+        return <TOOrderStatusTab />
+      case "to-customer-type":
+        return <TOCustomerTypeTab />
+
+      // Return Orders Tabs
+      case "ro-historical-trends":
+        return (
+          <ROHistoricalTrendsTab
+            chartData={config.chartData}
+            chartTitle={config.chartTitle}
+            chartIcon={ChartIcon}
+          />
+        )
+      case "ro-return-reasons":
+        return <ROReturnReasonsTab />
+      case "ro-product-categories":
+        return <ROProductCategoriesTab />
+      case "ro-return-rate":
+        return <ROReturnRateTab />
       case "color-trends":
         return <ColorTrendsTab data={config.colorTrendsData} chartData={config.chartData} />
       case "device-heatmap":
@@ -205,14 +307,13 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
           <div className="flex items-center justify-between">
             <DialogTitle className="text-2xl font-bold">{config.title}</DialogTitle>
             <div className="flex items-center gap-2">
-              <Button
+              <ExportDropdown
+                onExportPDF={handleExportPDF}
+                onExportCSV={handleExportCSV}
                 variant="outline"
                 size="sm"
                 className="bg-[#F2F2F2] hover:bg-[#E5E5E5] border-0"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
+              />
               <DialogCloseButton />
             </div>
           </div>
@@ -225,7 +326,7 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
             <div className="overflow-hidden rounded-lg  bg-[#F2F2F2]">
               <div className="flex items-center gap-2 bg-[#F2F2F2] px-4 py-3">
                 <div
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted-foreground/15"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center"
                   aria-hidden
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -311,7 +412,13 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
               onValueChange={setActiveTab}
               variant="pill"
             />
-            
+            <Filter
+              filters={filters}
+              onFilterChange={handleFilterChange}
+              onReset={handleFilterReset}
+              onApply={handleFilterApply}
+              config={ANALYTICS_FILTER_CONFIG}
+            />
           </div>
 
           {renderTabContent()}

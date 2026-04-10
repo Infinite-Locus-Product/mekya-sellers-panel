@@ -21,31 +21,6 @@ export type ChartDataPoint = {
 
 const LINE_COLOR = "#2563eb"
 
-function parseHexColor(value: string) {
-  if (!value.startsWith("#")) return null
-  const normalized = value.slice(1)
-  const expanded =
-    normalized.length === 3
-      ? normalized
-          .split("")
-          .map((char) => char + char)
-          .join("")
-      : normalized
-  if (expanded.length !== 6 || /[^0-9a-fA-F]/.test(expanded)) return null
-  return {
-    r: parseInt(expanded.slice(0, 2), 16),
-    g: parseInt(expanded.slice(2, 4), 16),
-    b: parseInt(expanded.slice(4, 6), 16),
-  }
-}
-
-function lightenHexColor(hex: string, amount: number) {
-  const rgb = parseHexColor(hex)
-  if (!rgb) return hex
-  const lightenChannel = (channel: number) => Math.min(255, Math.round(channel + (255 - channel) * amount))
-  return `rgb(${lightenChannel(rgb.r)}, ${lightenChannel(rgb.g)}, ${lightenChannel(rgb.b)})`
-}
-
 /** Vertical dashed line at cursor band (Recharts passes x, y, width, height). */
 function VerticalLineCursor(props: {
   x?: number
@@ -89,16 +64,33 @@ interface LineChartProps {
 export function LineChart({
   data,
   className,
+  timeRange,
   color = LINE_COLOR,
 }: LineChartProps) {
-  const chartData = data.map((item) => ({
-    name: item.label,
-    value: item.value,
-  }))
+  const chartData = (() => {
+    switch (timeRange) {
+      case "1D": {
+        const hours = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
+        return data.slice(0, hours.length).map((item, index) => ({ name: hours[index], value: item.value }))
+      }
+      case "1W": {
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return data.slice(0, days.length).map((item, index) => ({ name: days[index], value: item.value }))
+      }
+      case "1M": {
+        const dates = ["05", "10", "15", "20", "25", "30"]
+        return data.slice(0, dates.length).map((item, index) => ({ name: dates[index], value: item.value }))
+      }
+      case "1Y": {
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return data.slice(0, months.length).map((item, index) => ({ name: months[index], value: item.value }))
+      }
+      default:
+        return data.map(item => ({ name: item.label, value: item.value }))
+    }
+  })()
   const idSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
   const gradientId = `line-area-${idSuffix || "default"}`
-  const gradientTopColor = lightenHexColor(color, 0.3)
-  const gradientMidColor = lightenHexColor(color, 0.15)
 
   const renderTooltipContent: TooltipProps<number, string>["content"] = ({ active, payload, label }) => {
     if (!active || !payload?.length || label == null) return null
@@ -169,9 +161,9 @@ export function LineChart({
             />
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={gradientTopColor} stopOpacity={0.9} />
-                <stop offset="55%" stopColor={gradientMidColor} stopOpacity={0.55} />
-                <stop offset="100%" stopColor={color} stopOpacity={0} />
+                <stop offset="-0.19%" stopColor="rgba(0, 122, 255, 0)" />
+                <stop offset="59.55%" stopColor="rgba(118, 183, 255, 0.38)" />
+                <stop offset="100%" stopColor="rgba(118, 183, 255, 0)" />
               </linearGradient>
             </defs>
             <Area
@@ -179,6 +171,7 @@ export function LineChart({
               dataKey="value"
               stroke="none"
               fill={`url(#${gradientId})`}
+              fillOpacity={1}
               baseValue={0}
             />
             <Line

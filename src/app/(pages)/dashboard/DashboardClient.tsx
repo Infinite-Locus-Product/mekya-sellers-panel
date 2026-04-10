@@ -20,10 +20,10 @@ import { DEFAULT_FILTER_VALUES } from "@/components/shared/Filter";
 import type { FilterValues } from "@/components/shared/FilterPanel";
 import { Pagination } from "@/components/shared/Pagination";
 import { usePagination } from "@/hooks";
-import { SalesAnalyticsModal } from "@/components/modals/SalesAnalyticsModal";
-import { ActiveUsersAnalyticsModal } from "@/components/modals/ActiveUsersAnalyticsModal";
-import { BounceRateAnalyticsModal } from "./_components/modals/BounceRateAnalyticsModal";
-import { ActiveSellersAnalyticsModal } from "./_components/modals/ActiveSellersAnalyticsModal";
+import { SalesAnalyticsModal } from "@/components/modals/sales/SalesAnalyticsModal";
+import { AverageOrderValueModal } from "@/components/modals/average-order-value/AverageOrderValueModal";
+import { TotalOrdersAnalyticsModal } from "@/components/modals/total-orders/TotalOrdersAnalyticsModal";
+import { ReturnOrdersAnalyticsModal } from "@/components/modals";
 import { AppSelect } from "@/components/shared/AppSelect";
 
 const PAGE_SIZE = 10;
@@ -34,9 +34,9 @@ export interface DashboardClientProps {
 
 export function DashboardClient({ initialOrders }: DashboardClientProps) {
   const [isSalesModalOpen, setIsSalesModalOpen] = useState(false);
-  const [isActiveUsersModalOpen, setIsActiveUsersModalOpen] = useState(false);
-  const [isBounceRateModalOpen, setIsBounceRateModalOpen] = useState(false);
-  const [isActiveSellersModalOpen, setIsActiveSellersModalOpen] = useState(false);
+  const [isAverageOrderValueModalOpen, setIsAverageOrderValueModalOpen] = useState(false);
+  const [isTotalOrdersModalOpen, setIsTotalOrdersModalOpen] = useState(false);
+  const [isReturnOrdersModalOpen, setIsReturnOrdersModalOpen] = useState(false);
   const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTER_VALUES);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -152,7 +152,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <KPICard
           title="Total Sales"
-          value="₹50,000,"
+          value="₹50,000"
           change="+12.5% From Last Month"
           changeType="positive"
           icon={<KpiSaleTrendIcon />}
@@ -166,17 +166,17 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
           change="+12.5% From Last Month"
           changeType="positive"
           icon={<KpiRupeeFlowIcon />}
-          onClick={() => setIsActiveUsersModalOpen(true)}
+          onClick={() => setIsAverageOrderValueModalOpen(true)}
           background="linear-gradient(100.31deg, #FFF4DE -0.8%, #FFF0D3 63.46%, #FFD177 101.6%)"
           image="/kpi/kpi2.png"
         />
         <KPICard
           title="Total Orders"
-          value="32.9%"
-          change="-2.1% From Last Month"
-          changeType="negative"
+          value="580"
+          change="+102% From Last Month"
+          changeType="positive"
           icon={<KpiOrdersBagIcon />}
-          onClick={() => setIsBounceRateModalOpen(true)}
+          onClick={() => setIsTotalOrdersModalOpen(true)}
           background="linear-gradient(100.25deg, #FFB9B9 0.53%, #FFE6E7 55.38%, #FF7477 101.5%)"
           image="/kpi/kpi3.png"
         />
@@ -186,7 +186,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
           change="+12.5% From Last Month"
           changeType="positive"
           icon={<KpiReturnUndoIcon />}
-          onClick={() => setIsActiveSellersModalOpen(true)}
+          onClick={() => setIsReturnOrdersModalOpen(true)}
           background="linear-gradient(100.63deg, #DFE3FF -1.02%, #FEEDFF 50.22%, #FF8EE4 101.47%)"
           image="/kpi/kpi4.png"
         />
@@ -228,9 +228,12 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
       </Card>
 
       <SalesAnalyticsModal open={isSalesModalOpen} onOpenChange={setIsSalesModalOpen} />
-      <ActiveUsersAnalyticsModal open={isActiveUsersModalOpen} onOpenChange={setIsActiveUsersModalOpen} />
-      <BounceRateAnalyticsModal open={isBounceRateModalOpen} onOpenChange={setIsBounceRateModalOpen} />
-      <ActiveSellersAnalyticsModal open={isActiveSellersModalOpen} onOpenChange={setIsActiveSellersModalOpen} />
+      <AverageOrderValueModal
+        open={isAverageOrderValueModalOpen}
+        onOpenChange={setIsAverageOrderValueModalOpen}
+      />
+      <TotalOrdersAnalyticsModal open={isTotalOrdersModalOpen} onOpenChange={setIsTotalOrdersModalOpen} />
+      <ReturnOrdersAnalyticsModal open={isReturnOrdersModalOpen} onOpenChange={setIsReturnOrdersModalOpen} />
     </div>
   );
 }

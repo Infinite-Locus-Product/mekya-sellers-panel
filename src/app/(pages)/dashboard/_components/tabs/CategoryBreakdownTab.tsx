@@ -1,44 +1,33 @@
 "use client"
 
-import { CategoryBreakdown } from "@/components/analytics/CategoryBreakdown"
-import type { ChartDataPoint } from "@/components/analytics"
+import { CategoryBreakdown, type ChartDataPoint } from "@/components/analytics"
+
+export interface CategoryBreakdownDataPoint {
+  category: string
+  value: number
+  percentage: number
+  color: string
+}
 
 interface CategoryBreakdownTabProps {
-  data?: Array<{
-    category: string
-    value: number
-    percentage: number
-    color: string
-  }>
-  pieChartData?: ChartDataPoint[]
-  performanceData?: Array<{
-    category: string
-    percentage: number
-  }>
+  data?: CategoryBreakdownDataPoint[]
 }
 
-const DEFAULT_PIE_CHART_DATA: ChartDataPoint[] = [
-  { label: "Men", value: 20 },
-  { label: "Boys", value: 40 },
-  { label: "Women", value: 25 },
-  { label: "Girls", value: 15 },
-]
+export function CategoryBreakdownTab({ data }: CategoryBreakdownTabProps) {
+  const pieChartData: ChartDataPoint[] | undefined = data?.map((item) => ({
+    label: item.category,
+    value: item.percentage,
+  }))
 
-const DEFAULT_PERFORMANCE_DATA = [
-  { category: "Ethnic", percentage: 45 },
-  { category: "Casual", percentage: 45 },
-  { category: "Formal", percentage: 45 },
-  { category: "Streetwear", percentage: 45 },
-  { category: "Activewear", percentage: 45 },
-  { category: "Sleep & Lounge", percentage: 45 },
-]
+  const performanceData =
+    data?.map((item) => ({ category: item.category, percentage: item.percentage })) ?? undefined
 
-export function CategoryBreakdownTab({
-  data,
-  pieChartData = DEFAULT_PIE_CHART_DATA,
-  performanceData = DEFAULT_PERFORMANCE_DATA,
-}: CategoryBreakdownTabProps) {
   return (
-    <CategoryBreakdown data={data} pieChartData={pieChartData} performanceData={performanceData} />
+    <CategoryBreakdown
+      data={data}
+      pieChartData={pieChartData}
+      performanceData={performanceData}
+    />
   )
 }
+

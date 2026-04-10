@@ -34,7 +34,7 @@ const iconClass = "h-5 w-5 shrink-0"
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardIcon },
-  { label: "User Management", href: "/user-management", icon: UserManagementIcon },
+  { label: "Product Listing", href: "/user-management", icon: UserManagementIcon },
   {
     label: "Order Management",
     href: "/order-management",
