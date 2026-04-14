@@ -3,7 +3,7 @@
 import { useId } from "react"
 import { cn, formatCurrencyINR } from "@/lib/utils"
 import {
-  LineChart as RechartsLineChart,
+  ComposedChart,
   Line,
   XAxis,
   YAxis,
@@ -13,6 +13,7 @@ import {
   Tooltip,
   type TooltipProps,
 } from "recharts"
+import { LineChartAreaGradient } from "./LineChartAreaGradient"
 
 export type ChartDataPoint = {
   label: string
@@ -129,7 +130,7 @@ export function LineChart({
     >
       <div className="w-full flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <RechartsLineChart
+          <ComposedChart
             data={chartData}
             margin={{ top: 16, right: 16, left: 8, bottom: 8 }}
           >
@@ -160,11 +161,7 @@ export function LineChart({
               wrapperStyle={{ outline: "none" }}
             />
             <defs>
-              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="-0.19%" stopColor="rgba(0, 122, 255, 0)" />
-                <stop offset="59.55%" stopColor="rgba(118, 183, 255, 0.38)" />
-                <stop offset="100%" stopColor="rgba(118, 183, 255, 0)" />
-              </linearGradient>
+              <LineChartAreaGradient id={gradientId} lineColor={color} />
             </defs>
             <Area
               type="basis"
@@ -187,7 +184,7 @@ export function LineChart({
                 strokeWidth: 2,
               }}
             />
-          </RechartsLineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </div>

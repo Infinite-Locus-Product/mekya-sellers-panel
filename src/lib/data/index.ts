@@ -4,6 +4,12 @@
 
 export { getOrders, getOrderDetails } from "./orders";
 export { getUsers } from "./users";
+export {
+  getProducts,
+  getB2BProducts,
+  getEditableProductDraftById,
+  type EditableProductDraft,
+} from "./products";
 export { getReturns, getReturnDetails, type ReturnItem } from "./returns";
 export { getCustomOrders, type CustomOrder } from "./customOrders";
 export { getProfile, type ProfilePageData } from "./profile";

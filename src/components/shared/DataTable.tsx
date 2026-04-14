@@ -23,6 +23,8 @@ interface DataTableProps<T> {
   selectedRows?: Set<T>
   /** Optional class for body rows (e.g. "bg-white") */
   bodyRowClassName?: string
+  /** Alternate row background for long tables (e.g. listing views) */
+  striped?: boolean
 }
 
 function isStandaloneCheckboxColumn<T>(col: TableColumn<T>): boolean {
@@ -40,6 +42,7 @@ export function DataTable<T>({
   onSelectRow,
   selectedRows = new Set(),
   bodyRowClassName,
+  striped = false,
 }: DataTableProps<T>) {
   const [sortConfig, setSortConfig] = useState<{
     key: string | keyof T
@@ -189,6 +192,7 @@ export function DataTable<T>({
                   key={getRowKey(row, rowIdx)}
                   className={cn(
                     "border-b hover:bg-muted/50",
+                    striped && (rowIdx % 2 === 1 ? "bg-[#F5F5F5]" : "bg-white"),
                     isSelected && "bg-muted/30",
                     bodyRowClassName
                   )}

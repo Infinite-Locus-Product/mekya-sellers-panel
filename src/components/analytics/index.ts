@@ -1,4 +1,5 @@
 export { LineChart } from "./LineChart"
+export { LineChartAreaGradient, colorForLineAreaFill } from "./LineChartAreaGradient"
 export { BarChart } from "./BarChart"
 export { PieChart } from "./PieChart"
 export { CategoryBreakdown } from "./CategoryBreakdown"

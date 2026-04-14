@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useId } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp } from "lucide-react"
 import { LoadingSpinner, TimeRangeSelector } from "@/components/shared"
@@ -14,16 +14,21 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  LineChart as RechartsLineChart,
+  ComposedChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
+  Area,
   Tooltip,
   type TooltipProps,
 } from "recharts"
+import { LineChartAreaGradient } from "@/components/analytics"
 import { cn, formatNumber } from "@/lib/utils"
+
+const DISCOUNTED_STROKE = "#1E293B"
+const REGULAR_STROKE = "#15803D"
 
 export interface ImpactOfPromotionsDataPoint {
   label: string
@@ -62,6 +67,9 @@ export function ImpactOfPromotionsAnalyticsModal({ data }: ImpactOfPromotionsAna
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>("1Y")
   const [isChartLoading, setIsChartLoading] = useState(false)
   const [activeChartType, setActiveChartType] = useState<string>("Line Chart")
+  const chartAreaSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
+  const gDiscounted = `ip-disc-${chartAreaSuffix || "d"}`
+  const gRegular = `ip-reg-${chartAreaSuffix || "r"}`
 
   const defaultData: ImpactOfPromotionsDataPoint[] = [
     { label: "Jan", discountedOrders: 3300, regularOrders: 2500 },
@@ -173,7 +181,7 @@ export function ImpactOfPromotionsAnalyticsModal({ data }: ImpactOfPromotionsAna
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <RechartsLineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="hsl(var(--muted))"
@@ -197,23 +205,43 @@ export function ImpactOfPromotionsAnalyticsModal({ data }: ImpactOfPromotionsAna
                   tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
                 />
                 <Tooltip cursor={{ stroke: '#52525b', strokeWidth: 1, strokeDasharray: '3 3' }} content={CustomTooltip} />
+                <defs>
+                  <LineChartAreaGradient id={gDiscounted} lineColor={DISCOUNTED_STROKE} />
+                  <LineChartAreaGradient id={gRegular} lineColor={REGULAR_STROKE} />
+                </defs>
+                <Area
+                  type="monotone"
+                  dataKey="Discounted Orders"
+                  stroke="none"
+                  fill={`url(#${gDiscounted})`}
+                  fillOpacity={1}
+                  baseValue={0}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Regular Orders"
+                  stroke="none"
+                  fill={`url(#${gRegular})`}
+                  fillOpacity={1}
+                  baseValue={0}
+                />
                 <Line
                   type="monotone"
                   dataKey="Discounted Orders"
-                  stroke="#1E293B"
+                  stroke={DISCOUNTED_STROKE}
                   strokeWidth={2}
-                  dot={{ r: 3, fill: "white", stroke: "#1E293B", strokeWidth: 2 }}
-                  activeDot={{ r: 6, fill: "#f1f5f9", stroke: "#1E293B", strokeWidth: 4 }}
+                  dot={{ r: 3, fill: "white", stroke: DISCOUNTED_STROKE, strokeWidth: 2 }}
+                  activeDot={{ r: 6, fill: "#f1f5f9", stroke: DISCOUNTED_STROKE, strokeWidth: 4 }}
                 />
                 <Line
                   type="monotone"
                   dataKey="Regular Orders"
-                  stroke="#15803D"
+                  stroke={REGULAR_STROKE}
                   strokeWidth={2}
-                  dot={{ r: 3, fill: "white", stroke: "#15803D", strokeWidth: 2 }}
-                  activeDot={{ r: 6, fill: "#f1f5f9", stroke: "#15803D", strokeWidth: 4 }}
+                  dot={{ r: 3, fill: "white", stroke: REGULAR_STROKE, strokeWidth: 2 }}
+                  activeDot={{ r: 6, fill: "#f1f5f9", stroke: REGULAR_STROKE, strokeWidth: 4 }}
                 />
-              </RechartsLineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           )}
         </div>

@@ -13,7 +13,12 @@ var el=document.body;
 if(!el||!el.attributes)return;
 for(var i=el.attributes.length-1;i>=0;i--){
 var n=el.attributes[i].name;
-if(/^__processed_[\w-]+__$/.test(n)||n==="cz-shortcut-listen")el.removeAttribute(n);
+if(
+/^__processed_[\w-]+__$/.test(n)||
+n==="cz-shortcut-listen"||
+n==="bis_register"||
+n.indexOf("bis_")===0
+)el.removeAttribute(n);
 }
 }
 strip();

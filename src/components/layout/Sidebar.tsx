@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState, useCallback } from "react"
-import { ChevronUp, List, RotateCcw, Palette } from "lucide-react"
+import { ChevronUp, List, RotateCcw, Palette, Package } from "lucide-react"
 import Image from "next/image"
 import {
   DashboardIcon,
@@ -34,7 +34,16 @@ const iconClass = "h-5 w-5 shrink-0"
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardIcon },
-  { label: "Product Listing", href: "/user-management", icon: UserManagementIcon },
+  {
+    label: "Product Listing",
+    href: "/product-listing",
+    icon: Package,
+    subItems: [
+      { label: "B2C", href: "/product-listing", icon: Package },
+      { label: "B2B", href: "/product-listing/b2b", icon: Package },
+    ],
+  },
+  { label: "User Management", href: "/user-management", icon: UserManagementIcon },
   {
     label: "Order Management",
     href: "/order-management",
@@ -62,7 +71,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [expandedItems, setExpandedItems] = useState<string[]>(["/order-management"])
+  const [expandedItems, setExpandedItems] = useState<string[]>(["/product-listing", "/order-management"])
 
   const toggleExpanded = useCallback((href: string) => {
     setExpandedItems((prev) =>
@@ -75,7 +84,12 @@ export function Sidebar() {
   const isSubItemActive = useCallback(
     (subItemHref: string) => {
       if (pathname === subItemHref) return true
-      if (subItemHref === "/order-management" || subItemHref === "/cms-management") return false
+      if (
+        subItemHref === "/product-listing" ||
+        subItemHref === "/order-management" ||
+        subItemHref === "/cms-management"
+      )
+        return false
       return pathname.startsWith(`${subItemHref}/`)
     },
     [pathname]

@@ -1,16 +1,19 @@
 "use client"
 
+import { useId } from "react"
 import { cn, formatNumber } from "@/lib/utils"
 import {
-  LineChart as RechartsLineChart,
+  ComposedChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
+  Area,
   Tooltip,
   type TooltipProps,
 } from "recharts"
+import { LineChartAreaGradient } from "./LineChartAreaGradient"
 
 export type MultiLineChartDataPoint = {
   label: string
@@ -46,7 +49,16 @@ function CustomTooltip({ active, payload, label }: TooltipProps<number, string>)
   return null
 }
 
+const TOTAL_COLOR = "#76B7FF"
+const ACTIVE_COLOR = "#FFD700"
+const NEW_COLOR = "#DC143C"
+
 export function MultiLineChart({ data, timeRange, className }: MultiLineChartProps) {
+  const idSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
+  const gTotal = `ml-total-${idSuffix || "t"}`
+  const gActive = `ml-active-${idSuffix || "a"}`
+  const gNew = `ml-new-${idSuffix || "n"}`
+
   const chartData = data.map((item, index) => {
     let newLabel = item.label
     switch (timeRange) {
@@ -88,7 +100,7 @@ export function MultiLineChart({ data, timeRange, className }: MultiLineChartPro
     >
       <div className="w-full" style={{ height: "400px" }}>
         <ResponsiveContainer width="100%" height="100%">
-          <RechartsLineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+          <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="hsl(var(--muted-foreground))"
@@ -110,31 +122,60 @@ export function MultiLineChart({ data, timeRange, className }: MultiLineChartPro
               tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
             />
             <Tooltip content={CustomTooltip} />
+            <defs>
+              <LineChartAreaGradient id={gTotal} lineColor={TOTAL_COLOR} />
+              <LineChartAreaGradient id={gActive} lineColor={ACTIVE_COLOR} />
+              <LineChartAreaGradient id={gNew} lineColor={NEW_COLOR} />
+            </defs>
+            <Area
+              type="monotone"
+              dataKey="Total Seller"
+              stroke="none"
+              fill={`url(#${gTotal})`}
+              fillOpacity={1}
+              baseValue={0}
+            />
+            <Area
+              type="monotone"
+              dataKey="Active Seller"
+              stroke="none"
+              fill={`url(#${gActive})`}
+              fillOpacity={1}
+              baseValue={0}
+            />
+            <Area
+              type="monotone"
+              dataKey="New Seller"
+              stroke="none"
+              fill={`url(#${gNew})`}
+              fillOpacity={1}
+              baseValue={0}
+            />
             <Line
               type="monotone"
               dataKey="Total Seller"
-              stroke="#76B7FF"
+              stroke={TOTAL_COLOR}
               strokeWidth={2}
-              dot={{ r: 4, fill: "#76B7FF" }}
+              dot={{ r: 4, fill: TOTAL_COLOR }}
               activeDot={{ r: 6 }}
             />
             <Line
               type="monotone"
               dataKey="Active Seller"
-              stroke="#FFD700"
+              stroke={ACTIVE_COLOR}
               strokeWidth={2}
-              dot={{ r: 4, fill: "#FFD700" }}
+              dot={{ r: 4, fill: ACTIVE_COLOR }}
               activeDot={{ r: 6 }}
             />
             <Line
               type="monotone"
               dataKey="New Seller"
-              stroke="#DC143C"
+              stroke={NEW_COLOR}
               strokeWidth={2}
-              dot={{ r: 4, fill: "#DC143C" }}
+              dot={{ r: 4, fill: NEW_COLOR }}
               activeDot={{ r: 6 }}
             />
-          </RechartsLineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </div>
