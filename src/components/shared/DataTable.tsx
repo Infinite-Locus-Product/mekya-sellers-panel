@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils"
 import { ReactNode, useState } from "react"
-import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react"
+import { TableSortIcon } from "@/assets/icons/shared"
 
 export type TableColumn<T> = {
   key: keyof T | string
@@ -21,9 +21,7 @@ interface DataTableProps<T> {
   onSelectAll?: (selected: boolean) => void
   onSelectRow?: (row: T, selected: boolean) => void
   selectedRows?: Set<T>
-  /** Optional class for body rows (e.g. "bg-white") */
   bodyRowClassName?: string
-  /** Alternate row background for long tables (e.g. listing views) */
   striped?: boolean
 }
 
@@ -33,7 +31,6 @@ function isStandaloneCheckboxColumn<T>(col: TableColumn<T>): boolean {
   return Boolean(col.checkbox && headerEmpty && !col.sortable && !col.cell)
 }
 
-/** Generic sortable table with optional row selection (checkboxes). Supports custom cell renderers and amount-style sort. */
 export function DataTable<T>({
   columns,
   data,
@@ -69,8 +66,6 @@ export function DataTable<T>({
     sortedData.sort((a, b) => {
       const aValue: T[keyof T] = a[key]
       const bValue: T[keyof T] = b[key]
-
-      // Amount strings: strip ₹ and commas for numeric sort
       if (typeof aValue === "string" && aValue.includes("₹")) {
         const aNum = parseFloat(aValue.replace(/[₹,]/g, "")) || 0
         const bNum = parseFloat(String(bValue).replace(/[₹,]/g, "")) || 0
@@ -101,22 +96,23 @@ export function DataTable<T>({
   const renderSortableHeaderButton = (col: TableColumn<T>) => {
     const isSorted = sortConfig?.key === col.key
     const sortDirection = isSorted ? sortConfig.direction : null
+    const sortState = sortDirection === "asc" ? "asc" : sortDirection === "desc" ? "desc" : "none"
 
     return (
       <button
         type="button"
         onClick={() => handleSort(col.key)}
-        className="flex items-center gap-1 hover:text-foreground"
+        className={cn(
+          "inline-flex w-full min-w-0 items-center gap-2 text-foreground transition-colors",
+          "rounded-sm px-0.5 py-1 -my-1 hover:bg-black/[0.06] hover:text-foreground",
+          col.align === "right" && "justify-end text-right",
+          col.align === "center" && "justify-center text-center",
+          (col.align === "left" || !col.align) && "justify-start text-left"
+        )}
         aria-label={`Sort by ${String(col.header)} ${sortDirection === "asc" ? "ascending" : sortDirection === "desc" ? "descending" : ""}`.trim()}
       >
-        {col.header}
-        {sortDirection === "asc" ? (
-          <ArrowUp className="h-3 w-3" />
-        ) : sortDirection === "desc" ? (
-          <ArrowDown className="h-3 w-3" />
-        ) : (
-          <ArrowUpDown className="h-3 w-3 opacity-50" />
-        )}
+        <span className="min-w-0">{col.header}</span>
+        <TableSortIcon state={sortState} className="shrink-0" />
       </button>
     )
   }
@@ -164,7 +160,7 @@ export function DataTable<T>({
               <th
                 key={String(col.key)}
                 className={cn(
-                  "p-3 text-xs font-medium bg-[#E8E9E8]",
+                  "p-3 font-normal bg-[#E8E9E8]",
                   getAlignClass(col.align),
                   col.className
                 )}

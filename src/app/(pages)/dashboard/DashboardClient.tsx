@@ -9,7 +9,6 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Clock } from "lucide-react";
 import {
   KpiSaleTrendIcon,
-  KpiRupeeFlowIcon,
   KpiOrdersBagIcon,
   KpiReturnUndoIcon,
 } from "@/assets/icons";
@@ -123,7 +122,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         <KPICard
           title="Total Sales"
           value="₹50,000"
-          change="+12.5% From Last Month"
+          change="+12.5% From Previous Period"
           changeType="positive"
           icon={<KpiSaleTrendIcon />}
           onClick={() => setIsSalesModalOpen(true)}
@@ -133,9 +132,17 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         <KPICard
           title="Average Order Value"
           value="1,546"
-          change="+12.5% From Last Month"
+          change="+12.5% From Previous Period"
           changeType="positive"
-          icon={<KpiRupeeFlowIcon />}
+          icon={<svg width="31" height="31" viewBox="0 0 31 31" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M11.3715 28.0516C11.8183 28.0516 12.1805 27.6894 12.1805 27.2426C12.1805 26.7958 11.8183 26.4336 11.3715 26.4336C10.9247 26.4336 10.5625 26.7958 10.5625 27.2426C10.5625 27.6894 10.9247 28.0516 11.3715 28.0516Z" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M22.6996 28.0516C23.1464 28.0516 23.5086 27.6894 23.5086 27.2426C23.5086 26.7958 23.1464 26.4336 22.6996 26.4336C22.2528 26.4336 21.8906 26.7958 21.8906 27.2426C21.8906 27.6894 22.2528 28.0516 22.6996 28.0516Z" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M4.89844 10.2539H8.13436L10.5613 24.0066H23.505" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M10.5633 20.7695H23.1753C23.2688 20.7696 23.3595 20.7372 23.4319 20.6779C23.5042 20.6186 23.5538 20.5361 23.5722 20.4444L25.0284 13.1636C25.0401 13.1049 25.0387 13.0443 25.0242 12.9862C25.0097 12.9281 24.9824 12.8739 24.9445 12.8276C24.9065 12.7814 24.8587 12.7441 24.8046 12.7185C24.7505 12.6929 24.6913 12.6796 24.6314 12.6797H8.94531" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M17.0234 10.4492C19.6469 10.4492 21.7734 8.32264 21.7734 5.69922C21.7734 3.07579 19.6469 0.949219 17.0234 0.949219C14.4 0.949219 12.2734 3.07579 12.2734 5.69922C12.2734 8.32264 14.4 10.4492 17.0234 10.4492Z" stroke="black" strokeWidth="0.57" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M15.1264 3.32422H16.5514M16.5514 3.32422H18.9264M16.5514 3.32422C17.0264 3.32422 17.9764 3.60922 17.9764 4.74922M18.9264 4.74922H17.9764M17.9764 4.74922H15.125M17.9764 4.74922C17.9764 5.88922 17.0264 6.17422 16.5514 6.17422H15.125L17.5014 8.07422" stroke="black" strokeWidth="0.57" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          }
           onClick={() => setIsAverageOrderValueModalOpen(true)}
           background="linear-gradient(100.31deg, #FFF4DE -0.8%, #FFF0D3 63.46%, #FFD177 101.6%)"
           image="/kpi/kpi2.png"
@@ -143,7 +150,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         <KPICard
           title="Total Orders"
           value="580"
-          change="+102% From Last Month"
+          change="+102% From Previous Period"
           changeType="positive"
           icon={<KpiOrdersBagIcon />}
           onClick={() => setIsTotalOrdersModalOpen(true)}
@@ -153,7 +160,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         <KPICard
           title="Return Orders"
           value="248"
-          change="+12.5% From Last Month"
+          change="+12.5% From Previous Period"
           changeType="positive"
           icon={<KpiReturnUndoIcon />}
           onClick={() => setIsReturnOrdersModalOpen(true)}

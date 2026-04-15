@@ -43,30 +43,29 @@ const navItems: NavItem[] = [
       { label: "B2B", href: "/product-listing/b2b", icon: Package },
     ],
   },
-  { label: "User Management", href: "/user-management", icon: UserManagementIcon },
-  {
-    label: "Order Management",
-    href: "/order-management",
-    icon: OrderManagementIcon,
-    subItems: [
-      { label: "All Orders", href: "/order-management", icon: List },
-      { label: "Returns & Exchanges", href: "/order-management/returns", icon: RotateCcw },
-      { label: "Custom Orders", href: "/order-management/custom-orders", icon: Palette },
-    ],
-  },
-  {
-    label: "CMS Management",
-    href: "/cms-management",
-    icon: CmsManagementIcon,
-    subItems: [
-      { label: "Overview", href: "/cms-management/overview", icon: BannerIcon },
-      { label: "Banner Management", href: "/cms-management/banner-management", icon: BannerIcon },
-      { label: "Reels Approval", href: "/cms-management/reels-approval", icon: ReelsIcon },
-      { label: "Blog Management", href: "/cms-management/blog-management", icon: BlogManagementIcon },
-      { label: "Contributors", href: "/cms-management/contributors", icon: ContributorsIcon },
-    ],
-  },
-  { label: "Profile", href: "/profile", icon: ProfileIcon },
+  // {
+  //   label: "Order Management",
+  //   href: "/order-management",
+  //   icon: OrderManagementIcon,
+  //   subItems: [
+  //     { label: "All Orders", href: "/order-management", icon: List },
+  //     { label: "Returns & Exchanges", href: "/order-management/returns", icon: RotateCcw },
+  //     { label: "Custom Orders", href: "/order-management/custom-orders", icon: Palette },
+  //   ],
+  // },
+  // {
+  //   label: "CMS Management",
+  //   href: "/cms-management",
+  //   icon: CmsManagementIcon,
+  //   subItems: [
+  //     { label: "Overview", href: "/cms-management/overview", icon: BannerIcon },
+  //     { label: "Banner Management", href: "/cms-management/banner-management", icon: BannerIcon },
+  //     { label: "Reels Approval", href: "/cms-management/reels-approval", icon: ReelsIcon },
+  //     { label: "Blog Management", href: "/cms-management/blog-management", icon: BlogManagementIcon },
+  //     { label: "Contributors", href: "/cms-management/contributors", icon: ContributorsIcon },
+  //   ],
+  // },
+  // { label: "Profile", href: "/profile", icon: ProfileIcon },
 ]
 
 export function Sidebar() {

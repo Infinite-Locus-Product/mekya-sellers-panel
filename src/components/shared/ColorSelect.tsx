@@ -68,7 +68,7 @@ export function ColorSelect({
     <Select value={value} onValueChange={onChange} open={open} onOpenChange={onOpenChange}>
       <SelectTrigger
         className={cn(
-          "h-9 w-full min-w-0 text-left text-foreground data-[placeholder]:text-muted-foreground",
+          "h-9 w-full min-w-0 bg-white text-left text-foreground data-[placeholder]:text-muted-foreground",
           "[&_[data-slot=select-value]]:flex [&_[data-slot=select-value]]:w-full [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:items-center",
           className
         )}

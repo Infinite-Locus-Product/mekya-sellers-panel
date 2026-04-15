@@ -124,13 +124,19 @@ function OrderManagementFilterTrigger({
         variant={variant}
         size={size}
         onClick={onClick}
-        className={cn("bg-white border-0 shadow-none hover:bg-gray-50 hover:border-0", className)}
+        className={cn("bg-[#E8E9E8] border-0 text-[#000000] shadow-none hover:bg-[#dfe1df] hover:border-0", className)}
       >
         <FilterIcon className="h-4 w-4 mr-2" />
         {label}
       </Button>
       {showCloseWhenOpen && isOpen && onClose && (
-        <Button variant="outline" size="icon" onClick={onClose} aria-label="Close filter">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={onClose}
+          aria-label="Close filter"
+          className="bg-[#E8E9E8] border-0 text-[#000000] shadow-none hover:bg-[#dfe1df]"
+        >
           <X className="h-4 w-4" aria-hidden />
         </Button>
       )}

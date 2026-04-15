@@ -145,3 +145,40 @@ export function ReturnExchangeIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   )
 }
+
+/** DataTable sortable column header (14×14); left stroke = descending, right = ascending */
+export function TableSortIcon({
+  state = "none",
+  className,
+  ...props
+}: SVGProps<SVGSVGElement> & { state?: "none" | "asc" | "desc" }) {
+  const downStroke = state === "desc" || state === "none" ? "#000000" : "#A3A3A3"
+  const upStroke = state === "asc" || state === "none" ? "#000000" : "#A3A3A3"
+  return (
+    <svg
+      width={14}
+      height={14}
+      viewBox="0 0 14 14"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      className={className}
+      {...props}
+    >
+      <path
+        d="M4.66406 11.6654V5.83203M4.66406 11.6654L2.91406 9.91536M4.66406 11.6654L6.41406 9.91536"
+        stroke={downStroke}
+        strokeWidth={0.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.33073 2.33203V8.16536M9.33073 2.33203L11.0807 4.08203M9.33073 2.33203L7.58073 4.08203"
+        stroke={upStroke}
+        strokeWidth={0.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}

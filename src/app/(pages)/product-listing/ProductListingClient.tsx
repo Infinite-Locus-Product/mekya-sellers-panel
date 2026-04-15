@@ -15,8 +15,36 @@ import { usePagination } from "@/hooks";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { B2BBasicInfoPopup } from "./_components/B2BBasicInfoPopup";
+import { B2BOrderTypePopup } from "./_components/B2BOrderTypePopup";
+import { B2BPricingPopup } from "./_components/B2BPricingPopup";
+import { B2BDescriptionPopup } from "./_components/B2BDescriptionPopup";
 
 const PAGE_SIZE = 10;
+const B2B_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const B2B_ACCEPTED_IMAGES = new Set(["image/png", "image/jpeg", "image/jpg"]);
+
+const B2B_ORDER_TYPES = [
+  {
+    value: "set_purchase",
+    label: "Set Purchase (Multiple Sizes, Same Color)",
+    description: "Customers buy a set of products in different sizes but same color",
+  },
+  {
+    value: "single_size_bundle",
+    label: "Single Size Bundle (Multiple Colors)",
+    description: "Customers buy products in one size but multiple colors",
+  },
+  {
+    value: "custom_purchase",
+    label: "Custom Purchase (Any Size, Any Color)",
+    description: "Customers can mix and match any available sizes and colors",
+  },
+] as const;
+
+type B2BOrderTypeValue = (typeof B2B_ORDER_TYPES)[number]["value"];
+type B2BWizardStep = "basic_information" | "order_type" | "pricing" | "description";
+type B2BImageItem = { id: string; url: string; file: File };
 
 export interface ProductListingClientProps {
   initialProducts: ProductRow[];
@@ -26,7 +54,7 @@ export interface ProductListingClientProps {
 export function ProductListingClient({
   initialProducts,
   listingVariant = "b2c",
-}: ProductListingClientProps) {
+}: Readonly<ProductListingClientProps>) {
   const router = useRouter();
   const [products, setProducts] = useState<ProductRow[]>(initialProducts);
   const [category, setCategory] = useState<string | undefined>(undefined);
@@ -39,8 +67,19 @@ export function ProductListingClient({
   const [priceMaxApplied, setPriceMaxApplied] = useState("100000");
   const [searchQuery, setSearchQuery] = useState("");
   const [productToDelete, setProductToDelete] = useState<ProductRow | null>(null);
+  const [isAddB2BDialogOpen, setIsAddB2BDialogOpen] = useState(false);
+  const [b2bWizardStep, setB2BWizardStep] = useState<B2BWizardStep>("basic_information");
+  const [b2bProductName, setB2BProductName] = useState("");
+  const [b2bArticleNumber, setB2BArticleNumber] = useState("");
+  const [b2bCategory, setB2BCategory] = useState<string | undefined>(undefined);
+  const [b2bInventoryType, setB2BInventoryType] = useState<string | undefined>(undefined);
+  const [b2bOrderTypes, setB2BOrderTypes] = useState<B2BOrderTypeValue[]>([]);
+  const [b2bUploadedImages, setB2BUploadedImages] = useState<B2BImageItem[]>([]);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
   const isB2B = listingVariant === "b2b";
   const priceFilterRef = useRef<HTMLDivElement>(null);
+  const b2bFileInputRef = useRef<HTMLInputElement>(null);
+  const b2bImagesRef = useRef<B2BImageItem[]>([]);
 
   const categoryOptions = useMemo(() => {
     const unique = [...new Set(products.map((p) => p.category))].sort((a, b) =>
@@ -51,6 +90,16 @@ export function ProductListingClient({
       ...unique.map((c) => ({ label: c, value: c })),
     ];
   }, [products]);
+
+  useEffect(() => {
+    b2bImagesRef.current = b2bUploadedImages;
+  }, [b2bUploadedImages]);
+
+  useEffect(() => {
+    return () => {
+      b2bImagesRef.current.forEach((img) => URL.revokeObjectURL(img.url));
+    };
+  }, []);
 
   const filteredProducts = useMemo(() => {
     const getPriceValue = (value: string) => Number(value.replaceAll(/[^\d.]/g, "")) || 0;
@@ -123,6 +172,119 @@ export function ProductListingClient({
     setProducts((prev) => prev.filter((p) => p.id !== id));
     toast.success(`${name} (${articleNumber}) was removed`);
     setProductToDelete(null);
+  };
+
+  const b2bCategoryOptions = useMemo(
+    () =>
+      categoryOptions
+        .filter((option) => option.value !== "all")
+        .map((option) => ({ label: option.label, value: option.value })),
+    [categoryOptions]
+  );
+
+  const b2bInventoryTypeOptions = useMemo(
+    () => [
+      { label: PRODUCT_INVENTORY_TYPE_LABELS.ready_to_ship, value: "ready_to_ship" },
+      { label: PRODUCT_INVENTORY_TYPE_LABELS.pre_booking, value: "pre_booking" },
+      { label: PRODUCT_INVENTORY_TYPE_LABELS.stock_clearance, value: "stock_clearance" },
+      { label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return, value: "sale_or_return" },
+    ],
+    []
+  );
+
+  const resetB2BDialog = () => {
+    b2bImagesRef.current.forEach((img) => URL.revokeObjectURL(img.url));
+    setB2BProductName("");
+    setB2BArticleNumber("");
+    setB2BCategory(undefined);
+    setB2BInventoryType(undefined);
+    setB2BOrderTypes([]);
+    setB2BWizardStep("basic_information");
+    setB2BUploadedImages([]);
+    setIsDraggingImage(false);
+  };
+
+  const handleB2BDialogOpenChange = (open: boolean) => {
+    if (!open) resetB2BDialog();
+    setIsAddB2BDialogOpen(open);
+  };
+
+  const handleB2BSaveAsDraft = () => {
+    toast.success("Details are saved in draft.");
+    handleB2BDialogOpenChange(false);
+  };
+
+  const addB2BFiles = (files: FileList | File[]) => {
+    const list = Array.from(files);
+    for (const file of list) {
+      if (!B2B_ACCEPTED_IMAGES.has(file.type)) {
+        toast.error(`${file.name}: use PNG or JPG only`);
+        continue;
+      }
+      if (file.size > B2B_MAX_IMAGE_BYTES) {
+        toast.error(`${file.name}: max size is 5 MB`);
+        continue;
+      }
+      const url = URL.createObjectURL(file);
+      const id = `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setB2BUploadedImages((prev) => [...prev, { id, url, file }]);
+    }
+  };
+
+  const removeB2BImage = (id: string) => {
+    setB2BUploadedImages((prev) => {
+      const item = prev.find((img) => img.id === id);
+      if (item) URL.revokeObjectURL(item.url);
+      return prev.filter((img) => img.id !== id);
+    });
+  };
+
+  const handleBasicInfoNext = () => {
+    if (!b2bProductName.trim()) {
+      toast.error("Product name is required");
+      return;
+    }
+    if (!b2bArticleNumber.trim()) {
+      toast.error("Article number is required");
+      return;
+    }
+    if (!b2bCategory) {
+      toast.error("Category is required");
+      return;
+    }
+    if (!b2bInventoryType) {
+      toast.error("Inventory type is required");
+      return;
+    }
+    setB2BWizardStep("order_type");
+  };
+
+  const handleB2BWizardNext = () => {
+    if (b2bWizardStep === "basic_information") {
+      handleBasicInfoNext();
+      return;
+    }
+    if (b2bWizardStep === "order_type") {
+      if (b2bOrderTypes.length === 0) {
+        toast.error("Select at least one order type to continue");
+        return;
+      }
+      setB2BWizardStep("pricing");
+      return;
+    }
+    if (b2bWizardStep === "pricing") {
+      setB2BWizardStep("description");
+      return;
+    }
+    toast.success("🎉 Product has been listed successfully.");
+    handleB2BDialogOpenChange(false);
+  };
+
+  const toggleB2BOrderType = (value: B2BOrderTypeValue) => {
+    setB2BOrderTypes((prev) => {
+      if (prev.includes(value)) return prev.filter((item) => item !== value);
+      return [...prev, value];
+    });
   };
 
   const columns: TableColumn<ProductRow>[] = [
@@ -217,13 +379,24 @@ export function ProductListingClient({
           <h1 className="text-xl font-semibold text-foreground">
             {isB2B ? "B2B Product Listing" : "B2C Product Listing"}
           </h1>
-          <Link
-            href="/add-product"
-            className={cn(buttonVariants({ variant: "default", size: "lg" }))}
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            <span className="ml-2">Add product</span>
-          </Link>
+          {isB2B ? (
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => setIsAddB2BDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              <span className="ml-2">Add New Product</span>
+            </Button>
+          ) : (
+            <Link
+              href="/add-product"
+              className={cn(buttonVariants({ variant: "default", size: "lg" }))}
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              <span className="ml-2">Add New Product</span>
+            </Link>
+          )}
         </div>
         <p className="text-gray-700">
           {isB2B
@@ -418,6 +591,56 @@ export function ProductListingClient({
           </div>
         </DialogContent>
       </Dialog>
+
+      <B2BBasicInfoPopup
+        open={isAddB2BDialogOpen && b2bWizardStep === "basic_information"}
+        onOpenChange={handleB2BDialogOpenChange}
+        onNext={handleB2BWizardNext}
+        onSaveDraft={handleB2BSaveAsDraft}
+        fileInputRef={b2bFileInputRef}
+        onFilesAdded={addB2BFiles}
+        uploadedImages={b2bUploadedImages}
+        onRemoveImage={removeB2BImage}
+        isDraggingImage={isDraggingImage}
+        setIsDraggingImage={setIsDraggingImage}
+        productName={b2bProductName}
+        setProductName={setB2BProductName}
+        articleNumber={b2bArticleNumber}
+        setArticleNumber={setB2BArticleNumber}
+        category={b2bCategory}
+        setCategory={setB2BCategory}
+        inventoryType={b2bInventoryType}
+        setInventoryType={setB2BInventoryType}
+        categoryOptions={b2bCategoryOptions}
+        inventoryTypeOptions={b2bInventoryTypeOptions}
+      />
+
+      <B2BOrderTypePopup
+        open={isAddB2BDialogOpen && b2bWizardStep === "order_type"}
+        onOpenChange={handleB2BDialogOpenChange}
+        orderTypeOptions={[...B2B_ORDER_TYPES]}
+        selectedOrderTypes={b2bOrderTypes}
+        onToggleOrderType={(value) => toggleB2BOrderType(value as B2BOrderTypeValue)}
+        onBackToBasic={() => setB2BWizardStep("basic_information")}
+        onNext={handleB2BWizardNext}
+        onSaveDraft={handleB2BSaveAsDraft}
+      />
+
+      <B2BPricingPopup
+        open={isAddB2BDialogOpen && b2bWizardStep === "pricing"}
+        onOpenChange={handleB2BDialogOpenChange}
+        onBack={() => setB2BWizardStep("order_type")}
+        onNext={handleB2BWizardNext}
+        onSaveDraft={handleB2BSaveAsDraft}
+      />
+
+      <B2BDescriptionPopup
+        open={isAddB2BDialogOpen && b2bWizardStep === "description"}
+        onOpenChange={handleB2BDialogOpenChange}
+        onBack={() => setB2BWizardStep("pricing")}
+        onNext={handleB2BWizardNext}
+        onSaveDraft={handleB2BSaveAsDraft}
+      />
     </div>
   );
 }

@@ -343,7 +343,7 @@ export function ReturnsClient({ initialReturns }: ReturnsClientProps) {
                   size="lg"
                   onClick={() => setIsFilterOpen(!isFilterOpen)}
                   className={cn(
-                    "gap-2 bg-white border-0 shadow-none hover:bg-gray-50 hover:border-0"
+                    "gap-2 bg-[#E8E9E8] border-0 text-[#000000] shadow-none hover:bg-[#dfe1df] hover:border-0"
                   )}
                 >
                   <FilterIcon className="h-4 w-4" aria-hidden />
@@ -355,6 +355,7 @@ export function ReturnsClient({ initialReturns }: ReturnsClientProps) {
                     size="icon"
                     onClick={() => setIsFilterOpen(false)}
                     aria-label="Close filter"
+                    className="bg-[#E8E9E8] border-0 text-[#000000] shadow-none hover:bg-[#dfe1df]"
                   >
                     <X className="h-4 w-4" aria-hidden />
                   </Button>
