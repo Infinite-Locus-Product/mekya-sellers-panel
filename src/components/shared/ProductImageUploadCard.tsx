@@ -108,7 +108,7 @@ export function ProductImageUploadCard({
                   />
                   <button
                     type="button"
-                    className="absolute right-1 top-1 rounded text-destructive shadow-sm hover:bg-white cursor-pointer"
+                    className="absolute right-1 top-1 rounded text-destructive cursor-pointer"
                     aria-label="Remove image"
                     onClick={(event) => {
                       event.stopPropagation();

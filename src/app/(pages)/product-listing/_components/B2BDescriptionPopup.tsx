@@ -12,6 +12,7 @@ interface B2BDescriptionPopupProps {
   onBack: () => void;
   onNext: () => void;
   onSaveDraft: () => void;
+  descriptionPrefill: string | null;
 }
 
 export function B2BDescriptionPopup({
@@ -20,8 +21,9 @@ export function B2BDescriptionPopup({
   onBack,
   onNext,
   onSaveDraft,
+  descriptionPrefill,
 }: Readonly<B2BDescriptionPopupProps>) {
-  const [description, setDescription] = useState("...");
+  const [description, setDescription] = useState(() => descriptionPrefill ?? "");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

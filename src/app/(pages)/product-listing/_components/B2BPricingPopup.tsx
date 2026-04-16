@@ -2,6 +2,7 @@
 
 import { ChevronLeft, Plus } from "lucide-react";
 import { useState } from "react";
+import type { B2BPricingWizardPrefill } from "@/lib/data/products";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -13,6 +14,8 @@ interface B2BPricingPopupProps {
   onBack: () => void;
   onNext: () => void;
   onSaveDraft: () => void;
+  /** When set (e.g. B2B listing edit), fields load from this snapshot each time the step opens. */
+  pricingPrefill: B2BPricingWizardPrefill | null;
 }
 
 function QuantityStepper({
@@ -42,13 +45,19 @@ export function B2BPricingPopup({
   onBack,
   onNext,
   onSaveDraft,
+  pricingPrefill,
 }: Readonly<B2BPricingPopupProps>) {
   const [tagInput, setTagInput] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [minQty, setMinQty] = useState(0);
-  const [maxQty, setMaxQty] = useState(0);
-  const [wholeSalePricePerUnit, setWholeSalePricePerUnit] = useState("");
-  const [wholeSalePricePerSet, setWholeSalePricePerSet] = useState("");
+  const [tags, setTags] = useState<string[]>(() => pricingPrefill?.tags ?? []);
+  const [minQty, setMinQty] = useState(() => pricingPrefill?.minQty ?? 0);
+  const [maxQty, setMaxQty] = useState(() => pricingPrefill?.maxQty ?? 0);
+  const [availableQty, setAvailableQty] = useState(() => pricingPrefill?.availableQty ?? "");
+  const [wholeSalePricePerUnit, setWholeSalePricePerUnit] = useState(
+    () => pricingPrefill?.wholeSalePricePerUnit ?? ""
+  );
+  const [wholeSalePricePerSet, setWholeSalePricePerSet] = useState(
+    () => pricingPrefill?.wholeSalePricePerSet ?? ""
+  );
 
   const isNextDisabled = !wholeSalePricePerUnit.trim() || !wholeSalePricePerSet.trim();
 
@@ -132,7 +141,12 @@ export function B2BPricingPopup({
                     <label htmlFor="b2b-available-qty" className="text-sm font-medium">
                       Available Quantity
                     </label>
-                    <Input id="b2b-available-qty" placeholder="Enter available quantity" />
+                    <Input
+                      id="b2b-available-qty"
+                      placeholder="Enter available quantity"
+                      value={availableQty}
+                      onChange={(event) => setAvailableQty(event.target.value)}
+                    />
                   </div>
                   <QuantityStepper label="Minimum Quantity" value={minQty} onChange={setMinQty} />
                   <QuantityStepper label="Maximum Quantity" value={maxQty} onChange={setMaxQty} />

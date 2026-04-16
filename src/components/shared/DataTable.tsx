@@ -1,13 +1,21 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { ReactNode, useState } from "react"
+import { ReactNode, useCallback, useState } from "react"
 import { TableSortIcon } from "@/assets/icons/shared"
+
+/** Passed as the second argument to `TableColumn.cell` for row-level UI such as visibility / mute toggles. */
+export type TableRowHelpers = {
+  rowIndex: number
+  rowKey: string | number
+  isRowMuted: boolean
+  toggleRowMute: () => void
+}
 
 export type TableColumn<T> = {
   key: keyof T | string
   header: string | ReactNode
-  cell?: (row: T) => ReactNode
+  cell?: (row: T, helpers: TableRowHelpers) => ReactNode
   align?: "left" | "center" | "right"
   className?: string
   sortable?: boolean
@@ -45,6 +53,16 @@ export function DataTable<T>({
     key: string | keyof T
     direction: "asc" | "desc"
   } | null>(null)
+  const [mutedRowKeys, setMutedRowKeys] = useState<Set<string | number>>(() => new Set())
+
+  const toggleRowMute = useCallback((key: string | number) => {
+    setMutedRowKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
 
   const getAlignClass = (align: TableColumn<T>["align"]) => {
     if (align === "center") return "text-center"
@@ -183,13 +201,22 @@ export function DataTable<T>({
           ) : (
             sortedData.map((row, rowIdx) => {
               const isSelected = selectedRows.has(row)
+              const rowKey = getRowKey(row, rowIdx)
+              const isRowMuted = mutedRowKeys.has(rowKey)
+              const rowHelpers: TableRowHelpers = {
+                rowIndex: rowIdx,
+                rowKey,
+                isRowMuted,
+                toggleRowMute: () => toggleRowMute(rowKey),
+              }
               return (
                 <tr
-                  key={getRowKey(row, rowIdx)}
+                  key={rowKey}
                   className={cn(
                     "border-b hover:bg-muted/50",
                     striped && (rowIdx % 2 === 1 ? "bg-[#F5F5F5]" : "bg-white"),
                     isSelected && "bg-muted/30",
+                    isRowMuted && "opacity-50",
                     bodyRowClassName
                   )}
                 >
@@ -217,14 +244,14 @@ export function DataTable<T>({
                               aria-label="Select row"
                             />
                             {col.cell ? (
-                              col.cell(row)
+                              col.cell(row, rowHelpers)
                             ) : (
                               String((row[col.key as keyof T] ?? "") as string)
                             )}
                           </div>
                         )
                       ) : col.cell ? (
-                        col.cell(row)
+                        col.cell(row, rowHelpers)
                       ) : (
                         String((row[col.key as keyof T] ?? "") as string)
                       )}

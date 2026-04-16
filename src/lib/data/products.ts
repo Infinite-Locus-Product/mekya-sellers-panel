@@ -182,6 +182,37 @@ function parseCsv(input: string): string[] {
     .filter(Boolean);
 }
 
+export type B2BPricingWizardPrefill = {
+  wholeSalePricePerUnit: string;
+  wholeSalePricePerSet: string;
+  availableQty: string;
+  minQty: number;
+  maxQty: number;
+  tags: string[];
+};
+
+export type B2BProductWizardPrefill = {
+  pricing: B2BPricingWizardPrefill;
+  description: string;
+};
+
+/** Maps a listing row to defaults for the B2B add/edit wizard (pricing + description steps). */
+export function getB2BWizardPrefillFromProductRow(row: ProductRow): B2BProductWizardPrefill {
+  const d = toEditableDraft(row);
+  const priceStr = d.price || "";
+  return {
+    pricing: {
+      wholeSalePricePerUnit: priceStr,
+      wholeSalePricePerSet: priceStr,
+      availableQty: String(d.availableQty),
+      minQty: d.minQty,
+      maxQty: d.maxQty,
+      tags: [...d.tags],
+    },
+    description: d.description,
+  };
+}
+
 function toEditableDraft(row: ProductRow): EditableProductDraft {
   const cleanPrice = row.price.replaceAll(/[^\d.]/g, "");
   return {

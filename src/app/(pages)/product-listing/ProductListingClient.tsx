@@ -19,6 +19,7 @@ import { B2BBasicInfoPopup } from "./_components/B2BBasicInfoPopup";
 import { B2BOrderTypePopup } from "./_components/B2BOrderTypePopup";
 import { B2BPricingPopup } from "./_components/B2BPricingPopup";
 import { B2BDescriptionPopup } from "./_components/B2BDescriptionPopup";
+import { getB2BWizardPrefillFromProductRow, type B2BProductWizardPrefill } from "@/lib/data/products";
 
 const PAGE_SIZE = 10;
 const B2B_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -68,6 +69,9 @@ export function ProductListingClient({
   const [searchQuery, setSearchQuery] = useState("");
   const [productToDelete, setProductToDelete] = useState<ProductRow | null>(null);
   const [isAddB2BDialogOpen, setIsAddB2BDialogOpen] = useState(false);
+  const [b2bWizardPrefill, setB2BWizardPrefill] = useState<B2BProductWizardPrefill | null>(null);
+  /** Remount pricing/description steps so their state matches add vs edit prefill. */
+  const [b2bWizardInstanceKey, setB2BWizardInstanceKey] = useState("");
   const [b2bWizardStep, setB2BWizardStep] = useState<B2BWizardStep>("basic_information");
   const [b2bProductName, setB2BProductName] = useState("");
   const [b2bArticleNumber, setB2BArticleNumber] = useState("");
@@ -202,6 +206,24 @@ export function ProductListingClient({
     setB2BWizardStep("basic_information");
     setB2BUploadedImages([]);
     setIsDraggingImage(false);
+    setB2BWizardPrefill(null);
+    setB2BWizardInstanceKey("");
+  };
+
+  const openB2BEditProduct = (row: ProductRow) => {
+    setB2BWizardInstanceKey(`edit:${row.id}`);
+    b2bImagesRef.current.forEach((img) => URL.revokeObjectURL(img.url));
+    setB2BUploadedImages([]);
+    setIsDraggingImage(false);
+    const prefill = getB2BWizardPrefillFromProductRow(row);
+    setB2BWizardPrefill(prefill);
+    setB2BProductName(row.name);
+    setB2BArticleNumber(row.articleNumber);
+    setB2BCategory(row.category);
+    setB2BInventoryType(row.inventoryType);
+    setB2BOrderTypes(B2B_ORDER_TYPES.map((t) => t.value));
+    setB2BWizardStep("basic_information");
+    setIsAddB2BDialogOpen(true);
   };
 
   const handleB2BDialogOpenChange = (open: boolean) => {
@@ -344,7 +366,9 @@ export function ProductListingClient({
             size="icon"
             className="h-8 w-8"
             aria-label={`Edit ${row.name}`}
-            onClick={() => router.push(`/add-product?productId=${encodeURIComponent(row.id)}`)}
+            onClick={() =>
+              isB2B ? openB2BEditProduct(row) : router.push(`/add-product?productId=${encodeURIComponent(row.id)}`)
+            }
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M16.475 5.40783L18.592 7.52483M17.836 3.54283L12.109 9.26983C11.8122 9.56467 11.6102 9.94144 11.529 10.3518L11 12.9998L13.648 12.4698C14.058 12.3878 14.434 12.1868 14.73 11.8908L20.457 6.16383C20.6291 5.99173 20.7656 5.78742 20.8588 5.56256C20.9519 5.33771 20.9998 5.09671 20.9998 4.85333C20.9998 4.60994 20.9519 4.36895 20.8588 4.14409C20.7656 3.91923 20.6291 3.71492 20.457 3.54283C20.2849 3.37073 20.0806 3.23421 19.8557 3.14108C19.6309 3.04794 19.3899 3 19.1465 3C18.9031 3 18.6621 3.04794 18.4373 3.14108C18.2124 3.23421 18.0081 3.37073 17.836 3.54283Z" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -383,7 +407,11 @@ export function ProductListingClient({
             <Button
               type="button"
               size="lg"
-              onClick={() => setIsAddB2BDialogOpen(true)}
+              onClick={() => {
+                resetB2BDialog();
+                setB2BWizardInstanceKey(`new:${Date.now()}`);
+                setIsAddB2BDialogOpen(true);
+              }}
             >
               <Plus className="h-4 w-4" aria-hidden />
               <span className="ml-2">Add New Product</span>
@@ -627,19 +655,23 @@ export function ProductListingClient({
       />
 
       <B2BPricingPopup
+        key={`${b2bWizardInstanceKey || "idle"}-pricing`}
         open={isAddB2BDialogOpen && b2bWizardStep === "pricing"}
         onOpenChange={handleB2BDialogOpenChange}
         onBack={() => setB2BWizardStep("order_type")}
         onNext={handleB2BWizardNext}
         onSaveDraft={handleB2BSaveAsDraft}
+        pricingPrefill={b2bWizardPrefill?.pricing ?? null}
       />
 
       <B2BDescriptionPopup
+        key={`${b2bWizardInstanceKey || "idle"}-description`}
         open={isAddB2BDialogOpen && b2bWizardStep === "description"}
         onOpenChange={handleB2BDialogOpenChange}
         onBack={() => setB2BWizardStep("pricing")}
         onNext={handleB2BWizardNext}
         onSaveDraft={handleB2BSaveAsDraft}
+        descriptionPrefill={b2bWizardPrefill?.description ?? null}
       />
     </div>
   );

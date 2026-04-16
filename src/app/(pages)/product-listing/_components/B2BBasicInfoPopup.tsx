@@ -1,7 +1,7 @@
 "use client";
 
 import type { RefObject } from "react";
-import { FileText, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -150,7 +150,7 @@ export function B2BBasicInfoPopup({
                       Category <span className="text-destructive">*</span>
                     </span>
                     <AppSelect
-                      className="h-10 w-full min-w-0"
+                      className="h-10 w-full min-w-0 bg-white"
                       placeholder="Select category"
                       value={category}
                       onChange={(value) => setCategory(value)}
@@ -162,7 +162,7 @@ export function B2BBasicInfoPopup({
                       Inventory Type <span className="text-destructive">*</span>
                     </span>
                     <AppSelect
-                      className="h-10 w-full min-w-0"
+                      className="h-10 w-full min-w-0 bg-white"
                       placeholder="Select inventory type"
                       value={inventoryType}
                       onChange={(value) => setInventoryType(value)}

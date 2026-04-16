@@ -4,21 +4,11 @@ import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState, useCallback } from "react"
-import { ChevronUp, List, RotateCcw, Palette, Package } from "lucide-react"
+import { ChevronUp, Package } from "lucide-react"
 import Image from "next/image"
-import {
-  DashboardIcon,
-  UserManagementIcon,
-  OrderManagementIcon,
-  CmsManagementIcon,
-  BannerIcon,
-  ReelsIcon,
-  BlogManagementIcon,
-  ContributorsIcon,
-  ProfileIcon,
-} from "@/assets/icons/sidebar"
+import { DashboardIcon } from "@/assets/icons/sidebar"
 
-/** Main app navigation: fixed sidebar with expandable sections for Order Management and CMS. */
+/** Main app navigation: fixed sidebar with expandable Product Listing section. */
 interface NavItem {
   label: string
   href: string
@@ -29,8 +19,6 @@ interface NavItem {
     icon: React.ComponentType<{ className?: string }>
   }[]
 }
-
-const iconClass = "h-5 w-5 shrink-0"
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardIcon },
@@ -43,34 +31,11 @@ const navItems: NavItem[] = [
       { label: "B2B", href: "/product-listing/b2b", icon: Package },
     ],
   },
-  // {
-  //   label: "Order Management",
-  //   href: "/order-management",
-  //   icon: OrderManagementIcon,
-  //   subItems: [
-  //     { label: "All Orders", href: "/order-management", icon: List },
-  //     { label: "Returns & Exchanges", href: "/order-management/returns", icon: RotateCcw },
-  //     { label: "Custom Orders", href: "/order-management/custom-orders", icon: Palette },
-  //   ],
-  // },
-  // {
-  //   label: "CMS Management",
-  //   href: "/cms-management",
-  //   icon: CmsManagementIcon,
-  //   subItems: [
-  //     { label: "Overview", href: "/cms-management/overview", icon: BannerIcon },
-  //     { label: "Banner Management", href: "/cms-management/banner-management", icon: BannerIcon },
-  //     { label: "Reels Approval", href: "/cms-management/reels-approval", icon: ReelsIcon },
-  //     { label: "Blog Management", href: "/cms-management/blog-management", icon: BlogManagementIcon },
-  //     { label: "Contributors", href: "/cms-management/contributors", icon: ContributorsIcon },
-  //   ],
-  // },
-  // { label: "Profile", href: "/profile", icon: ProfileIcon },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [expandedItems, setExpandedItems] = useState<string[]>(["/product-listing", "/order-management"])
+  const [expandedItems, setExpandedItems] = useState<string[]>(["/product-listing"])
 
   const toggleExpanded = useCallback((href: string) => {
     setExpandedItems((prev) =>
@@ -83,12 +48,7 @@ export function Sidebar() {
   const isSubItemActive = useCallback(
     (subItemHref: string) => {
       if (pathname === subItemHref) return true
-      if (
-        subItemHref === "/product-listing" ||
-        subItemHref === "/order-management" ||
-        subItemHref === "/cms-management"
-      )
-        return false
+      if (subItemHref === "/product-listing") return false
       return pathname.startsWith(`${subItemHref}/`)
     },
     [pathname]
@@ -107,12 +67,7 @@ export function Sidebar() {
               className="shrink-0 opacity-100"
               style={{ transform: "rotate(0deg)" }}
             />
-            <span
-              className="font-semibold text-[#004C5E]"
-              
-            >
-              Mekya Seller Dashboard
-            </span>
+            <span className="font-semibold text-[#004C5E]">Mekya Seller Dashboard</span>
           </div>
         </div>
         <nav className="flex-1 space-y-1 px-4 py-4">
@@ -129,9 +84,7 @@ export function Sidebar() {
                     <div
                       className={cn(
                         "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-[#E8E9E8] shadow-sm"
-                          : ""
+                        isActive ? "bg-[#E8E9E8] shadow-sm" : ""
                       )}
                     >
                       <button
@@ -168,9 +121,7 @@ export function Sidebar() {
                               href={subItem.href}
                               className={cn(
                                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                                isSubActive
-                                  ? "bg-[#E8E9E8] text-foreground"
-                                  : ""
+                                isSubActive ? "bg-[#E8E9E8] text-foreground" : ""
                               )}
                             >
                               <SubIcon className="h-5 w-5" />
@@ -186,9 +137,7 @@ export function Sidebar() {
                     href={item.href}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-[#E8E9E8] text-foreground shadow-sm"
-                          : ""
+                      isActive ? "bg-[#E8E9E8] text-foreground shadow-sm" : ""
                     )}
                   >
                     <Icon className="h-5 w-5" />
