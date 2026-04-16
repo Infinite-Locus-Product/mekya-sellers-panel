@@ -9,15 +9,12 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Clock } from "lucide-react";
 import {
   KpiSaleTrendIcon,
-  KpiRupeeFlowIcon,
   KpiOrdersBagIcon,
   KpiReturnUndoIcon,
 } from "@/assets/icons";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
-import type { AllOrder, PaymentStatus } from "@/lib/tableTypes";
+import type { AllOrder } from "@/lib/tableTypes";
 import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge";
-import { DEFAULT_FILTER_VALUES } from "@/components/shared/Filter";
-import type { FilterValues } from "@/components/shared/FilterPanel";
 import { Pagination } from "@/components/shared/Pagination";
 import { usePagination } from "@/hooks";
 import { SalesAnalyticsModal } from "@/components/modals/sales/SalesAnalyticsModal";
@@ -37,41 +34,13 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
   const [isAverageOrderValueModalOpen, setIsAverageOrderValueModalOpen] = useState(false);
   const [isTotalOrdersModalOpen, setIsTotalOrdersModalOpen] = useState(false);
   const [isReturnOrdersModalOpen, setIsReturnOrdersModalOpen] = useState(false);
-  const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTER_VALUES);
-  const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateRange, setDateRange] = useState("last_30_days");
 
   const filteredOrders = useMemo(() => {
-    let filtered = [...initialOrders];
-    const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      filtered = filtered.filter(
-        (order) =>
-          order.id.toLowerCase().includes(q) ||
-          order.vendor.toLowerCase().includes(q)
-      );
-    }
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((order) => order.status === statusFilter);
-    }
-    if (filters.orderStatus.length > 0) {
-      filtered = filtered.filter((order) => filters.orderStatus.includes(order.status));
-    }
-    if (filters.paymentMethod.length > 0) {
-      const paymentMap: Record<string, PaymentStatus> = { card: "Paid", bank_transfer: "Paid", upi: "Paid", cash: "Pending" };
-      filtered = filtered.filter((order) =>
-        filters.paymentMethod.some((method) => order.paymentStatus === paymentMap[method])
-      );
-    }
-    const minPrice = parseFloat(filters.priceMin) || 0;
-    const maxPrice = parseFloat(filters.priceMax) || Infinity;
-    filtered = filtered.filter((order) => {
-      const amount = parseFloat(order.amount.replace(/[₹,]/g, "")) || 0;
-      return amount >= minPrice && amount <= maxPrice;
-    });
-    return filtered;
-  }, [initialOrders, searchQuery, statusFilter, filters]);
+    if (statusFilter === "all") return initialOrders;
+    return initialOrders.filter((order) => order.status === statusFilter);
+  }, [initialOrders, statusFilter]);
 
   const pagination = usePagination({ totalCount: filteredOrders.length, pageSize: PAGE_SIZE });
   const paginatedOrders = useMemo(
@@ -94,27 +63,70 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         ),
       },
       {
-        key: "actions", header: "Actions", cell: () => (
-          <Button variant="ghost" size="icon" aria-label="View order">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path
-                d="M12.001 5C5.69398 5 2.63398 10.683 2.09098 11.808C2.06195 11.8678 2.04688 11.9335 2.04688 12C2.04688 12.0665 2.06195 12.1322 2.09098 12.192C2.63298 13.317 5.69298 19 12.001 19C18.309 19 21.368 13.317 21.911 12.192C21.94 12.1322 21.9551 12.0665 21.9551 12C21.9551 11.9335 21.94 11.8678 21.911 11.808C21.369 10.683 18.309 5 12.001 5Z"
-                stroke="#004C5E"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
-                stroke="#004C5E"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+        key: "actions",
+        header: "Actions",
+        align: "center",
+        cell: (row, { isRowMuted, toggleRowMute }) => (
+          <Button
+            variant="ghost"
+            size="icon"
+            type="button"
+            aria-label={isRowMuted ? `Restore row for order ${row.id}` : `Dim row for order ${row.id}`}
+            aria-pressed={isRowMuted}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleRowMute()
+            }}
+          >
+            <span className="relative inline-flex h-6 w-6 items-center justify-center">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="shrink-0"
+                aria-hidden
+              >
+                <path
+                  d="M12.001 5C5.69398 5 2.63398 10.683 2.09098 11.808C2.06195 11.8678 2.04688 11.9335 2.04688 12C2.04688 12.0665 2.06195 12.1322 2.09098 12.192C2.63298 13.317 5.69298 19 12.001 19C18.309 19 21.368 13.317 21.911 12.192C21.94 12.1322 21.9551 12.0665 21.9551 12C21.9551 11.9335 21.94 11.8678 21.911 11.808C21.369 10.683 18.309 5 12.001 5Z"
+                  stroke="#004C5E"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
+                  stroke="#004C5E"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {isRowMuted ? (
+                <svg
+                  className="pointer-events-none absolute inset-0 text-[#004C5E]"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden
+                >
+                  <line
+                    x1="4"
+                    y1="4"
+                    x2="20"
+                    y2="20"
+                    stroke="currentColor"
+                    strokeWidth="2.25"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              ) : null}
+            </span>
           </Button>
         ),
-        align: "center",
       },
     ],
     []
@@ -153,7 +165,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         <KPICard
           title="Total Sales"
           value="₹50,000"
-          change="+12.5% From Last Month"
+          change="+12.5% From Previous Period"
           changeType="positive"
           icon={<KpiSaleTrendIcon />}
           onClick={() => setIsSalesModalOpen(true)}
@@ -163,9 +175,17 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         <KPICard
           title="Average Order Value"
           value="1,546"
-          change="+12.5% From Last Month"
+          change="+12.5% From Previous Period"
           changeType="positive"
-          icon={<KpiRupeeFlowIcon />}
+          icon={<svg width="31" height="31" viewBox="0 0 31 31" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M11.3715 28.0516C11.8183 28.0516 12.1805 27.6894 12.1805 27.2426C12.1805 26.7958 11.8183 26.4336 11.3715 26.4336C10.9247 26.4336 10.5625 26.7958 10.5625 27.2426C10.5625 27.6894 10.9247 28.0516 11.3715 28.0516Z" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M22.6996 28.0516C23.1464 28.0516 23.5086 27.6894 23.5086 27.2426C23.5086 26.7958 23.1464 26.4336 22.6996 26.4336C22.2528 26.4336 21.8906 26.7958 21.8906 27.2426C21.8906 27.6894 22.2528 28.0516 22.6996 28.0516Z" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M4.89844 10.2539H8.13436L10.5613 24.0066H23.505" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M10.5633 20.7695H23.1753C23.2688 20.7696 23.3595 20.7372 23.4319 20.6779C23.5042 20.6186 23.5538 20.5361 23.5722 20.4444L25.0284 13.1636C25.0401 13.1049 25.0387 13.0443 25.0242 12.9862C25.0097 12.9281 24.9824 12.8739 24.9445 12.8276C24.9065 12.7814 24.8587 12.7441 24.8046 12.7185C24.7505 12.6929 24.6913 12.6796 24.6314 12.6797H8.94531" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M17.0234 10.4492C19.6469 10.4492 21.7734 8.32264 21.7734 5.69922C21.7734 3.07579 19.6469 0.949219 17.0234 0.949219C14.4 0.949219 12.2734 3.07579 12.2734 5.69922C12.2734 8.32264 14.4 10.4492 17.0234 10.4492Z" stroke="black" strokeWidth="0.57" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M15.1264 3.32422H16.5514M16.5514 3.32422H18.9264M16.5514 3.32422C17.0264 3.32422 17.9764 3.60922 17.9764 4.74922M18.9264 4.74922H17.9764M17.9764 4.74922H15.125M17.9764 4.74922C17.9764 5.88922 17.0264 6.17422 16.5514 6.17422H15.125L17.5014 8.07422" stroke="black" strokeWidth="0.57" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          }
           onClick={() => setIsAverageOrderValueModalOpen(true)}
           background="linear-gradient(100.31deg, #FFF4DE -0.8%, #FFF0D3 63.46%, #FFD177 101.6%)"
           image="/kpi/kpi2.png"
@@ -173,7 +193,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         <KPICard
           title="Total Orders"
           value="580"
-          change="+102% From Last Month"
+          change="+102% From Previous Period"
           changeType="positive"
           icon={<KpiOrdersBagIcon />}
           onClick={() => setIsTotalOrdersModalOpen(true)}
@@ -183,7 +203,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         <KPICard
           title="Return Orders"
           value="248"
-          change="+12.5% From Last Month"
+          change="+12.5% From Previous Period"
           changeType="positive"
           icon={<KpiReturnUndoIcon />}
           onClick={() => setIsReturnOrdersModalOpen(true)}

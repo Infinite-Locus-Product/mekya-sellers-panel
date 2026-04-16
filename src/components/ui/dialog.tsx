@@ -128,7 +128,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
         <div
           ref={ref}
           className={cn(
-            "fixed left-[50%] top-[50%] z-50 w-[calc(100vw-1.5rem)] max-w-3xl max-h-[min(90vh,90dvh)] translate-x-[-50%] translate-y-[-50%] border bg-background p-4 shadow-lg rounded-lg overflow-y-auto overflow-x-hidden animate-in fade-in-0 zoom-in-95 sm:p-2",
+            "fixed left-[50%] top-[50%] z-50 w-[calc(100vw-1.5rem)] max-w-3xl max-h-[min(90vh,90dvh)] translate-x-[-50%] translate-y-[-50%] border bg-background p-4 shadow-lg rounded-lg overflow-y-auto overflow-x-hidden animate-in fade-in-0 zoom-in-95",
             className
           )}
           onClick={(e) => e.stopPropagation()}

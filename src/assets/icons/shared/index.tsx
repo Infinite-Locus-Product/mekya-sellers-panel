@@ -91,35 +91,14 @@ export function DialogCloseIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-/** Order detail “Export PDF” button */
-export function ExportPdfIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
-      <path
-        d="M2.67188 10.6693V11.3333C2.67188 11.8638 2.88259 12.3725 3.25766 12.7475C3.63273 13.1226 4.14144 13.3333 4.67188 13.3333H11.3385C11.869 13.3333 12.3777 13.1226 12.7528 12.7475C13.1278 12.3725 13.3385 11.8638 13.3385 11.3333V10.6667M8.00521 3V10.3333M8.00521 10.3333L10.3385 8M8.00521 10.3333L5.67188 8"
-        stroke="black"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-/** CMS overview recent activity refresh */
-export function RecentActivityRefreshIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg width={20} height={20} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
-      <path
-        d="M11.2526 6.66667H10.0026V10.8333L13.5693 12.95L14.1693 11.9417L11.2526 10.2083V6.66667ZM10.8359 2.5C8.84681 2.5 6.93916 3.29018 5.53264 4.6967C4.12611 6.10322 3.33594 8.01088 3.33594 10H0.835938L4.13594 13.3583L7.5026 10H5.0026C5.0026 8.4529 5.61719 6.96917 6.71115 5.87521C7.80511 4.78125 9.28884 4.16667 10.8359 4.16667C12.383 4.16667 13.8668 4.78125 14.9607 5.87521C16.0547 6.96917 16.6693 8.4529 16.6693 10C16.6693 11.5471 16.0547 13.0308 14.9607 14.1248C13.8668 15.2188 12.383 15.8333 10.8359 15.8333C9.2276 15.8333 7.76927 15.175 6.71927 14.1167L5.53594 15.3C6.22894 16.0004 7.05455 16.5556 7.96454 16.9334C8.87453 17.3111 9.85067 17.5037 10.8359 17.5C12.8251 17.5 14.7327 16.7098 16.1392 15.3033C17.5458 13.8968 18.3359 11.9891 18.3359 10C18.3359 8.01088 17.5458 6.10322 16.1392 4.6967C14.7327 3.29018 12.8251 2.5 10.8359 2.5Z"
-        fill="#2A2A2A"
-      />
-    </svg>
-  )
-}
-
-/** Return/exchange arrow used in return details (14×14) */
-export function ReturnExchangeIcon(props: SVGProps<SVGSVGElement>) {
+/** DataTable sortable column header (14×14); left stroke = descending, right = ascending */
+export function TableSortIcon({
+  state = "none",
+  className,
+  ...props
+}: SVGProps<SVGSVGElement> & { state?: "none" | "asc" | "desc" }) {
+  const downStroke = state === "desc" || state === "none" ? "#000000" : "#A3A3A3"
+  const upStroke = state === "asc" || state === "none" ? "#000000" : "#A3A3A3"
   return (
     <svg
       width={14}
@@ -128,17 +107,20 @@ export function ReturnExchangeIcon(props: SVGProps<SVGSVGElement>) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
+      className={className}
       {...props}
     >
       <path
-        d="M3.79161 2.33301L1.75 4.08301L3.79161 6.12467"
-        stroke="currentColor"
+        d="M4.66406 11.6654V5.83203M4.66406 11.6654L2.91406 9.91536M4.66406 11.6654L6.41406 9.91536"
+        stroke={downStroke}
+        strokeWidth={0.8}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="M1.75 4.08301H8.45653C10.4641 4.08301 12.1689 5.72229 12.2472 7.72884C12.3299 9.84914 10.5779 11.6663 8.45653 11.6663H3.49953"
-        stroke="currentColor"
+        d="M9.33073 2.33203V8.16536M9.33073 2.33203L11.0807 4.08203M9.33073 2.33203L7.58073 4.08203"
+        stroke={upStroke}
+        strokeWidth={0.8}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

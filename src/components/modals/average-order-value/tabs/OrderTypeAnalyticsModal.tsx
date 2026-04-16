@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useId } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp } from "lucide-react"
 import { LoadingSpinner, TimeRangeSelector } from "@/components/shared"
@@ -14,16 +14,21 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  LineChart as RechartsLineChart,
+  ComposedChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
+  Area,
   Tooltip,
   type TooltipProps,
 } from "recharts"
+import { LineChartAreaGradient } from "@/components/analytics"
 import { cn, formatNumber } from "@/lib/utils"
+
+const B2B_STROKE = "#38BDF8"
+const B2C_STROKE = "#D97706"
 
 export interface OrderTypeDataPoint {
   label: string
@@ -62,6 +67,9 @@ export function OrderTypeAnalyticsModal({ data }: OrderTypeAnalyticsModalProps) 
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>("1Y")
   const [isChartLoading, setIsChartLoading] = useState(false)
   const [activeChartType, setActiveChartType] = useState<string>("Line Chart")
+  const chartAreaSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
+  const gB2b = `aov-b2b-${chartAreaSuffix || "b"}`
+  const gB2c = `aov-b2c-${chartAreaSuffix || "c"}`
 
   const defaultData: OrderTypeDataPoint[] = [
     { label: "Jan", b2b: 3300, b2c: 2500 },
@@ -173,7 +181,7 @@ export function OrderTypeAnalyticsModal({ data }: OrderTypeAnalyticsModalProps) 
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <RechartsLineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="hsl(var(--muted))"
@@ -197,23 +205,43 @@ export function OrderTypeAnalyticsModal({ data }: OrderTypeAnalyticsModalProps) 
                   tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
                 />
                 <Tooltip cursor={{ stroke: '#52525b', strokeWidth: 1, strokeDasharray: '3 3' }} content={CustomTooltip} />
+                <defs>
+                  <LineChartAreaGradient id={gB2b} lineColor={B2B_STROKE} />
+                  <LineChartAreaGradient id={gB2c} lineColor={B2C_STROKE} />
+                </defs>
+                <Area
+                  type="monotone"
+                  dataKey="B2B"
+                  stroke="none"
+                  fill={`url(#${gB2b})`}
+                  fillOpacity={1}
+                  baseValue={0}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="B2C"
+                  stroke="none"
+                  fill={`url(#${gB2c})`}
+                  fillOpacity={1}
+                  baseValue={0}
+                />
                 <Line
                   type="monotone"
                   dataKey="B2B"
-                  stroke="#38BDF8"
+                  stroke={B2B_STROKE}
                   strokeWidth={2}
-                  dot={{ r: 3, fill: "white", stroke: "#38BDF8", strokeWidth: 2 }}
+                  dot={{ r: 3, fill: "white", stroke: B2B_STROKE, strokeWidth: 2 }}
                   activeDot={{ r: 6, fill: "#f1f5f9", stroke: "#334155", strokeWidth: 4 }}
                 />
                 <Line
                   type="monotone"
                   dataKey="B2C"
-                  stroke="#D97706"
+                  stroke={B2C_STROKE}
                   strokeWidth={2}
-                  dot={{ r: 3, fill: "white", stroke: "#D97706", strokeWidth: 2 }}
+                  dot={{ r: 3, fill: "white", stroke: B2C_STROKE, strokeWidth: 2 }}
                   activeDot={{ r: 6, fill: "#f1f5f9", stroke: "#334155", strokeWidth: 4 }}
                 />
-              </RechartsLineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           )}
         </div>

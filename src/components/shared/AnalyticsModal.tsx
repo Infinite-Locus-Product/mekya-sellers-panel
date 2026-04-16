@@ -342,15 +342,15 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
               <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
                 <div className="rounded-lg border border-border bg-background p-4">
                   <p className="text-sm text-foreground leading-relaxed">
-                    <span className="block font-semibold text-foreground">
+                    <span className="block font-regular  text-muted-foreground">
                       {config.kpiDefinitionPurpose.definitionLabel ?? "Definition :"}
                     </span>
                     <span className="block">{config.kpiDefinitionPurpose.definition}</span>
                   </p>
                 </div>
                 <div className="rounded-lg border border-border bg-background p-4">
-                  <p className="text-sm text-foreground leading-relaxed">
-                    <span className="font-semibold text-foreground">
+                  <p className="text-sm leading-relaxed">
+                    <span className="text-muted-foreground">
                       {config.kpiDefinitionPurpose.purposeLabel ?? "Purpose :"}
                     </span>{" "}
                     <span className="block">{config.kpiDefinitionPurpose.purpose}</span>

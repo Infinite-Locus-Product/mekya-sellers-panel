@@ -5,7 +5,6 @@ export { LoadingSpinner } from "./LoadingSpinner"
 export { ErrorMessage } from "./ErrorMessage"
 export { EmptyState } from "./EmptyState"
 export { StatusBadge } from "./StatusBadge"
-export { PaymentStatusBadge } from "./PaymentStatusBadge"
 export { KPICard } from "./KPICard"
 export { SubKpiCard } from "./SubKpiCard"
 export type { SubKpiCardProps } from "./SubKpiCard"
@@ -26,14 +25,6 @@ export type {
   SubKpiCardConfig,
   KPICardConfig,
 } from "./AnalyticsModal"
-export { OrderDetails } from "./OrderDetails"
-export type {
-  OrderDetailsData,
-  OrderItem,
-  FulfillmentTimelineItem,
-  CustomerInfo,
-  PaymentInfo,
-} from "./OrderDetails"
 export { ExportDropdown } from "./ExportDropdown"
 export type { ExportDropdownProps } from "./ExportDropdown"
 export { Pagination } from "./Pagination"

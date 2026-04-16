@@ -110,14 +110,14 @@ function DatePickerField({ label, value, placeholder, onChange }: DatePickerFiel
 
   return (
     <div className="space-y-1">
-      <label className="text-xs text-muted-foreground">{label}</label>
+      <label className="text-xs text-[#000000]">{label}</label>
       <div className="relative">
         <input
           type="text"
           placeholder={placeholder}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="w-full rounded-md border border-input bg-[#E8E9E8] pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="w-full rounded-md border border-input bg-[#E8E9E8] pl-3 pr-10 py-2 text-sm text-[#000000] placeholder:text-[#000000] focus:outline-none focus:ring-2 focus:ring-ring"
         />
         <button
           type="button"
@@ -125,7 +125,7 @@ function DatePickerField({ label, value, placeholder, onChange }: DatePickerFiel
           className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded"
           aria-label="Open calendar"
         >
-          <Calendar className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <Calendar className="h-4 w-4 text-[#000000]" aria-hidden />
         </button>
         <input
           ref={nativeRef}
@@ -227,9 +227,8 @@ export function FilterPanel({
                 <label
                   key={option.value}
                   className={cn(
-                    "flex items-center gap-2 px-3 text-sm transition-colors cursor-pointer",
-                    filters.timeRange === option.value &&
-                      "border-primary text-primary"
+                    "flex items-center gap-2 px-3 text-sm text-[#000000] transition-colors cursor-pointer",
+                    filters.timeRange === option.value && "border-primary"
                   )}
                 >
                   <input

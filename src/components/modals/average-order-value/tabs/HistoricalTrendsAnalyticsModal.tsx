@@ -31,7 +31,7 @@ export function HistoricalTrendsAnalyticsModal({
   const ChartIcon = isSalesTrends ? SalesTrendsTitleIcon : (ChartIconProp ?? BarChart3)
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>("1Y")
   const [isChartLoading, setIsChartLoading] = useState(false)
-  const [activeChartType, setActiveChartType] = useState<string>("Bar Chart")
+  const [activeChartType, setActiveChartType] = useState<string>("Line Chart")
 
   const renderChart = () => {
     if (!chartData) return null

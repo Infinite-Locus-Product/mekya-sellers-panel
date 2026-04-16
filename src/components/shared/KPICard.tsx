@@ -34,7 +34,7 @@ const variantStyles: Record<KPICardVariant, string> = {
 }
 
 const DEFAULT_IMAGE_CLASS =
-  "absolute -right-7 -bottom-5 w-[120px] h-[120px] md:w-[120px] md:h-[110px] sm:w-[110px] sm:h-[100px] object-contain select-none pointer-events-none kpi-spin-img scale-[1.2]"
+  "absolute -right-8 -bottom-8 w-[120px] h-[120px] md:w-[120px] md:h-[110px] sm:w-[110px] sm:h-[100px] object-contain select-none pointer-events-none kpi-spin-img scale-[1.2]"
 
 export function KPICard({
   title,
@@ -71,51 +71,52 @@ export function KPICard({
         )}
         style={background ? { background: background } : undefined}
       >
-        <div className="flex items-start w-full h-full justify-between">
-          <div className="flex flex-col gap-3 min-w-0 flex-1">
-            {!subtitleBelowValue && (
-              <div>
-                <p className="text-md font-medium mb-1">{title}</p>
-                {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-              </div>
-            )}
-            {subtitleBelowValue && <p className="text-md font-medium mb-1">{title}</p>}
-            <p className="text-2xl font-bold text-foreground mb-2">{value}</p>
-            {change &&
-              (changeDisplay === "text" ? (
-                <p className="text-sm text-muted-foreground mt-4">{change}</p>
-              ) : (
-                (() => {
-                  const fromIndex = change.indexOf(" From ")
-                  const pillContent = fromIndex >= 0 ? change.slice(0, fromIndex) : change
-                  const labelContent = fromIndex >= 0 ? change.slice(fromIndex + 1) : null
-                  return (
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium",
-                          changeType === "positive"
-                            ? "bg-[#DBFCE7] text-[#016630]"
-                            : "bg-[#660101]/10 text-[#660101]"
+        <div className="flex items-stretch w-full h-full justify-between">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col h-full">
+            <div className="shrink-0">
+              <p className="text-md font-medium mb-1">{title}</p>
+              {!subtitleBelowValue && subtitle && (
+                <p className="text-xs text-muted-foreground">{subtitle}</p>
+              )}
+            </div>
+            <div className="mt-auto flex flex-col gap-1.5 pt-4">
+              <p className="text-2xl font-bold text-foreground">{value}</p>
+              {change &&
+                (changeDisplay === "text" ? (
+                  <p className="text-sm text-muted-foreground">{change}</p>
+                ) : (
+                  (() => {
+                    const fromIndex = change.indexOf(" From ")
+                    const pillContent = fromIndex >= 0 ? change.slice(0, fromIndex) : change
+                    const labelContent = fromIndex >= 0 ? change.slice(fromIndex + 1) : null
+                    return (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium",
+                            changeType === "positive"
+                              ? "bg-[#DBFCE7] text-[#016630]"
+                              : "bg-[#660101]/10 text-[#660101]"
+                          )}
+                        >
+                          {changeType === "positive" ? (
+                            <TrendUpIcon className="h-3 w-3 shrink-0 text-current" />
+                          ) : (
+                            <TrendDownIcon className="h-3 w-3 shrink-0 text-current" />
+                          )}
+                          {pillContent}
+                        </span>
+                        {labelContent && (
+                          <span className="text-xs text-muted-foreground">{labelContent}</span>
                         )}
-                      >
-                        {changeType === "positive" ? (
-                          <TrendUpIcon className="h-3 w-3 shrink-0 text-current" />
-                        ) : (
-                          <TrendDownIcon className="h-3 w-3 shrink-0 text-current" />
-                        )}
-                        {pillContent}
-                      </span>
-                      {labelContent && (
-                        <span className="text-xs text-muted-foreground">{labelContent}</span>
-                      )}
-                    </div>
-                  )
-                })()
-              ))}
-            {subtitleBelowValue && subtitle && (
-              <p className="text-sm text-muted-foreground -mt-2">{subtitle}</p>
-            )}
+                      </div>
+                    )
+                  })()
+                ))}
+              {subtitleBelowValue && subtitle && (
+                <p className="text-sm text-muted-foreground">{subtitle}</p>
+              )}
+            </div>
           </div>
           {icon && <div className="  absolute right-2 top-2 bg-[linear-gradient(180deg,_#F9F9F9_0%,_rgba(189,189,189,0.73)_100%)] rounded-full p-2 shadow-[inset_0px_4px_4px_0px_#00000040]">{icon}</div>}
         </div>

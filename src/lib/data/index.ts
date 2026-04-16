@@ -2,18 +2,10 @@
  * Data layer entry. All data access goes through here for easy API integration later.
  */
 
-export { getOrders, getOrderDetails } from "./orders";
-export { getUsers } from "./users";
-export { getReturns, getReturnDetails, type ReturnItem } from "./returns";
-export { getCustomOrders, type CustomOrder } from "./customOrders";
-export { getProfile, type ProfilePageData } from "./profile";
+export { getOrders } from "./orders";
 export {
-  getCmsSections,
-  getCmsLandingData,
-  getCmsOverviewData,
-  type CmsSection,
-  type CmsLandingData,
-  type CmsOverviewStats,
-  type RecentActivityEntry,
-  type TopBlogEntry,
-} from "./cms";
+  getProducts,
+  getB2BProducts,
+  getEditableProductDraftById,
+  type EditableProductDraft,
+} from "./products";

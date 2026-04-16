@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
 
 type Option = {
   label: string
@@ -24,7 +25,9 @@ interface AppSelectProps {
 export function AppSelect({ options, value, placeholder, onChange, className }: AppSelectProps) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={className ?? "w-[180px]"}>
+      <SelectTrigger
+        className={cn("w-[180px] bg-[#E8E9E8] border-border text-[#000000] data-[placeholder]:text-[#000000]", className)}
+      >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
 

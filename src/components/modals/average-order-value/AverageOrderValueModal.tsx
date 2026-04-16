@@ -11,18 +11,18 @@ interface AverageOrderValueModalProps {
 
 export function AverageOrderValueModal({ open, onOpenChange }: AverageOrderValueModalProps) {
   const trendData = [
-    { label: "Jan", value: 1200 },
-    { label: "Feb", value: 1400 },
-    { label: "Mar", value: 1350 },
-    { label: "Apr", value: 1500 },
-    { label: "May", value: 1480 },
-    { label: "Jun", value: 1520 },
-    { label: "Jul", value: 1580 },
-    { label: "Aug", value: 1530 },
-    { label: "Sep", value: 1490 },
-    { label: "Oct", value: 1600 },
-    { label: "Nov", value: 1570 },
-    { label: "Dec", value: 1620 },
+    { label: "Jan", value: 1180 },
+    { label: "Feb", value: 1465 },
+    { label: "Mar", value: 1310 },
+    { label: "Apr", value: 1695 },
+    { label: "May", value: 1520 },
+    { label: "Jun", value: 1885 },
+    { label: "Jul", value: 1710 },
+    { label: "Aug", value: 1390 },
+    { label: "Sep", value: 2015 },
+    { label: "Oct", value: 1780 },
+    { label: "Nov", value: 2235 },
+    { label: "Dec", value: 1550 },
   ]
 
   const regionalPerformanceData = [

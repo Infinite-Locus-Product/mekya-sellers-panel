@@ -1,13 +1,21 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { ReactNode, useState } from "react"
-import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react"
+import { ReactNode, useCallback, useState } from "react"
+import { TableSortIcon } from "@/assets/icons/shared"
+
+/** Passed as the second argument to `TableColumn.cell` for row-level UI such as visibility / mute toggles. */
+export type TableRowHelpers = {
+  rowIndex: number
+  rowKey: string | number
+  isRowMuted: boolean
+  toggleRowMute: () => void
+}
 
 export type TableColumn<T> = {
   key: keyof T | string
   header: string | ReactNode
-  cell?: (row: T) => ReactNode
+  cell?: (row: T, helpers: TableRowHelpers) => ReactNode
   align?: "left" | "center" | "right"
   className?: string
   sortable?: boolean
@@ -21,8 +29,8 @@ interface DataTableProps<T> {
   onSelectAll?: (selected: boolean) => void
   onSelectRow?: (row: T, selected: boolean) => void
   selectedRows?: Set<T>
-  /** Optional class for body rows (e.g. "bg-white") */
   bodyRowClassName?: string
+  striped?: boolean
 }
 
 function isStandaloneCheckboxColumn<T>(col: TableColumn<T>): boolean {
@@ -31,7 +39,6 @@ function isStandaloneCheckboxColumn<T>(col: TableColumn<T>): boolean {
   return Boolean(col.checkbox && headerEmpty && !col.sortable && !col.cell)
 }
 
-/** Generic sortable table with optional row selection (checkboxes). Supports custom cell renderers and amount-style sort. */
 export function DataTable<T>({
   columns,
   data,
@@ -40,11 +47,22 @@ export function DataTable<T>({
   onSelectRow,
   selectedRows = new Set(),
   bodyRowClassName,
+  striped = false,
 }: DataTableProps<T>) {
   const [sortConfig, setSortConfig] = useState<{
     key: string | keyof T
     direction: "asc" | "desc"
   } | null>(null)
+  const [mutedRowKeys, setMutedRowKeys] = useState<Set<string | number>>(() => new Set())
+
+  const toggleRowMute = useCallback((key: string | number) => {
+    setMutedRowKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
 
   const getAlignClass = (align: TableColumn<T>["align"]) => {
     if (align === "center") return "text-center"
@@ -66,8 +84,6 @@ export function DataTable<T>({
     sortedData.sort((a, b) => {
       const aValue: T[keyof T] = a[key]
       const bValue: T[keyof T] = b[key]
-
-      // Amount strings: strip ₹ and commas for numeric sort
       if (typeof aValue === "string" && aValue.includes("₹")) {
         const aNum = parseFloat(aValue.replace(/[₹,]/g, "")) || 0
         const bNum = parseFloat(String(bValue).replace(/[₹,]/g, "")) || 0
@@ -98,22 +114,23 @@ export function DataTable<T>({
   const renderSortableHeaderButton = (col: TableColumn<T>) => {
     const isSorted = sortConfig?.key === col.key
     const sortDirection = isSorted ? sortConfig.direction : null
+    const sortState = sortDirection === "asc" ? "asc" : sortDirection === "desc" ? "desc" : "none"
 
     return (
       <button
         type="button"
         onClick={() => handleSort(col.key)}
-        className="flex items-center gap-1 hover:text-foreground"
+        className={cn(
+          "inline-flex w-full min-w-0 items-center gap-2 text-foreground transition-colors",
+          "rounded-sm px-0.5 py-1 -my-1 hover:bg-black/[0.06] hover:text-foreground",
+          col.align === "right" && "justify-end text-right",
+          col.align === "center" && "justify-center text-center",
+          (col.align === "left" || !col.align) && "justify-start text-left"
+        )}
         aria-label={`Sort by ${String(col.header)} ${sortDirection === "asc" ? "ascending" : sortDirection === "desc" ? "descending" : ""}`.trim()}
       >
-        {col.header}
-        {sortDirection === "asc" ? (
-          <ArrowUp className="h-3 w-3" />
-        ) : sortDirection === "desc" ? (
-          <ArrowDown className="h-3 w-3" />
-        ) : (
-          <ArrowUpDown className="h-3 w-3 opacity-50" />
-        )}
+        <span className="min-w-0">{col.header}</span>
+        <TableSortIcon state={sortState} className="shrink-0" />
       </button>
     )
   }
@@ -161,7 +178,7 @@ export function DataTable<T>({
               <th
                 key={String(col.key)}
                 className={cn(
-                  "p-3 text-xs font-medium bg-[#E8E9E8]",
+                  "p-3 font-normal bg-[#E8E9E8]",
                   getAlignClass(col.align),
                   col.className
                 )}
@@ -184,12 +201,22 @@ export function DataTable<T>({
           ) : (
             sortedData.map((row, rowIdx) => {
               const isSelected = selectedRows.has(row)
+              const rowKey = getRowKey(row, rowIdx)
+              const isRowMuted = mutedRowKeys.has(rowKey)
+              const rowHelpers: TableRowHelpers = {
+                rowIndex: rowIdx,
+                rowKey,
+                isRowMuted,
+                toggleRowMute: () => toggleRowMute(rowKey),
+              }
               return (
                 <tr
-                  key={getRowKey(row, rowIdx)}
+                  key={rowKey}
                   className={cn(
                     "border-b hover:bg-muted/50",
+                    striped && (rowIdx % 2 === 1 ? "bg-[#F5F5F5]" : "bg-white"),
                     isSelected && "bg-muted/30",
+                    isRowMuted && "opacity-50",
                     bodyRowClassName
                   )}
                 >
@@ -217,14 +244,14 @@ export function DataTable<T>({
                               aria-label="Select row"
                             />
                             {col.cell ? (
-                              col.cell(row)
+                              col.cell(row, rowHelpers)
                             ) : (
                               String((row[col.key as keyof T] ?? "") as string)
                             )}
                           </div>
                         )
                       ) : col.cell ? (
-                        col.cell(row)
+                        col.cell(row, rowHelpers)
                       ) : (
                         String((row[col.key as keyof T] ?? "") as string)
                       )}

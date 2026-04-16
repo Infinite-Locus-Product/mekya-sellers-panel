@@ -1,8 +1,3 @@
-/**
- * Shared types for order and user table data.
- * Used by order-management, user-management, dashboard, and OrderDetails.
- */
-
 export type OrderStatus =
   | "Completed"
   | "Pending"
@@ -32,4 +27,31 @@ export interface UserRow {
   role: UserRole
   status: UserStatus
   onboardingdate: string
+}
+
+export type ProductInventoryType =
+  | "ready_to_ship"
+  | "pre_booking"
+  | "stock_clearance"
+  | "sale_or_return"
+
+export type ProductListingActiveStatus = "active" | "inactive"
+export interface ProductRow {
+  id: string
+  name: string
+  articleNumber: string
+  category: string
+  sizes: string
+  colors: string
+  inventoryType: ProductInventoryType
+  price: string
+  quantity: number
+  status: ProductListingActiveStatus
+}
+
+export const PRODUCT_INVENTORY_TYPE_LABELS: Record<ProductInventoryType, string> = {
+  ready_to_ship: "Ready to Ship",
+  stock_clearance: "Stock Clearance",
+  pre_booking: "Pre-Booking",
+  sale_or_return: "Sale or Return",
 }
