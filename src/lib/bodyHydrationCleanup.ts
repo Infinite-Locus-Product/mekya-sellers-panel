@@ -1,6 +1,21 @@
-
+/**
+ * Removes attributes injected by browser extensions (e.g. Bitwarden `bis_*`,
+ * ColorZilla `cz-shortcut-listen`) before React hydrates so the DOM matches SSR.
+ *
+ * Inputs: none (reads `document`)
+ * Outputs: none
+ * Side effects: mutates DOM attributes
+ * Failure modes: no-op if `document.body` is missing; safe to call repeatedly
+ */
 export const BODY_HYDRATION_CLEANUP_SCRIPT = String.raw`(function(){
 function strip(){
+var root=document.documentElement;
+if(root&&root.attributes){
+for(var ri=root.attributes.length-1;ri>=0;ri--){
+var rn=root.attributes[ri].name;
+if(rn==="bis_register"||rn.indexOf("bis_")===0)root.removeAttribute(rn);
+}
+}
 var el=document.body;
 if(!el||!el.attributes)return;
 for(var i=el.attributes.length-1;i>=0;i--){
@@ -24,5 +39,15 @@ node.removeAttribute(attrName);
 }
 }
 }
+function runScheduled(){
 strip();
+if(typeof requestAnimationFrame==="function")requestAnimationFrame(strip);
+setTimeout(strip,0);
+setTimeout(strip,50);
+}
+function start(){
+if(document.body)runScheduled();
+else document.addEventListener("DOMContentLoaded",runScheduled,{once:true});
+}
+start();
 })();`

@@ -2,9 +2,14 @@ import type { StatusVariant } from "@/components/shared/StatusBadge"
 import type { OrderStatus } from "@/lib/tableTypes"
 
 const ORDER_STATUS_TO_BADGE_VARIANT: Record<OrderStatus, StatusVariant> = {
-  Completed: "delivered",
+  Completed: "completed",
+  Delivered: "delivered",
   Pending: "pending",
   Canceled: "canceled",
+  Processing: "processing",
+  Shipped: "shipped",
+  Returned: "returned",
+  "Partial Fulfillment": "partial",
 }
 
 export function orderStatusToBadgeVariant(status: OrderStatus): StatusVariant {

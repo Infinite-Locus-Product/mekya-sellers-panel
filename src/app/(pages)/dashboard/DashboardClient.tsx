@@ -7,11 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Clock } from "lucide-react";
-import {
-  KpiSaleTrendIcon,
-  KpiOrdersBagIcon,
-  KpiReturnUndoIcon,
-} from "@/assets/icons";
+import { KpiSaleTrendIcon, KpiOrdersBagIcon, KpiReturnUndoIcon, KpiAverageOrderValueIcon } from "@/assets/icons";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import type { AllOrder } from "@/lib/tableTypes";
 import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge";
@@ -23,7 +19,7 @@ import { TotalOrdersAnalyticsModal } from "@/components/modals/total-orders/Tota
 import { ReturnOrdersAnalyticsModal } from "@/components/modals";
 import { AppSelect } from "@/components/shared/AppSelect";
 
-const PAGE_SIZE = 10;
+const INITIAL_PAGE_SIZE = 10;
 
 export interface DashboardClientProps {
   initialOrders: AllOrder[];
@@ -42,7 +38,10 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
     return initialOrders.filter((order) => order.status === statusFilter);
   }, [initialOrders, statusFilter]);
 
-  const pagination = usePagination({ totalCount: filteredOrders.length, pageSize: PAGE_SIZE });
+  const pagination = usePagination({
+    totalCount: filteredOrders.length,
+    pageSize: INITIAL_PAGE_SIZE,
+  });
   const paginatedOrders = useMemo(
     () => filteredOrders.slice(pagination.startIndex, pagination.endIndex),
     [filteredOrders, pagination.startIndex, pagination.endIndex]
@@ -142,7 +141,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
       />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-medium text-foreground mb-2">Key Performance Summary</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 whitespace-nowrap">
           Date range : <AppSelect
             placeholder="Last 30 days"
             value={dateRange}
@@ -169,26 +168,16 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
           changeType="positive"
           icon={<KpiSaleTrendIcon />}
           onClick={() => setIsSalesModalOpen(true)}
-          background="linear-gradient(280.39deg, #AFEAFF 3.59%, #EBF9FF 51.27%, #D8EFFF 98.94%)"
-          image="/kpi/kpi1.png"
+          kpiType={1}
         />
         <KPICard
           title="Average Order Value"
           value="1,546"
           change="+12.5% From Previous Period"
           changeType="positive"
-          icon={<svg width="31" height="31" viewBox="0 0 31 31" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M11.3715 28.0516C11.8183 28.0516 12.1805 27.6894 12.1805 27.2426C12.1805 26.7958 11.8183 26.4336 11.3715 26.4336C10.9247 26.4336 10.5625 26.7958 10.5625 27.2426C10.5625 27.6894 10.9247 28.0516 11.3715 28.0516Z" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M22.6996 28.0516C23.1464 28.0516 23.5086 27.6894 23.5086 27.2426C23.5086 26.7958 23.1464 26.4336 22.6996 26.4336C22.2528 26.4336 21.8906 26.7958 21.8906 27.2426C21.8906 27.6894 22.2528 28.0516 22.6996 28.0516Z" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M4.89844 10.2539H8.13436L10.5613 24.0066H23.505" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M10.5633 20.7695H23.1753C23.2688 20.7696 23.3595 20.7372 23.4319 20.6779C23.5042 20.6186 23.5538 20.5361 23.5722 20.4444L25.0284 13.1636C25.0401 13.1049 25.0387 13.0443 25.0242 12.9862C25.0097 12.9281 24.9824 12.8739 24.9445 12.8276C24.9065 12.7814 24.8587 12.7441 24.8046 12.7185C24.7505 12.6929 24.6913 12.6796 24.6314 12.6797H8.94531" stroke="black" strokeWidth="1.2768" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M17.0234 10.4492C19.6469 10.4492 21.7734 8.32264 21.7734 5.69922C21.7734 3.07579 19.6469 0.949219 17.0234 0.949219C14.4 0.949219 12.2734 3.07579 12.2734 5.69922C12.2734 8.32264 14.4 10.4492 17.0234 10.4492Z" stroke="black" strokeWidth="0.57" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M15.1264 3.32422H16.5514M16.5514 3.32422H18.9264M16.5514 3.32422C17.0264 3.32422 17.9764 3.60922 17.9764 4.74922M18.9264 4.74922H17.9764M17.9764 4.74922H15.125M17.9764 4.74922C17.9764 5.88922 17.0264 6.17422 16.5514 6.17422H15.125L17.5014 8.07422" stroke="black" strokeWidth="0.57" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          }
+          icon={<KpiAverageOrderValueIcon />}
           onClick={() => setIsAverageOrderValueModalOpen(true)}
-          background="linear-gradient(100.31deg, #FFF4DE -0.8%, #FFF0D3 63.46%, #FFD177 101.6%)"
-          image="/kpi/kpi2.png"
+          kpiType={2}
         />
         <KPICard
           title="Total Orders"
@@ -197,8 +186,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
           changeType="positive"
           icon={<KpiOrdersBagIcon />}
           onClick={() => setIsTotalOrdersModalOpen(true)}
-          background="linear-gradient(100.25deg, #FFB9B9 0.53%, #FFE6E7 55.38%, #FF7477 101.5%)"
-          image="/kpi/kpi3.png"
+          kpiType={3}
         />
         <KPICard
           title="Return Orders"
@@ -207,20 +195,25 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
           changeType="positive"
           icon={<KpiReturnUndoIcon />}
           onClick={() => setIsReturnOrdersModalOpen(true)}
-          background="linear-gradient(100.63deg, #DFE3FF -1.02%, #FEEDFF 50.22%, #FF8EE4 101.47%)"
-          image="/kpi/kpi4.png"
+          kpiType={4}
         />
       </div>
 
       <Card className="overflow-hidden">
         <div className="bg-[#F9FAF9] px-6 pt-6">
           <div className="flex items-start justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
+            <div className="flex gap-1">
+              <div className="mt-0.5">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M11.2526 6.66667H10.0026V10.8333L13.5693 12.95L14.1693 11.9417L11.2526 10.2083V6.66667ZM10.8359 2.5C8.84681 2.5 6.93916 3.29018 5.53264 4.6967C4.12611 6.10322 3.33594 8.01088 3.33594 10H0.835938L4.13594 13.3583L7.5026 10H5.0026C5.0026 8.4529 5.61719 6.96917 6.71115 5.87521C7.80511 4.78125 9.28884 4.16667 10.8359 4.16667C12.383 4.16667 13.8668 4.78125 14.9607 5.87521C16.0547 6.96917 16.6693 8.4529 16.6693 10C16.6693 11.5471 16.0547 13.0308 14.9607 14.1248C13.8668 15.2188 12.383 15.8333 10.8359 15.8333C9.2276 15.8333 7.76927 15.175 6.71927 14.1167L5.53594 15.3C6.22894 16.0004 7.05455 16.5556 7.96454 16.9334C8.87453 17.3111 9.85067 17.5037 10.8359 17.5C12.8251 17.5 14.7327 16.7098 16.1392 15.3033C17.5458 13.8968 18.3359 11.9891 18.3359 10C18.3359 8.01088 17.5458 6.10322 16.1392 4.6967C14.7327 3.29018 12.8251 2.5 10.8359 2.5Z" fill="#2A2A2A" />
+                </svg>
+              </div>
+              <div className="flex flex-col gap-1"><CardTitle className="text-base">
                 Recent Orders
               </CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">View and manage your recent orders with sorting and filtering options</p>
+                <p className="text-sm text-muted-foreground">
+                  View and manage your recent orders with sorting and filtering options
+                </p></div>
             </div>
           </div>
           <div className="flex items-center gap-2 my-4">
@@ -230,7 +223,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
               onChange={(value: string) => setStatusFilter(value)}
               options={[
                 { label: "All Status", value: "all" },
-                { label: "Completed", value: "Completed" },
+                { label: "Delivered", value: "Delivered" },
                 { label: "Pending", value: "Pending" },
                 { label: "Canceled", value: "Canceled" },
               ]}
@@ -242,7 +235,13 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
             <DataTable columns={columns} data={paginatedOrders} bodyRowClassName="bg-white" />
           </div>
           <div className="mt-4">
-            <Pagination currentPage={pagination.currentPage} totalPages={pagination.totalPages} onPageChange={pagination.setPage} />
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.setPage}
+              pageSize={pagination.pageSize}
+              onPageSizeChange={pagination.setPageSize}
+            />
           </div>
         </CardContent>
       </Card>

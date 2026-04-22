@@ -602,3 +602,4 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
     </div>
   );
 }
+
