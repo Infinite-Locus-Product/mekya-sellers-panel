@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { Pagination } from "./Pagination";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("Pagination", () => {
   it("renders nothing when totalPages is 1", () => {
@@ -38,5 +42,19 @@ describe("Pagination", () => {
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     const next = screen.getByRole("button", { name: "Next page" });
     expect(next).not.toBeDisabled();
+  });
+
+  it("shows rows-per-page control when pageSize and onPageSizeChange are set", () => {
+    render(
+      <Pagination
+        currentPage={1}
+        totalPages={1}
+        onPageChange={() => {}}
+        pageSize={10}
+        onPageSizeChange={() => {}}
+      />
+    );
+    expect(screen.getByText("Rows per page")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Rows per page" })).toBeInTheDocument();
   });
 });

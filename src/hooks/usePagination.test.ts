@@ -45,4 +45,28 @@ describe("usePagination", () => {
     expect(result.current.startIndex).toBe(10);
     expect(result.current.endIndex).toBe(20);
   });
+
+  it("setPageSize updates pageSize and resets to page 1", () => {
+    const { result } = renderHook(() =>
+      usePagination({ totalCount: 100, pageSize: 10 })
+    );
+    act(() => result.current.setPage(3));
+    expect(result.current.currentPage).toBe(3);
+    act(() => result.current.setPageSize(20));
+    expect(result.current.pageSize).toBe(20);
+    expect(result.current.currentPage).toBe(1);
+  });
+
+  it("clamps current page when totalPages shrinks", () => {
+    const { result, rerender } = renderHook(
+      ({ totalCount }: { totalCount: number }) =>
+        usePagination({ totalCount, pageSize: 10 }),
+      { initialProps: { totalCount: 100 } }
+    );
+    act(() => result.current.setPage(5));
+    expect(result.current.currentPage).toBe(5);
+    rerender({ totalCount: 15 });
+    expect(result.current.totalPages).toBe(2);
+    expect(result.current.currentPage).toBe(2);
+  });
 });

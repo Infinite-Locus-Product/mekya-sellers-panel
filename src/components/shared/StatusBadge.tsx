@@ -3,11 +3,13 @@ import { type ReactNode } from "react"
 
 export type StatusVariant =
   | "delivered"
+  | "completed"
   | "pending"
   | "shipped"
   | "processing"
   | "canceled"
   | "returned"
+  | "partial"
 
 interface StatusBadgeProps {
   children: ReactNode
@@ -16,24 +18,29 @@ interface StatusBadgeProps {
 }
 
 const statusStyles: Record<StatusVariant, string> = {
-  delivered: "bg-[var(--success-light)] text-[var(--success-dark)]",
-  pending: "bg-[var(--warning-light)] text-[var(--warning-dark)]",
-  shipped: "bg-[var(--info-light)] text-[var(--info-dark)]",
-  processing: "bg-[var(--accent-light)] text-[var(--accent-dark)]",
-  canceled: "bg-[var(--error-light)] text-[var(--error-dark)]",
-  returned: "bg-[var(--warning-light)] text-[var(--warning-dark)]",
+  delivered: "bg-[#DBFCE7] text-[#016630]",
+  completed: "bg-[#E6F7ED] text-[#0A6A3D]",
+  pending: "bg-[#FEF9C2] text-[#686000]",
+  shipped: "bg-[#DBEAFE] text-[#2C4FBF]",
+  processing: "bg-[#FCDBF2] text-[#720050]",
+  canceled: "bg-[#FCDBDB] text-[#660101]",
+  returned: "bg-[#FFD8AA] text-[#7C4200]",
+  partial: "bg-[#CCFBF1] text-[#0F766E]",
 }
 
-export function StatusBadge({ children, variant, className }: StatusBadgeProps) {
+const BADGE_LAYOUT =
+  "inline-flex min-h-[22px] w-full min-w-0 max-w-full items-center justify-center gap-x-0.5 overflow-hidden rounded-full px-1 py-0.5 text-center text-[9px] font-medium leading-none whitespace-nowrap sm:min-h-7 sm:px-2 sm:text-[11px] xl:text-xs min-[1920px]:px-2.5 min-[1920px]:text-sm"
+
+export function StatusBadge({ children, variant, className }: Readonly<StatusBadgeProps>) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+        BADGE_LAYOUT,
         statusStyles[variant],
         className
       )}
     >
-      {children}
+      <span className="min-w-0 truncate">{children}</span>
     </span>
   )
 }

@@ -1,28 +1,41 @@
 "use client";
 
+import { useId } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+
+export const DEFAULT_PAGE_SIZE_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
 export interface PaginationProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
-  /** Max page buttons to show (excluding prev/next). Default 5. */
   maxVisible?: number;
   className?: string;
+  pageSize?: number;
+  onPageSizeChange?: (pageSize: number) => void;
+  pageSizeOptions?: readonly number[];
 }
 
-/**
- * Data-driven pagination. Use with usePagination or similar.
- */
 export function Pagination({
   currentPage,
   totalPages,
   onPageChange,
   maxVisible = 5,
   className,
+  pageSize,
+  onPageSizeChange,
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
 }: PaginationProps) {
-  if (totalPages <= 1) return null;
+  const pageSizeId = useId();
+  const showPageSize = pageSize !== undefined && onPageSizeChange !== undefined;
 
   const half = Math.floor(maxVisible / 2);
   let start = Math.max(1, currentPage - half);
@@ -35,21 +48,18 @@ export function Pagination({
     pages.push(i);
   }
 
-  return (
-    <div
-      className={cn("flex items-center justify-center gap-2", className)}
-      role="navigation"
-      aria-label="Pagination"
-    >
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => onPageChange(currentPage - 1)}
-        disabled={currentPage <= 1}
-        aria-label="Previous page"
-      >
-        &lt;
-      </Button>
+  const pageButtons =
+    totalPages > 1 ? (
+      <>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1}
+          aria-label="Previous page"
+        >
+          &lt;
+        </Button>
       {start > 1 && (
         <>
           <Button
@@ -96,15 +106,64 @@ export function Pagination({
           </Button>
         </>
       )}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => onPageChange(currentPage + 1)}
-        disabled={currentPage >= totalPages}
-        aria-label="Next page"
-      >
-        &gt;
-      </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= totalPages}
+          aria-label="Next page"
+        >
+          &gt;
+        </Button>
+      </>
+    ) : null;
+
+  if (!showPageSize && totalPages <= 1) return null;
+
+  return (
+    <div
+      className={cn(
+        "flex w-full flex-wrap items-center gap-2 min-[1920px]:gap-4",
+        showPageSize ? "justify-between" : "justify-center",
+        className
+      )}
+    >
+      {showPageSize && (
+        <div className="flex min-w-0 shrink-0 items-center gap-1.5 min-[1920px]:gap-2">
+          <label
+            htmlFor={pageSizeId}
+            className="whitespace-nowrap text-[11px] text-muted-foreground min-[1920px]:text-sm"
+          >
+            Rows per page
+          </label>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => onPageSizeChange(Number(v))}
+          >
+            <SelectTrigger id={pageSizeId} size="sm" className="w-[4.25rem]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              {pageSizeOptions.map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {pageButtons && (
+        <nav
+          className={cn(
+            "flex min-w-0 flex-1 flex-wrap items-center gap-1.5 min-[1920px]:gap-2",
+            showPageSize ? "justify-end sm:justify-end" : "justify-center"
+          )}
+          aria-label="Pagination"
+        >
+          {pageButtons}
+        </nav>
+      )}
     </div>
   );
 }

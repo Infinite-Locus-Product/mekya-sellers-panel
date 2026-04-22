@@ -91,6 +91,21 @@ export function DialogCloseIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+/** Order detail "Export PDF" button */
+export function ExportPdfIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
+      <path
+        d="M2.67188 10.6693V11.3333C2.67188 11.8638 2.88259 12.3725 3.25766 12.7475C3.63273 13.1226 4.14144 13.3333 4.67188 13.3333H11.3385C11.869 13.3333 12.3777 13.1226 12.7528 12.7475C13.1278 12.3725 13.3385 11.8638 13.3385 11.3333V10.6667M8.00521 3V10.3333M8.00521 10.3333L10.3385 8M8.00521 10.3333L5.67188 8"
+        stroke="black"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 /** DataTable sortable column header (14×14); left stroke = descending, right = ascending */
 export function TableSortIcon({
   state = "none",

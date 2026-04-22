@@ -9,6 +9,7 @@ const ORDER_STATUS_TO_BADGE_VARIANT: Record<OrderStatus, StatusVariant> = {
   Shipped: "shipped",
   Delivered: "delivered",
   Returned: "returned",
+  "Partial Fulfillment": "partial",
 }
 
 export function orderStatusToBadgeVariant(status: OrderStatus): StatusVariant {

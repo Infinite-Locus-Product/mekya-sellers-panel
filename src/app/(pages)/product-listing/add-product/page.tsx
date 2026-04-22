@@ -18,3 +18,4 @@ export default async function AddProductPage({
   );
   return <AddProductClient categoryOptions={categoryOptions} initialProduct={initialProduct} />;
 }
+

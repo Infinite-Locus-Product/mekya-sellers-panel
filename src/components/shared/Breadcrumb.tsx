@@ -27,7 +27,10 @@ export function Breadcrumb({ items, separator = DEFAULT_SEPARATOR, className }: 
   return (
     <nav
       aria-label="Breadcrumb"
-      className={cn("flex items-center gap-2 text-sm", className)}
+      className={cn(
+        "flex items-center gap-1.5 text-xs min-[1920px]:gap-2 min-[1920px]:text-sm",
+        className
+      )}
     >
       {items.map((item, index) => {
         const isLast = index === items.length - 1;

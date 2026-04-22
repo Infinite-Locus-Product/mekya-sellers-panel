@@ -6,6 +6,7 @@ import Link from "next/link"
 import { TrendUpIcon, TrendDownIcon } from "@/assets/icons"
 
 export type KPICardVariant = "success" | "warning" | "error" | "info" | "accent"
+export type KPICardType = 1 | 2 | 3 | 4 | 5
 
 interface KPICardProps {
   title: string
@@ -19,6 +20,7 @@ interface KPICardProps {
   className?: string
   onClick?: () => void
   href?: string
+  kpiType?: KPICardType
   background?: string
   image?: string
   imageClassName?: string
@@ -34,7 +36,30 @@ const variantStyles: Record<KPICardVariant, string> = {
 }
 
 const DEFAULT_IMAGE_CLASS =
-  "absolute -right-8 -bottom-8 w-[120px] h-[120px] md:w-[120px] md:h-[110px] sm:w-[110px] sm:h-[100px] object-contain select-none pointer-events-none kpi-spin-img scale-[1.2]"
+  "absolute -right-8 -bottom-10 h-[72px] w-[72px] object-contain select-none pointer-events-none kpi-spin-img scale-110 sm:-right-10 sm:-bottom-12 sm:h-[90px] sm:w-[90px] sm:scale-125 xl:-right-12 xl:-bottom-14 xl:h-[110px] xl:w-[110px] min-[1920px]:h-[130px] min-[1920px]:w-[130px] min-[1920px]:scale-[1.35]"
+
+const kpiTypeStyles: Record<KPICardType, { background: string; image: string }> = {
+  1: {
+    background: "linear-gradient(280.39deg, #AFEAFF 3.59%, #EBF9FF 51.27%, #D8EFFF 98.94%)",
+    image: "/kpi/kpi1.png",
+  },
+  2: {
+    background: "linear-gradient(100.31deg, #FFF4DE -0.8%, #FFF0D3 63.46%, #FFD177 101.6%)",
+    image: "/kpi/kpi2.png",
+  },
+  3: {
+    background: "linear-gradient(100.25deg, #FFB9B9 0.53%, #FFE6E7 55.38%, #FF7477 101.5%)",
+    image: "/kpi/kpi3.png",
+  },
+  4: {
+    background: "linear-gradient(100.63deg, #DFE3FF -1.02%, #FEEDFF 50.22%, #FF8EE4 101.47%)",
+    image: "/kpi/kpi4.png",
+  },
+  5: {
+    background: "linear-gradient(100.63deg, #93F1BA -1.02%, #DDFFF3 50.22%, #C9FF88 101.47%)",
+    image: "/kpi/kpi5.png",
+  },
+}
 
 export function KPICard({
   title,
@@ -48,17 +73,21 @@ export function KPICard({
   className,
   onClick,
   href,
+  kpiType,
   background,
   image,
   imageClassName,
   subtitleBelowValue,
 }: KPICardProps) {
+  const kpiStyle = kpiType ? kpiTypeStyles[kpiType] : undefined
+  const resolvedBackground = kpiStyle?.background ?? background
+  const resolvedImage = kpiStyle?.image ?? image
   const interactive = Boolean(href || onClick)
   const card = (
     <Card
       className={cn(
         "overflow-hidden transition-all",
-        "w-full min-w-0 h-[160px] sm:h-auto sm:min-h-[160px] md:h-[140px]",
+        "h-[128px] w-full min-w-0 sm:h-auto sm:min-h-[128px] md:min-h-[132px] xl:min-h-[140px] min-[1920px]:min-h-[160px]",
         interactive && "cursor-pointer hover:shadow-md",
         !href && className
       )}
@@ -66,24 +95,28 @@ export function KPICard({
     >
       <CardContent
         className={cn(
-          "p-6 w-full h-full relative group",
-          background ? undefined : variantStyles[variant]
+          "relative h-full w-full p-3 sm:p-4 min-[1920px]:p-6 group",
+          resolvedBackground ? undefined : variantStyles[variant]
         )}
-        style={background ? { background: background } : undefined}
+        style={resolvedBackground ? { background: resolvedBackground } : undefined}
       >
-        <div className="flex items-stretch w-full h-full justify-between">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col h-full">
+        <div className="flex h-full w-full items-stretch justify-between">
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
             <div className="shrink-0">
-              <p className="text-md font-medium mb-1">{title}</p>
+              <p className="mb-0.5 text-xs font-medium min-[1920px]:mb-1 min-[1920px]:text-base">
+                {title}
+              </p>
               {!subtitleBelowValue && subtitle && (
-                <p className="text-xs text-muted-foreground">{subtitle}</p>
+                <p className="text-[10px] text-muted-foreground min-[1920px]:text-xs">{subtitle}</p>
               )}
             </div>
-            <div className="mt-auto flex flex-col gap-1.5 pt-4">
-              <p className="text-2xl font-bold text-foreground">{value}</p>
+            <div className="mt-auto flex flex-col gap-1 pt-2 min-[1920px]:gap-1.5 min-[1920px]:pt-4">
+              <p className="text-lg font-bold leading-tight text-foreground min-[1920px]:text-2xl min-[1920px]:leading-none">
+                {value}
+              </p>
               {change &&
                 (changeDisplay === "text" ? (
-                  <p className="text-sm text-muted-foreground">{change}</p>
+                  <p className="text-xs text-muted-foreground min-[1920px]:text-sm">{change}</p>
                 ) : (
                   (() => {
                     const fromIndex = change.indexOf(" From ")
@@ -114,18 +147,22 @@ export function KPICard({
                   })()
                 ))}
               {subtitleBelowValue && subtitle && (
-                <p className="text-sm text-muted-foreground">{subtitle}</p>
+                <p className="text-xs text-muted-foreground min-[1920px]:text-sm">{subtitle}</p>
               )}
             </div>
           </div>
-          {icon && <div className="  absolute right-2 top-2 bg-[linear-gradient(180deg,_#F9F9F9_0%,_rgba(189,189,189,0.73)_100%)] rounded-full p-2 shadow-[inset_0px_4px_4px_0px_#00000040]">{icon}</div>}
+          {icon && (
+            <div className="absolute right-1 top-1 rounded-full bg-[linear-gradient(180deg,_#F9F9F9_0%,_rgba(189,189,189,0.73)_100%)] p-1 shadow-[inset_0px_4px_4px_0px_#00000040] sm:p-1.5 min-[1920px]:right-2 min-[1920px]:top-2 min-[1920px]:p-2 [&>svg]:size-3.5 xl:[&>svg]:size-4 min-[1920px]:[&>svg]:size-5">
+              {icon}
+            </div>
+          )}
         </div>
-        {image && (
+        {resolvedImage && (
           <Image
-            src={image}
+            src={resolvedImage}
             width={120}
             height={120}
-            sizes="(max-width: 640px) 90px, (max-width: 768px) 110px, 140px"
+            sizes="(max-width: 640px) 72px, (max-width: 1280px) 90px, (max-width: 1919px) 110px, 140px"
             alt="KPI Card Decoration"
             className={cn(DEFAULT_IMAGE_CLASS, imageClassName)}
             draggable="false"

@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Script from "next/script"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { BODY_HYDRATION_CLEANUP_SCRIPT } from "@/lib/bodyHydrationCleanup"
@@ -26,17 +27,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <Script
+          id="body-hydration-cleanup-before-interactive"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: BODY_HYDRATION_CLEANUP_SCRIPT }}
+        />
+      </head>
       <body
         suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} overflow-x-hidden`}
       >
-        <script
-          id="body-hydration-cleanup-start"
-          dangerouslySetInnerHTML={{ __html: BODY_HYDRATION_CLEANUP_SCRIPT }}
-        />
         <AppProviders>{children}</AppProviders>
         <script
-          id="body-hydration-cleanup-end"
+          id="body-hydration-cleanup-after-content"
           dangerouslySetInnerHTML={{ __html: BODY_HYDRATION_CLEANUP_SCRIPT }}
         />
       </body>

@@ -5,6 +5,8 @@ export { LoadingSpinner } from "./LoadingSpinner"
 export { ErrorMessage } from "./ErrorMessage"
 export { EmptyState } from "./EmptyState"
 export { StatusBadge } from "./StatusBadge"
+export { InventoryTypeBadge } from "./InventoryTypeBadge"
+export { PaymentStatusBadge } from "./PaymentStatusBadge"
 export { KPICard } from "./KPICard"
 export { SubKpiCard } from "./SubKpiCard"
 export type { SubKpiCardProps } from "./SubKpiCard"
@@ -27,6 +29,20 @@ export type {
 } from "./AnalyticsModal"
 export { ExportDropdown } from "./ExportDropdown"
 export type { ExportDropdownProps } from "./ExportDropdown"
-export { Pagination } from "./Pagination"
+export { Pagination, DEFAULT_PAGE_SIZE_OPTIONS } from "./Pagination"
 export type { PaginationProps } from "./Pagination"
+export { OrderDetails } from "./OrderDetails"
+export type {
+  OrderDetailsData,
+  OrderItem,
+  FulfillmentTimelineItem,
+  CustomerInfo,
+  PaymentInfo,
+  B2BBundleKind,
+  B2BIncludedLine,
+  B2BConfigurationDisplay,
+  B2BOrderLineDisplay,
+  B2BFulfillmentStats,
+  B2BPartialColorRow,
+} from "./order-details/types"
 
