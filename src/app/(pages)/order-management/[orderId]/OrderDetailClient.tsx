@@ -24,11 +24,16 @@ export function OrderDetailClient({ order }: Readonly<OrderDetailClientProps>) {
     router.replace(`${pathname}?${next.toString()}`, { scroll: false })
   }, [order.orderType, pathname, router, searchParams])
 
-  const handleStatusUpdate = (_orderId: string, _status: StatusVariant, _notes: string) => {
+  const handleStatusUpdate = (orderId: string, status: StatusVariant, notes: string) => {
+    void orderId
+    void status
+    void notes
   }
-  const handleExportPDF = (_orderId: string) => {
+  const handleExportPDF = (orderId: string) => {
+    void orderId
   }
-  const handleSendUpdate = (_orderId: string) => {
+  const handleSendUpdate = (orderId: string) => {
+    void orderId
   }
 
   return (
@@ -44,6 +49,7 @@ export function OrderDetailClient({ order }: Readonly<OrderDetailClientProps>) {
         ]}
       />
       <OrderDetails
+        key={order.id}
         order={order}
         onStatusUpdate={handleStatusUpdate}
         onExportPDF={handleExportPDF}

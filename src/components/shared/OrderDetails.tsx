@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Mail } from "lucide-react"
@@ -50,11 +50,6 @@ export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate 
   const router = useRouter()
   const [selectedStatus, setSelectedStatus] = useState<StatusVariant>(() => initialSelectedStatus(order))
   const [adminNotes, setAdminNotes] = useState(order.adminNotes || "")
-
-  useEffect(() => {
-    setSelectedStatus(initialSelectedStatus(order))
-    setAdminNotes(order.adminNotes || "")
-  }, [order])
 
   const handleStatusUpdate = () => {
     onStatusUpdate?.(order.id, selectedStatus, adminNotes)
