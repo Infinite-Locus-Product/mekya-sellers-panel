@@ -2,6 +2,9 @@
   "name": "mekya_seller_frontend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "NODE_OPTIONS='--max-old-space-size=8192' next dev --webpack",
     "dev:turbo": "NODE_OPTIONS='--max-old-space-size=8192' next dev",

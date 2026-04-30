@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 
 const DEFAULT_PAGE_SIZE = 10;
 
@@ -36,13 +36,15 @@ export function usePagination({
     [totalCount, pageSize]
   );
 
-  useEffect(() => {
-    setCurrentPage((page) => Math.min(page, totalPages));
-  }, [totalPages]);
+  /** When `totalCount` shrinks, avoid out-of-range page without syncing in an effect. */
+  const effectivePage = useMemo(
+    () => Math.min(Math.max(1, currentPage), totalPages),
+    [currentPage, totalPages]
+  );
 
   const startIndex = useMemo(
-    () => (currentPage - 1) * pageSize,
-    [currentPage, pageSize]
+    () => (effectivePage - 1) * pageSize,
+    [effectivePage, pageSize]
   );
   const endIndex = useMemo(
     () => Math.min(startIndex + pageSize, totalCount),
@@ -63,11 +65,11 @@ export function usePagination({
     setCurrentPage(1);
   }, []);
 
-  const nextPage = useCallback(() => setPage(currentPage + 1), [currentPage, setPage]);
-  const prevPage = useCallback(() => setPage(currentPage - 1), [currentPage, setPage]);
+  const nextPage = useCallback(() => setPage(effectivePage + 1), [effectivePage, setPage]);
+  const prevPage = useCallback(() => setPage(effectivePage - 1), [effectivePage, setPage]);
 
   return {
-    currentPage,
+    currentPage: effectivePage,
     pageSize,
     totalPages,
     startIndex,
@@ -76,7 +78,7 @@ export function usePagination({
     setPageSize,
     nextPage,
     prevPage,
-    hasNext: currentPage < totalPages,
-    hasPrev: currentPage > 1,
+    hasNext: effectivePage < totalPages,
+    hasPrev: effectivePage > 1,
   };
 }
