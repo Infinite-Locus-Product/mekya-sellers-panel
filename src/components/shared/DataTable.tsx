@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils"
 import { ReactNode, useCallback, useState } from "react"
 import { TableSortIcon } from "@/assets/icons/shared"
+import { Pagination } from "@/components/shared/Pagination"
 
 export type TableRowHelpers = {
   rowIndex: number
@@ -21,6 +22,22 @@ export type TableColumn<T> = {
   checkbox?: boolean
 }
 
+/** Pass from the parent together with paginated `data` and `usePagination` (or equivalent). */
+export type DataTablePaginationProps = {
+  currentPage: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  pageSize: number
+  onPageSizeChange: (pageSize: number) => void
+  /** Length of the full filtered dataset (not only the current page). */
+  totalRowCount: number
+  pageSizeOptions?: readonly number[]
+  /** Extra classes on the footer wrapper below the table (default includes `mt-4`). */
+  footerClassName?: string
+  /** Extra classes passed to `Pagination` root. */
+  paginationClassName?: string
+}
+
 interface DataTableProps<T> {
   columns: TableColumn<T>[]
   data: T[]
@@ -30,6 +47,7 @@ interface DataTableProps<T> {
   selectedRows?: Set<T>
   bodyRowClassName?: string
   striped?: boolean
+  pagination?: DataTablePaginationProps
 }
 
 function isStandaloneCheckboxColumn<T>(col: TableColumn<T>): boolean {
@@ -47,6 +65,7 @@ export function DataTable<T>({
   selectedRows = new Set(),
   bodyRowClassName,
   striped = false,
+  pagination,
 }: DataTableProps<T>) {
   const [sortConfig, setSortConfig] = useState<{
     key: string | keyof T
@@ -172,7 +191,8 @@ export function DataTable<T>({
     "min-w-0 whitespace-normal break-words [overflow-wrap:anywhere] align-top"
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-md">
+    <div className="w-full min-w-0">
+      <div className="w-full min-w-0 max-w-full overflow-hidden rounded-md">
       <table className="w-full min-w-0 table-fixed border-collapse">
         <thead>
           <tr className="border-b">
@@ -273,6 +293,21 @@ export function DataTable<T>({
           )}
         </tbody>
       </table>
+      </div>
+      {pagination ? (
+        <div className={cn("mt-4", pagination.footerClassName)}>
+          <Pagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            onPageChange={pagination.onPageChange}
+            pageSize={pagination.pageSize}
+            onPageSizeChange={pagination.onPageSizeChange}
+            totalRowCount={pagination.totalRowCount}
+            pageSizeOptions={pagination.pageSizeOptions}
+            className={pagination.paginationClassName}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }

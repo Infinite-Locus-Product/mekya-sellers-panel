@@ -3,7 +3,12 @@
  */
 
 import { mockOrders } from "../orderData";
-import type { AllOrder } from "@/lib/tableTypes";
+import type {
+  AllOrder,
+  OrderType,
+  ProductInventoryType,
+} from "@/lib/tableTypes";
+import { READY_FOR_DISPATCH } from "@/components/shared/order-details/utils";
 import type {
   OrderDetailsData,
   FulfillmentTimelineItem,
@@ -52,12 +57,30 @@ function normalizeStatus(value: string): StatusVariant {
 function buildTimeline(
   status: StatusVariant,
   date: string,
+  context?: Readonly<{
+    orderType: OrderType;
+    inventoryType?: ProductInventoryType;
+  }>,
 ): FulfillmentTimelineItem[] {
   const currentIndex = TIMELINE_STAGES.findIndex(
     (entry) => entry.status === status,
   );
   const fallbackIndex = status === "canceled" || status === "returned" ? 1 : 0;
-  const activeIndex = currentIndex >= 0 ? currentIndex : fallbackIndex;
+  let activeIndex = currentIndex >= 0 ? currentIndex : fallbackIndex;
+
+  const readyForDispatchIndex = TIMELINE_STAGES.findIndex(
+    (entry) => entry.stage === READY_FOR_DISPATCH,
+  );
+  /** B2B ready-to-ship stock: timeline current step is Ready for Dispatch (not Order Placed) while order status is still pending/processing. */
+  const useReadyToShipDispatchMilestone =
+    context?.orderType === "B2B" &&
+    context.inventoryType === "ready_to_ship" &&
+    (status === "pending" || status === "processing") &&
+    readyForDispatchIndex >= 0;
+
+  if (useReadyToShipDispatchMilestone) {
+    activeIndex = readyForDispatchIndex;
+  }
 
   return TIMELINE_STAGES.map((entry, index) => ({
     stage: entry.stage,
@@ -94,7 +117,8 @@ const B2B_IMAGE_THUMBS = [
  */
 function buildB2BLineDisplay(order: AllOrder): B2BOrderLineDisplay {
   const list = order.productList ?? [];
-  const numericId = order.id.replaceAll(/\D/g, "").slice(-3).padStart(3, "0") || "001";
+  const numericId =
+    order.id.replaceAll(/\D/g, "").slice(-3).padStart(3, "0") || "001";
 
   const first = list[0];
   const second = list[1];
@@ -112,7 +136,9 @@ function buildB2BLineDisplay(order: AllOrder): B2BOrderLineDisplay {
   const lineTotalAmount = lineTotalA + lineTotalB;
 
   const configATitle = "Black Size Trio";
-  const configBTitle = second?.name ? second.name.slice(0, 36) : "Colored Size Pick 6";
+  const configBTitle = second?.name
+    ? second.name.slice(0, 36)
+    : "Colored Size Pick 6";
 
   const configAIncluded: B2BConfigurationDisplay["includedLines"] = [
     { label: "S - Black" },
@@ -149,7 +175,14 @@ function buildB2BLineDisplay(order: AllOrder): B2BOrderLineDisplay {
       bundleKind: "single_size_bundle",
       sizeLabels: ["L"],
       colorLabel: "",
-      colorSwatches: ["#2563EB", "#EA580C", "#EAB308", "#171717", "#DC2626", "#16A34A"],
+      colorSwatches: [
+        "#2563EB",
+        "#EA580C",
+        "#EAB308",
+        "#171717",
+        "#DC2626",
+        "#16A34A",
+      ],
       setsOrdered: setsB,
       lineTotal: lineTotalB,
       includedLines: configBIncluded,
@@ -171,7 +204,8 @@ function buildB2BLineDisplay(order: AllOrder): B2BOrderLineDisplay {
 
 /** B2B partial-fulfillment detail demo: size grid + totals (replace with API fields when integrated). */
 function buildB2BPartialFulfillmentLine(order: AllOrder): B2BOrderLineDisplay {
-  const numericId = order.id.replaceAll(/\D/g, "").slice(-3).padStart(3, "0") || "001"
+  const numericId =
+    order.id.replaceAll(/\D/g, "").slice(-3).padStart(3, "0") || "001";
 
   return {
     productName: "Men's Zip Up Sporty Jacket & Tied Pants Set",
@@ -210,15 +244,68 @@ function buildB2BPartialFulfillmentLine(order: AllOrder): B2BOrderLineDisplay {
         totalPrice: 10_500,
       },
     ],
-  }
+  };
 }
 
-function b2bPartialFulfillmentStats(): B2BFulfillmentStats {
+/** Demo total aligned with `buildB2BPartialFulfillmentLine` (`totalSets: 45`). */
+const B2B_PARTIAL_FULFILLMENT_DEMO_TOTAL = 45;
+
+function b2bPreBookingAllComplete(total: number): B2BFulfillmentStats {
   return {
-    totalItems: 45,
-    fulfilled: 0,
-    delivered: 0,
-    pending: 45,
+    totalItems: total,
+    fulfilled: total,
+    delivered: total,
+    pending: 0,
+  };
+}
+
+function b2bFulfillmentStatsFromOrder(order: AllOrder): B2BFulfillmentStats {
+  const total = B2B_PARTIAL_FULFILLMENT_DEMO_TOTAL;
+  const isPreBooking = order.type === "B2B" && order.inventoryType === "pre_booking";
+
+  if (!isPreBooking) {
+    return {
+      totalItems: total,
+      fulfilled: 10,
+      delivered: 10,
+      pending: 35,
+    };
+  }
+
+  const rawStatus = normalizeStatusKey(String(order.status));
+
+  if (order.partial_fulfillment_quantities) {
+    const counts = order.partial_fulfillment_quantities;
+    return {
+      totalItems: counts.total,
+      fulfilled: counts.fulfilled,
+      delivered: counts.delivered,
+      pending: counts.pending,
+    };
+  }
+
+  if (rawStatus === "delivered") {
+    return b2bPreBookingAllComplete(total);
+  }
+
+  switch (order.partial_fulfillment_status) {
+    case "not_fulfilled":
+      return {
+        totalItems: total,
+        fulfilled: 0,
+        delivered: 0,
+        pending: total,
+      };
+    case "fully_fulfilled":
+      return b2bPreBookingAllComplete(total);
+    case "partially_fulfilled":
+    default:
+      return {
+        totalItems: total,
+        fulfilled: 10,
+        delivered: 10,
+        pending: 35,
+      };
   }
 }
 
@@ -230,8 +317,9 @@ function mapOrderToDetails(order: AllOrder): OrderDetailsData {
   const placedTime = placedTimeRaw?.trim() || "10:30 AM";
   const gst = Math.round(amount * 0.18);
 
-  const isB2B = order.type === "B2B"
-  const isPartialB2B = isB2B && status === "partial"
+  const isB2B = order.type === "B2B";
+  const isB2BFulfillmentProgressContext =
+    isB2B && (status === "partial" || order.inventoryType === "pre_booking");
 
   return {
     id: order.id,
@@ -240,13 +328,16 @@ function mapOrderToDetails(order: AllOrder): OrderDetailsData {
     status,
     customer: {
       name: order.vendor,
+      ...(isB2BFulfillmentProgressContext
+        ? { company: `${order.vendor} Pvt Ltd` }
+        : {}),
       email: `${order.vendor.toLowerCase().replaceAll(/\s+/g, ".")}@example.com`,
       phone: "+91 9876543210",
       address: "123 Market Street, Mumbai, Maharashtra, India",
       tag: order.type,
     },
     payment: {
-      method: isPartialB2B
+      method: isB2BFulfillmentProgressContext
         ? "Wire Transfer"
         : order.paymentStatus === "Paid"
           ? "UPI"
@@ -258,16 +349,21 @@ function mapOrderToDetails(order: AllOrder): OrderDetailsData {
       total: amount + gst,
     },
     items: buildItems(order, amount),
-    timeline: buildTimeline(status, placedDate),
+    timeline: buildTimeline(status, placedDate, {
+      orderType: order.type,
+      inventoryType: order.inventoryType,
+    }),
     adminNotes: "",
     orderType: order.type,
     inventoryType: order.inventoryType,
     b2bLineItems: isB2B
-      ? isPartialB2B
+      ? isB2BFulfillmentProgressContext
         ? [buildB2BPartialFulfillmentLine(order)]
         : [buildB2BLineDisplay(order)]
       : undefined,
-    b2bFulfillmentStats: isPartialB2B ? b2bPartialFulfillmentStats() : undefined,
+    b2bFulfillmentStats: isB2BFulfillmentProgressContext
+      ? b2bFulfillmentStatsFromOrder(order)
+      : undefined,
   };
 }
 

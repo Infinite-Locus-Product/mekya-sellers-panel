@@ -17,11 +17,6 @@ export function CustomerInformationSection({
   customer: CustomerInfo
   orderType: OrderType
 }>) {
-  const footerHint =
-    orderType === "B2B"
-      ? "Business buyer — pricing and terms follow your B2B agreement."
-      : "Direct customer — standard retail checkout and policies apply."
-
   return (
     <section aria-labelledby="order-detail-customer-heading" className="contents">
       <Card className="bg-[#E8E9E8]/30">
@@ -30,14 +25,12 @@ export function CustomerInformationSection({
             <OrderDetailCustomerTitleIcon />
             Customer Information
           </CardTitle>
-          <p className="text-xs text-muted-foreground">{footerHint}</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <p className="text-base font-semibold text-foreground">{customer.name}</p>
-            {customer.company ? <p className="text-sm text-muted-foreground mt-1">{customer.company}</p> : null}
+            <p className="font-medium text-sm">{customer.name}</p>
             {customer.tag ? (
-              <span className="inline-block px-3 py-1 text-xs font-medium bg-black text-white rounded-full  mt-2">
+              <span className="inline-block px-3 py-1 text-xs font-medium bg-black text-white rounded-full  mt-2 h-6">
                 {customer.tag}
               </span>
             ) : null}
@@ -45,7 +38,7 @@ export function CustomerInformationSection({
           <div className="w-full h-px bg-gray-300"></div>
           <div className="flex items-center gap-2">
             <OrderDetailCustomerEmailIcon />
-            <p className="text-sm text-muted-foreground">{customer.email}</p>
+            <p className="text-sm text-muted-foreground font-normal">{customer.email}</p>
           </div>
           <div className="flex items-center gap-2">
             <OrderDetailCustomerPhoneIcon />

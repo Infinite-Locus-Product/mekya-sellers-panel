@@ -10,11 +10,17 @@ export type StatusVariant =
   | "canceled"
   | "returned"
   | "partial"
+  /** B2B Custom Orders table */
+  | "custom_in_process"
+  | "custom_pending_info"
+  | "custom_fulfilled"
 
 interface StatusBadgeProps {
   children: ReactNode
   variant: StatusVariant
   className?: string
+  /** When true, label may wrap (e.g. long custom-order status). */
+  allowWrap?: boolean
 }
 
 const statusStyles: Record<StatusVariant, string> = {
@@ -26,21 +32,33 @@ const statusStyles: Record<StatusVariant, string> = {
   canceled: "bg-[#FCDBDB] text-[#660101]",
   returned: "bg-[#FFD8AA] text-[#7C4200]",
   partial: "bg-[#CCFBF1] text-[#0F766E]",
+  custom_in_process: "bg-[#DBEAFE] text-[#1D4ED8]",
+  custom_pending_info: "bg-[#FEF9C2] text-[#854D0E]",
+  custom_fulfilled: "bg-[#DCFCE7] text-[#15803D]",
 }
 
 const BADGE_LAYOUT =
   "inline-flex min-h-[22px] w-full min-w-0 max-w-full items-center justify-center gap-x-0.5 overflow-hidden rounded-full px-1 py-0.5 text-center text-[9px] font-medium leading-none whitespace-nowrap sm:min-h-7 sm:px-2 sm:text-[11px] xl:text-xs min-[1920px]:px-2.5 min-[1920px]:text-sm"
 
-export function StatusBadge({ children, variant, className }: Readonly<StatusBadgeProps>) {
+const BADGE_LAYOUT_WRAP_LONG =
+  "inline-flex min-h-[22px] w-full min-w-0 max-w-full items-center justify-center gap-x-0.5 rounded-full px-1 py-0.5 text-center text-[8px] font-medium leading-tight sm:min-h-7 sm:px-2 sm:text-[10px] xl:text-[11px] min-[1920px]:px-2.5 min-[1920px]:text-xs"
+
+export function StatusBadge({
+  children,
+  variant,
+  className,
+  allowWrap = false,
+}: Readonly<StatusBadgeProps>) {
+  const layout = allowWrap ? BADGE_LAYOUT_WRAP_LONG : BADGE_LAYOUT
   return (
     <span
       className={cn(
-        BADGE_LAYOUT,
+        layout,
         statusStyles[variant],
         className
       )}
     >
-      <span className="min-w-0 truncate">{children}</span>
+      <span className={allowWrap ? "min-w-0 text-pretty" : "min-w-0 truncate"}>{children}</span>
     </span>
   )
 }
