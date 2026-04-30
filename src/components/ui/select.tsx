@@ -31,7 +31,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "group flex w-fit cursor-pointer items-center justify-between gap-2  rounded-xs border border-border px-3 py-2 text-sm text-muted-foreground whitespace-nowrap shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "group flex w-fit cursor-pointer items-center justify-between gap-2  rounded-[4px] border border-border px-3 py-2 text-sm text-muted-foreground whitespace-nowrap shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       {...props}
@@ -39,7 +39,18 @@ function SelectTrigger({
       {children}
       <SelectPrimitive.Icon asChild>
         <span className="relative inline-flex size-4 items-center justify-center min-[1920px]:size-5">
-          <ChevronDownIcon className="size-3.5 opacity-100 transition-opacity duration-150 group-data-[state=open]:opacity-0 min-[1920px]:size-4" />
+          <svg
+            viewBox="0 0 20 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="size-3.5 opacity-100 transition-opacity duration-150 group-data-[state=open]:opacity-0 min-[1920px]:size-4"
+            aria-hidden="true"
+          >
+            <path
+              d="M9.29225 12.9493L9.99925 13.6563L15.6563 7.99925L14.2423 6.58525L9.99925 10.8273L5.75625 6.58525L4.34225 7.99925L9.29225 12.9493Z"
+              fill="black"
+            />
+          </svg>
           <svg
             viewBox="0 0 20 20"
             fill="none"

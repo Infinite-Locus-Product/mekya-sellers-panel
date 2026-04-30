@@ -11,7 +11,6 @@ import { KpiSaleTrendIcon, KpiOrdersBagIcon, KpiReturnUndoIcon, KpiAverageOrderV
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import type { AllOrder } from "@/lib/tableTypes";
 import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge";
-import { Pagination } from "@/components/shared/Pagination";
 import { usePagination } from "@/hooks";
 import { SalesAnalyticsModal } from "@/components/modals/sales/SalesAnalyticsModal";
 import { AverageOrderValueModal } from "@/components/modals/average-order-value/AverageOrderValueModal";
@@ -232,15 +231,18 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
         </div>
         <CardContent className="relative pt-4 bg-[#F9FAF9]">
           <div className="relative">
-            <DataTable columns={columns} data={paginatedOrders} bodyRowClassName="bg-white" />
-          </div>
-          <div className="mt-4">
-            <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPageChange={pagination.setPage}
-              pageSize={pagination.pageSize}
-              onPageSizeChange={pagination.setPageSize}
+            <DataTable
+              columns={columns}
+              data={paginatedOrders}
+              bodyRowClassName="bg-white"
+              pagination={{
+                currentPage: pagination.currentPage,
+                totalPages: pagination.totalPages,
+                onPageChange: pagination.setPage,
+                pageSize: pagination.pageSize,
+                onPageSizeChange: pagination.setPageSize,
+                totalRowCount: filteredOrders.length,
+              }}
             />
           </div>
         </CardContent>

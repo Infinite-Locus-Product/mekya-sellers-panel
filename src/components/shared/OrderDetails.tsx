@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Mail } from "lucide-react"
@@ -12,6 +12,7 @@ import { OrderItemSection } from "./order-details/OrderItemSection"
 import { OrderStatusSection } from "./order-details/OrderStatusSection"
 import { PaymentInformationSection } from "./order-details/PaymentInformationSection"
 import type { OrderDetailsData } from "./order-details/types"
+import { getOrderStatusUpdateOptions } from "./order-details/utils"
 
 export type {
   OrderItem,
@@ -34,10 +35,26 @@ interface OrderDetailsProps {
   onSendUpdate?: (orderId: string) => void
 }
 
+function initialSelectedStatus(order: OrderDetailsData): StatusVariant {
+  /** Fulfillment-progress card defaults the status picker to Pending (ops update flow). */
+  if (order.b2bFulfillmentStats) return "pending"
+  const opts = getOrderStatusUpdateOptions({
+    orderType: order.orderType,
+    isPartialFulfillmentContext: false,
+  })
+  const allowed = new Set(opts.map((o) => o.value))
+  return allowed.has(order.status) ? order.status : "pending"
+}
+
 export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate }: Readonly<OrderDetailsProps>) {
   const router = useRouter()
-  const [selectedStatus, setSelectedStatus] = useState<StatusVariant>(order.status)
+  const [selectedStatus, setSelectedStatus] = useState<StatusVariant>(() => initialSelectedStatus(order))
   const [adminNotes, setAdminNotes] = useState(order.adminNotes || "")
+
+  useEffect(() => {
+    setSelectedStatus(initialSelectedStatus(order))
+    setAdminNotes(order.adminNotes || "")
+  }, [order])
 
   const handleStatusUpdate = () => {
     onStatusUpdate?.(order.id, selectedStatus, adminNotes)
@@ -80,7 +97,7 @@ export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate 
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="text-sm flex items-center gap-2 cursor-pointer rounded-md px-4 py-2 bg-[#E8E9E8]"
+            className="text-sm flex h-11 items-center gap-2 cursor-pointer rounded-md bg-[#E8E9E8] px-4"
             onClick={() => onExportPDF?.(order.id)}
           >
             <ExportPdfIcon className="shrink-0" aria-hidden />
@@ -89,7 +106,7 @@ export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate 
           <Button
             variant="default"
             size="lg"
-            className="gap-2 bg-black text-white hover:bg-gray-800"
+            className="h-11 gap-2 bg-black px-4 text-white hover:bg-gray-800"
             onClick={() => onSendUpdate?.(order.id)}
           >
             <Mail className="h-4 w-4" />
@@ -98,11 +115,11 @@ export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate 
         </div>
       </header>
 
-      {order.customer.tag !== "general" ? (
+      {order.customer.tag !== "general" && !order.b2bFulfillmentStats ? (
         <FulfillmentTimelineSection timeline={order.timeline} orderType={order.orderType} />
       ) : null}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 mt-6">
         <CustomerInformationSection customer={order.customer} orderType={order.orderType} />
         <OrderStatusSection
           order={order}

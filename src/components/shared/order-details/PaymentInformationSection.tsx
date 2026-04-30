@@ -15,11 +15,6 @@ export function PaymentInformationSection({
   formatCurrency: (amount: number) => string
   orderType: OrderType
 }>) {
-  const hint =
-    orderType === "B2B"
-      ? "Wholesale settlement — matches invoice / PO terms where applicable."
-      : "Consumer payment — reflects checkout totals."
-
   return (
     <section aria-labelledby="order-detail-payment-heading" className="contents">
       <Card className="bg-[#E8E9E8]/30">
@@ -28,7 +23,6 @@ export function PaymentInformationSection({
             <OrderDetailPaymentTitleIcon />
             Payment Information
           </CardTitle>
-          <p className="text-xs text-muted-foreground">{hint}</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex justify-between text-sm">

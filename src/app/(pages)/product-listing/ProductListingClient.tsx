@@ -15,7 +15,6 @@ import {
 } from "@/lib/tableTypes";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { StatusToggle } from "@/components/shared/StatusToggle";
-import { Pagination } from "@/components/shared";
 import { usePagination } from "@/hooks";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -583,17 +582,15 @@ export function ProductListingClient({
             data={paginatedProducts}
             striped
             emptyMessage="No products match your filters"
+            pagination={{
+              currentPage: pagination.currentPage,
+              totalPages: pagination.totalPages,
+              onPageChange: pagination.setPage,
+              pageSize: pagination.pageSize,
+              onPageSizeChange: pagination.setPageSize,
+              totalRowCount: filteredProducts.length,
+            }}
           />
-
-          <div className="mt-4">
-            <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPageChange={pagination.setPage}
-              pageSize={pagination.pageSize}
-              onPageSizeChange={pagination.setPageSize}
-            />
-          </div>
         </CardContent>
       </Card>
 

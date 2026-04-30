@@ -1,19 +1,8 @@
 import type { Metadata } from "next"
 import Script from "next/script"
-import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { BODY_HYDRATION_CLEANUP_SCRIPT } from "@/lib/bodyHydrationCleanup"
 import { AppProviders } from "./providers"
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-})
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-})
 
 export const metadata: Metadata = {
   title: "Mekya Seller Portal",
@@ -26,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="font-sans antialiased">
       <head>
         <Script
           id="body-hydration-cleanup-before-interactive"
@@ -34,10 +23,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: BODY_HYDRATION_CLEANUP_SCRIPT }}
         />
       </head>
-      <body
-        suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} overflow-x-hidden`}
-      >
+      <body suppressHydrationWarning className="overflow-x-hidden">
         <AppProviders>{children}</AppProviders>
         <script
           id="body-hydration-cleanup-after-content"

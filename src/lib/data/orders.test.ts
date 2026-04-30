@@ -23,27 +23,115 @@ describe("orders data layer", () => {
 
   it("getOrderDetails maps B2B orders with line items and inventory type", async () => {
     const orders = await getOrders();
-    const b2b = orders.find((o) => o.type === "B2B" && o.status !== "Partial Fulfillment");
+    const b2b = orders.find(
+      (o) => o.type === "B2B" && o.status !== "Partial Fulfillment",
+    );
     expect(b2b).toBeDefined();
     const details = await getOrderDetails(b2b!.id);
     expect(details).not.toBeNull();
     expect(details!.orderType).toBe("B2B");
     expect(details!.b2bLineItems?.length).toBe(1);
-    expect(details!.b2bLineItems![0].configurations.length).toBeGreaterThanOrEqual(2);
+    expect(
+      details!.b2bLineItems![0].configurations.length,
+    ).toBeGreaterThanOrEqual(2);
     expect(details!.inventoryType).toBe(b2b!.inventoryType);
   });
 
-  it("getOrderDetails maps B2B partial fulfillment with stats and size grid rows", async () => {
+  it("getOrderDetails maps B2B pre_booking in-progress with stats and size grid rows", async () => {
     const details = await getOrderDetails("ORD-2026-025");
     expect(details).not.toBeNull();
+    expect(details!.inventoryType).toBe("pre_booking");
     expect(details!.status).toBe("partial");
     expect(details!.b2bFulfillmentStats).toEqual({
-      totalItems: 45,
+      totalItems: 60,
       fulfilled: 0,
       delivered: 0,
-      pending: 45,
+      pending: 60,
     });
     expect(details!.b2bLineItems?.[0].partialFulfillmentRows).toHaveLength(2);
     expect(details!.payment.method).toBe("Wire Transfer");
+  });
+
+  it("getOrderDetails sets Ready for Dispatch as current for B2B ready_to_ship processing", async () => {
+    const details = await getOrderDetails("ORD-2026-029");
+    expect(details).not.toBeNull();
+    expect(details!.orderType).toBe("B2B");
+    expect(details!.inventoryType).toBe("ready_to_ship");
+    expect(details!.status).toBe("processing");
+    const current = details!.timeline.find((t) => t.current);
+    expect(current?.stage).toBe("Ready for Dispatch");
+    expect(
+      details!.timeline.find((t) => t.stage === "Order Placed")?.completed,
+    ).toBe(true);
+    expect(
+      details!.timeline.find((t) => t.stage === "Order Processing")?.completed,
+    ).toBe(true);
+  });
+
+  it("getOrderDetails sets Ready for Dispatch as current for B2B ready_to_ship pending", async () => {
+    const details = await getOrderDetails("ORD-2024-003");
+    expect(details).not.toBeNull();
+    expect(details!.orderType).toBe("B2B");
+    expect(details!.inventoryType).toBe("ready_to_ship");
+    expect(details!.status).toBe("pending");
+    const current = details!.timeline.find((t) => t.current);
+    expect(current?.stage).toBe("Ready for Dispatch");
+    expect(
+      details!.timeline.find((t) => t.stage === "Order Placed")?.completed,
+    ).toBe(true);
+    expect(
+      details!.timeline.find((t) => t.stage === "Order Processing")?.completed,
+    ).toBe(true);
+  });
+
+  it("getOrderDetails maps B2B pre_booking partial status to fulfillment progress cards", async () => {
+    const details = await getOrderDetails("ORD-2026-026");
+    expect(details).not.toBeNull();
+    expect(details!.inventoryType).toBe("pre_booking");
+    expect(details!.status).toBe("partial");
+    expect(details!.b2bFulfillmentStats).toEqual({
+      totalItems: 75,
+      fulfilled: 30,
+      delivered: 22,
+      pending: 45,
+    });
+    expect(details!.b2bLineItems?.[0].partialFulfillmentRows).toHaveLength(2);
+  });
+
+  it("getOrderDetails maps B2B pre_booking fully_fulfilled partial row to full stats", async () => {
+    const details = await getOrderDetails("ORD-2026-031");
+    expect(details).not.toBeNull();
+    expect(details!.inventoryType).toBe("pre_booking");
+    expect(details!.status).toBe("partial");
+    expect(details!.b2bFulfillmentStats).toEqual({
+      totalItems: 40,
+      fulfilled: 40,
+      delivered: 40,
+      pending: 0,
+    });
+    expect(details!.b2bLineItems?.[0].partialFulfillmentRows).toHaveLength(2);
+  });
+
+  it("getOrderDetails shows fulfillment progress cards for B2B pre_booking delivered orders", async () => {
+    const details = await getOrderDetails("ORD-2026-022");
+    expect(details).not.toBeNull();
+    expect(details!.inventoryType).toBe("pre_booking");
+    expect(details!.status).toBe("delivered");
+    expect(details!.b2bFulfillmentStats).toEqual({
+      totalItems: 64,
+      fulfilled: 64,
+      delivered: 64,
+      pending: 0,
+    });
+    expect(details!.b2bLineItems?.[0].partialFulfillmentRows).toHaveLength(2);
+  });
+
+  it("getOrderDetails keeps Order Placed current for B2B pending non-ready_to_ship", async () => {
+    const details = await getOrderDetails("ORD-2024-002");
+    expect(details!.status).toBe("pending");
+    expect(details!.inventoryType).toBe("sale_or_return");
+    expect(details!.timeline.find((t) => t.current)?.stage).toBe(
+      "Order Placed",
+    );
   });
 });
