@@ -125,12 +125,6 @@ export function useOrderManagementSegmentColumns({
     const allOrdersColumns: TableColumn<AllOrder>[] = useMemo(
         () => [
             {
-                key: "select",
-                header: "",
-                checkbox: true,
-                className: "w-11",
-            },
-            {
                 key: "id",
                 header: "Order ID",
                 cell: (row) => (

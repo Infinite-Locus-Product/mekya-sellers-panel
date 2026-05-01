@@ -13,3 +13,4 @@ export type B2COrderManagementClientProps = Omit<
 export function B2COrderManagementClient(props: Readonly<B2COrderManagementClientProps>) {
     return <OrderManagementSegmentClient {...props} segment="b2c" />;
 }
+
