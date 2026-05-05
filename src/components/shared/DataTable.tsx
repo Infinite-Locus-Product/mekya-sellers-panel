@@ -188,7 +188,7 @@ export function DataTable<T>({
   }
 
   const cellWrapClass =
-    "min-w-0 whitespace-normal break-words [overflow-wrap:anywhere] align-top"
+    "min-w-0 whitespace-normal break-words [overflow-wrap:anywhere] align-middle"
 
   return (
     <div className="w-full min-w-0">
@@ -263,12 +263,12 @@ export function DataTable<T>({
                             aria-label="Select row"
                           />
                         ) : (
-                          <div className="flex min-w-0 flex-wrap items-start gap-1.5 min-[1920px]:gap-2">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5 min-[1920px]:gap-2">
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={(e) => onSelectRow?.(row, e.target.checked)}
-                              className="mt-0.5 size-3.5 shrink-0 rounded border-gray-300 accent-black min-[1920px]:size-4"
+                              className="size-3.5 shrink-0 rounded border-gray-300 accent-black min-[1920px]:size-4"
                               aria-label="Select row"
                             />
                             <span className="min-w-0 flex-1">
@@ -295,7 +295,7 @@ export function DataTable<T>({
       </table>
       </div>
       {pagination ? (
-        <div className={cn("mt-4", pagination.footerClassName)}>
+        <div className={cn("mt-4 flex items-center", pagination.footerClassName)}>
           <Pagination
             currentPage={pagination.currentPage}
             totalPages={pagination.totalPages}

@@ -6,7 +6,13 @@ import { usePathname, useSearchParams } from "next/navigation"
 import { useState, useCallback, useEffect } from "react"
 import { ChevronUp, Package } from "lucide-react"
 import Image from "next/image"
-import { DashboardIcon, OrderManagementIcon } from "@/assets/icons/sidebar"
+import {
+  CmsAnalyticsIcon,
+  CmsManagementIcon,
+  CmsReelsLibraryIcon,
+  DashboardIcon,
+  OrderManagementIcon,
+} from "@/assets/icons/sidebar"
 
 /** Main app navigation: fixed sidebar with expandable Product Listing section. */
 interface NavItem {
@@ -39,7 +45,24 @@ const navItems: NavItem[] = [
       { label: "B2C Orders", href: "/order-management/b2c", icon: OrderManagementIcon },
       { label: "B2B Orders", href: "/order-management/b2b", icon: Package },
     ],
-  }
+  },
+  {
+    label: "CMS Management",
+    href: "/cms-management",
+    icon: CmsManagementIcon,
+    subItems: [
+      {
+        label: "Reels Library",
+        href: "/cms-management/reels",
+        icon: CmsReelsLibraryIcon,
+      },
+      {
+        label: "Analytics",
+        href: "/cms-management/analytics",
+        icon: CmsAnalyticsIcon,
+      },
+    ],
+  },
 ]
 
 /** Expand the parent nav group whose route matches the current path (including nested routes). */
