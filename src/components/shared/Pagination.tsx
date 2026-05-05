@@ -77,7 +77,10 @@ export function Pagination({
               1
             </Button>
             {start > 2 && (
-              <span className="px-2 text-sm text-muted-foreground" aria-hidden>
+              <span
+                className="inline-flex h-8 items-center px-2 text-sm text-muted-foreground"
+                aria-hidden
+              >
                 ...
               </span>
             )}
@@ -98,7 +101,10 @@ export function Pagination({
         {end < safeTotalPages && (
           <>
             {end < safeTotalPages - 1 && (
-              <span className="px-2 text-sm text-muted-foreground" aria-hidden>
+              <span
+                className="inline-flex h-8 items-center px-2 text-sm text-muted-foreground"
+                aria-hidden
+              >
                 ...
               </span>
             )}
@@ -139,7 +145,7 @@ export function Pagination({
   return (
     <div
       className={cn(
-        "flex w-full flex-wrap items-center gap-2 min-[1920px]:gap-4",
+        "flex w-full flex-wrap content-center items-center gap-2 min-[1920px]:gap-4",
         showPageSize ? "justify-between" : "justify-center",
         className
       )}
@@ -151,7 +157,7 @@ export function Pagination({
         <div className="flex min-w-0 shrink-0 items-center gap-1.5 min-[1920px]:gap-2">
           <label
             htmlFor={pageSizeId}
-            className="whitespace-nowrap text-[11px] text-muted-foreground min-[1920px]:text-sm"
+            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap text-[11px] leading-none text-muted-foreground min-[1920px]:text-sm"
           >
             Rows per page
           </label>
@@ -159,7 +165,11 @@ export function Pagination({
             value={String(pageSize)}
             onValueChange={(v) => onPageSizeChange(Number(v))}
           >
-            <SelectTrigger id={pageSizeId} size="sm" className="w-[4.25rem]">
+            <SelectTrigger
+              id={pageSizeId}
+              size="sm"
+              className="h-8 w-[4.25rem] shrink-0 px-2 py-0 text-xs leading-none min-[1920px]:text-sm"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper" align="start">
@@ -174,7 +184,7 @@ export function Pagination({
       )}
       <nav
         className={cn(
-          "flex min-w-0 flex-1 flex-wrap items-center gap-1.5 min-[1920px]:gap-2",
+          "flex min-w-0 flex-1 flex-wrap content-center items-center gap-1.5 min-[1920px]:gap-2",
           showPageSize ? "justify-end sm:justify-end" : "justify-center"
         )}
         aria-label="Pagination"
