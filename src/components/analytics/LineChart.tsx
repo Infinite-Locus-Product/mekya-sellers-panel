@@ -1,7 +1,7 @@
 "use client"
 
 import { useId } from "react"
-import { cn, formatCurrencyINR } from "@/lib/utils"
+import { cn, formatCurrencyINR, formatNumber } from "@/lib/utils"
 import {
   ComposedChart,
   Line,
@@ -55,11 +55,32 @@ function fullMonthName(short: string): string {
   return map[short] ?? short
 }
 
+function fullWeekdayName(short: string): string {
+  const map: Record<string, string> = {
+    Sun: "Sunday",
+    Mon: "Monday",
+    Tue: "Tuesday",
+    Wed: "Wednesday",
+    Thu: "Thursday",
+    Fri: "Friday",
+    Sat: "Saturday",
+  }
+  return map[short] ?? short
+}
+
+function niceCeilViewAxis(max: number): number {
+  if (!Number.isFinite(max) || max <= 0) return 500
+  const step = max <= 500 ? 100 : max <= 2000 ? 200 : 500
+  return Math.max(step, Math.ceil(max / step) * step)
+}
+
 interface LineChartProps {
   data: ChartDataPoint[]
   timeRange?: "1D" | "1W" | "1M" | "1Y"
   className?: string
   color?: string
+  /** `views`: count axis + "views" tooltip (CMS analytics). Default: INR sales tooltip + fixed k-axis. */
+  variant?: "default" | "views"
 }
 
 export function LineChart({
@@ -67,6 +88,7 @@ export function LineChart({
   className,
   timeRange,
   color = LINE_COLOR,
+  variant = "default",
 }: LineChartProps) {
   const chartData = (() => {
     switch (timeRange) {
@@ -90,13 +112,33 @@ export function LineChart({
         return data.map(item => ({ name: item.label, value: item.value }))
     }
   })()
+
+  const maxValue = Math.max(0, ...chartData.map((d) => d.value))
+  const viewAxisMax = niceCeilViewAxis(maxValue)
+  const viewStep =
+    viewAxisMax <= 500 ? 100 : viewAxisMax <= 2000 ? 200 : 500
+  const viewTicks = Array.from(
+    { length: Math.floor(viewAxisMax / viewStep) + 1 },
+    (_, i) => i * viewStep
+  )
+
   const idSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
   const gradientId = `line-area-${idSuffix || "default"}`
+
+  const chartMargin =
+    variant === "views"
+      ? { top: 12, right: 12, left: 8, bottom: 8 }
+      : { top: 16, right: 16, left: 8, bottom: 8 }
 
   const renderTooltipContent: TooltipProps<number, string>["content"] = ({ active, payload, label }) => {
     if (!active || !payload?.length || label == null) return null
     const value = payload[0]?.value ?? 0
-    const monthLabel = fullMonthName(String(label))
+    const isViews = variant === "views"
+    const lab = String(label)
+    const WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const
+    const timeLabel = WEEK.includes(lab as (typeof WEEK)[number])
+      ? fullWeekdayName(lab)
+      : fullMonthName(lab)
     return (
       <div
         className="relative rounded-lg px-3 py-2 shadow-md"
@@ -105,8 +147,10 @@ export function LineChart({
           color: "white",
         }}
       >
-        <div className="text-sm font-medium leading-tight">{monthLabel}</div>
-        <div className="text-xs mt-0.5 opacity-90">{formatCurrencyINR(value)}</div>
+        <div className="text-sm font-medium leading-tight">{timeLabel}</div>
+        <div className="text-xs mt-0.5 opacity-90">
+          {isViews ? `${formatNumber(value)} views` : formatCurrencyINR(value)}
+        </div>
         <div
           className="absolute left-1/2 -translate-x-1/2 w-0 h-0"
           style={{
@@ -124,16 +168,15 @@ export function LineChart({
   return (
     <div
       className={cn(
-        "flex flex-col rounded-lg w-full h-full min-h-[300px]",
+        // No h-full: percentage height breaks ResponsiveContainer when the parent only has min-height / auto height (e.g. CMS analytics grid).
+        "flex w-full flex-col rounded-lg min-h-[300px]",
         className
       )}
     >
-      <div className="w-full flex-1 min-h-0">
+      {/* Explicit height required: Recharts ResponsiveContainer measures parent; % height collapses without it */}
+      <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart
-            data={chartData}
-            margin={{ top: 16, right: 16, left: 8, bottom: 8 }}
-          >
+          <ComposedChart data={chartData} margin={chartMargin}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="#e5e7eb"
@@ -152,8 +195,13 @@ export function LineChart({
               fontSize={12}
               tickLine={false}
               axisLine={{ stroke: "#e5e7eb", strokeWidth: 1 }}
-              ticks={[1000, 2000, 3000, 4000, 5000]}
-              tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+              width={variant === "views" ? 28 : undefined}
+              tickMargin={variant === "views" ? 4 : undefined}
+              domain={variant === "views" ? [0, viewAxisMax] : undefined}
+              ticks={variant === "views" ? viewTicks : [1000, 2000, 3000, 4000, 5000]}
+              tickFormatter={(value) =>
+                variant === "views" ? `${value}` : `${(value / 1000).toFixed(0)}k`
+              }
             />
             <Tooltip
               content={renderTooltipContent}

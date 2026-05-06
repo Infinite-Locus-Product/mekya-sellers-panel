@@ -142,3 +142,17 @@ export function getCmsViewsOverTime(): CmsViewsOverTimePoint[] {
     { day: "Sun", views: 560 },
   ];
 }
+
+/** Audience share by device (percent points summing to 100) — Figma “Audience by Device”. */
+export interface CmsAudienceByDeviceSlice {
+  label: string;
+  value: number;
+}
+
+export function getCmsAudienceByDevice(): CmsAudienceByDeviceSlice[] {
+  return [
+    { label: "Desktop", value: 65 },
+    { label: "Mobile", value: 25 },
+    { label: "Tablet", value: 10 },
+  ];
+}

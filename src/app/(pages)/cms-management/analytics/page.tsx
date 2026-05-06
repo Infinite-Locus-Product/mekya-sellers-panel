@@ -1,4 +1,8 @@
-import { getCmsAnalyticsKpis, getCmsViewsOverTime } from "@/lib/data/cms";
+import {
+  getCmsAnalyticsKpis,
+  getCmsAudienceByDevice,
+  getCmsViewsOverTime,
+} from "@/lib/data/cms";
 import { CmsAnalyticsClient } from "./CmsAnalyticsClient";
 
 export default function CmsAnalyticsPage() {
@@ -6,6 +10,7 @@ export default function CmsAnalyticsPage() {
     <CmsAnalyticsClient
       kpis={getCmsAnalyticsKpis()}
       viewsOverTime={getCmsViewsOverTime()}
+      audienceByDevice={getCmsAudienceByDevice()}
     />
   );
 }
