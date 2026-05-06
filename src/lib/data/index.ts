@@ -19,3 +19,4 @@ export {
   type CmsAnalyticsKpis,
   type CmsViewsOverTimePoint,
 } from "./cms";
+export { getProfile, type ProfilePageData } from "./profile"

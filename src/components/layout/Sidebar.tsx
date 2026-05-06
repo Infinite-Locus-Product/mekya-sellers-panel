@@ -12,6 +12,7 @@ import {
   CmsReelsLibraryIcon,
   DashboardIcon,
   OrderManagementIcon,
+  ProfileIcon,
 } from "@/assets/icons/sidebar"
 
 /** Main app navigation: fixed sidebar with expandable Product Listing section. */
@@ -63,6 +64,7 @@ const navItems: NavItem[] = [
       },
     ],
   },
+  { label: "Profile", href: "/profile", icon: ProfileIcon },
 ]
 
 /** Expand the parent nav group whose route matches the current path (including nested routes). */
