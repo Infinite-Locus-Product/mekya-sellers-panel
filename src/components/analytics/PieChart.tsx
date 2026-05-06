@@ -26,6 +26,8 @@ interface PieChartProps {
   title?: string
   chartSize?: number
   outerRadius?: number
+  /** Set for donut chart (e.g. audience split). Omitted = full pie. */
+  innerRadius?: number
   labelColumns?: number
   customTooltipFormatter?: (value: number, name: string) => [string, string]
   /** Custom tooltip content; receives Recharts tooltip props. When set, overrides default tooltip. */
@@ -35,6 +37,13 @@ interface PieChartProps {
     label?: string
   }) => React.ReactNode
   showFooter?: boolean
+  /** Smaller legend text/swatches and tighter gaps — use in narrow cards (e.g. CMS analytics). */
+  compact?: boolean
+  /**
+   * Chart area grows/shrinks with parent width (square aspect). Uses % radii for Recharts.
+   * Omit fixed chartSize / outerRadius / innerRadius when using this.
+   */
+  fluid?: boolean
 }
 
 const MONTH_COLORS = [
@@ -78,10 +87,13 @@ export function PieChart({
   title = "Pie Chart",
   chartSize = 300,
   outerRadius = 120,
+  innerRadius = 0,
   labelColumns = 2,
   customTooltipFormatter,
   customTooltip,
   showFooter = true,
+  compact = false,
+  fluid = false,
 }: PieChartProps) {
   const isMonthData =
     data.length === 12 && (data[0]?.label === "January" || data[0]?.label === "Jan")
@@ -102,21 +114,32 @@ export function PieChart({
 
     return (
       <div
-        className="grid gap-x-6 gap-y-2 flex-shrink-0"
+        className={cn(
+          "grid flex-shrink-0 gap-y-2",
+          compact ? "gap-x-3 gap-y-1.5" : "gap-x-6 gap-y-2"
+        )}
         style={{ gridTemplateColumns: `repeat(${labelColumns}, minmax(0, 1fr))` }}
       >
         {chartData.map((item) => {
           const percentage = ((item.value / total) * 100).toFixed(1)
           return (
-            <div key={item.name} className="flex items-center gap-2 text-sm">
+            <div
+              key={item.name}
+              className={cn("flex items-center gap-2", compact ? "text-xs" : "text-sm")}
+            >
               <div
-                className="w-5 h-5 rounded-lg flex-shrink-0"
+                className={cn("rounded-lg flex-shrink-0", compact ? "h-3.5 w-3.5" : "h-5 w-5")}
                 style={{ backgroundColor: item.color }}
               />
-              <span className="text-foreground font-medium min-w-[85px]">
+              <span
+                className={cn(
+                  "font-medium text-foreground",
+                  compact ? "min-w-0 max-w-[11rem] leading-snug" : "min-w-[85px]"
+                )}
+              >
                 {item.name}
                 {showPercentages && (
-                  <span className="pl-2 text-muted-foreground">{percentage}%</span>
+                  <span className="pl-1.5 text-muted-foreground sm:pl-2">{percentage}%</span>
                 )}
               </span>
             </div>
@@ -133,8 +156,19 @@ export function PieChart({
     return (value: number, name: string) => [name, ""]
   }
 
+  /** Fluid mode: donut proportions similar to prior CMS defaults (56/176 outer, 36/56 inner). */
+  const fluidOuterPct = "42%"
+  const fluidInnerPct = "27%"
+
   const renderChart = () => (
-    <div className="flex-shrink-0" style={{ width: `${chartSize}px`, height: `${chartSize}px` }}>
+    <div
+      className={cn(
+        fluid
+          ? "mx-auto aspect-square min-h-[120px] min-w-0 w-full max-w-full md:h-full md:min-h-0 md:w-auto md:max-w-full"
+          : "flex-shrink-0"
+      )}
+      style={fluid ? undefined : { width: `${chartSize}px`, height: `${chartSize}px` }}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <RechartsPieChart>
           <Pie
@@ -142,7 +176,8 @@ export function PieChart({
             cx="50%"
             cy="50%"
             labelLine={false}
-            outerRadius={outerRadius}
+            innerRadius={fluid ? fluidInnerPct : innerRadius}
+            outerRadius={fluid ? fluidOuterPct : outerRadius}
             fill="#8884d8"
             dataKey="value"
           >
@@ -192,7 +227,7 @@ export function PieChart({
   )
 
   return (
-    <div className={cn("flex flex-col gap-3 p-4 w-full", className)}>
+    <div className={cn("flex flex-col gap-2 p-4 w-full", className)}>
       {showTitle && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>{title}</span>
@@ -202,18 +237,34 @@ export function PieChart({
 
       <div
         className={cn(
-          "flex items-center justify-center gap-8",
-          layout === "chart-center" && "flex-col"
+          fluid
+            ? "flex w-full min-h-0 min-w-0 flex-1 flex-col gap-3 md:flex-row md:items-stretch md:gap-4"
+            : cn(
+                "flex min-w-0 max-w-full flex-wrap items-center justify-center gap-2 sm:gap-3",
+                compact && "gap-2",
+                layout === "chart-center" && "flex-col"
+              )
         )}
       >
         {layout === "chart-right" && labelPosition === "left" && renderLabels()}
         {layout === "chart-left" && labelPosition === "left" && renderLabels()}
 
-        {layout !== "chart-center" && renderChart()}
+        {layout !== "chart-center" &&
+          (fluid ? (
+            <div className="flex min-h-[120px] min-w-0 flex-1 items-stretch justify-center md:min-h-0">
+              {renderChart()}
+            </div>
+          ) : (
+            renderChart()
+          ))}
 
         {layout === "chart-center" && renderChart()}
 
-        {layout === "chart-left" && labelPosition === "right" && renderLabels()}
+        {layout === "chart-left" && labelPosition === "right" && (
+          <div className={cn("flex shrink-0 flex-col justify-center", fluid && "md:max-w-[12rem]")}>
+            {renderLabels()}
+          </div>
+        )}
         {layout === "chart-right" && labelPosition === "right" && renderLabels()}
       </div>
 

@@ -32,7 +32,7 @@ export type DataTablePaginationProps = {
   /** Length of the full filtered dataset (not only the current page). */
   totalRowCount: number
   pageSizeOptions?: readonly number[]
-  /** Extra classes on the footer wrapper below the table (default includes `mt-4`). */
+  /** Extra classes on the footer wrapper below the table (default includes `mt-4` and horizontal/vertical padding). */
   footerClassName?: string
   /** Extra classes passed to `Pagination` root. */
   paginationClassName?: string
@@ -295,7 +295,12 @@ export function DataTable<T>({
       </table>
       </div>
       {pagination ? (
-        <div className={cn("mt-4 flex items-center", pagination.footerClassName)}>
+        <div
+          className={cn(
+            "mt-4 flex items-center px-3 py-2 sm:px-4 sm:py-3",
+            pagination.footerClassName
+          )}
+        >
           <Pagination
             currentPage={pagination.currentPage}
             totalPages={pagination.totalPages}

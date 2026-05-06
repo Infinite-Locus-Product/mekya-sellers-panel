@@ -1,31 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import { LineChart, PieChart, type ChartDataPoint } from "@/components/analytics";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { KPICard } from "@/components/shared/KPICard";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { Card, CardContent } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
 import { Clock, Eye, Heart, MessageCircle, Share2 } from "lucide-react";
-import {
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import type { CmsAnalyticsKpis, CmsViewsOverTimePoint } from "@/lib/data/cms";
-import { cn, formatNumber } from "@/lib/utils";
+import type {
+  CmsAnalyticsKpis,
+  CmsAudienceByDeviceSlice,
+  CmsViewsOverTimePoint,
+} from "@/lib/data/cms";
+import { formatNumber } from "@/lib/utils";
+import { EngagementRateOverview } from "./components/EngagementRateOverview";
 
 export interface CmsAnalyticsClientProps {
   kpis: CmsAnalyticsKpis;
   viewsOverTime: CmsViewsOverTimePoint[];
+  audienceByDevice: CmsAudienceByDeviceSlice[];
 }
 
 const DATE_OPTIONS = [
@@ -34,23 +27,23 @@ const DATE_OPTIONS = [
   { label: "Last 90 Days", value: "last_90_days" },
 ];
 
+const AUDIENCE_COLORS = ["#87E6C5", "#87B5E6", "#FFBAF0"] as const;
+
 export function CmsAnalyticsClient({
   kpis,
   viewsOverTime,
+  audienceByDevice,
 }: Readonly<CmsAnalyticsClientProps>) {
   const [dateRange, setDateRange] = useState("last_30_days");
 
-  const engagementPie = useMemo(
-    () => [
-      { name: "Engaged", value: kpis.engagementRatePercent },
-      { name: "Other", value: 100 - kpis.engagementRatePercent },
-    ],
-    [kpis.engagementRatePercent]
+  const viewsChartData: ChartDataPoint[] = useMemo(
+    () => viewsOverTime.map((d) => ({ label: d.day, value: d.views })),
+    [viewsOverTime]
   );
 
-  const lineData = useMemo(
-    () => viewsOverTime.map((d) => ({ name: d.day, views: d.views })),
-    [viewsOverTime]
+  const audienceChartData: ChartDataPoint[] = useMemo(
+    () => audienceByDevice.map((s) => ({ label: s.label, value: s.value })),
+    [audienceByDevice]
   );
 
   return (
@@ -83,132 +76,106 @@ export function CmsAnalyticsClient({
               className="w-[min(100%,11rem)] min-[1920px]:w-[200px]"
             />
           </div>
-          <Link
-            href="/cms-management/reels"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            View reels library
-          </Link>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 min-[1920px]:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5 min-[1920px]:gap-4">
         <KPICard
           title="Total Views"
           value={formatNumber(kpis.totalViews)}
           kpiType={1}
           icon={<Eye className="text-[#004C5E]" aria-hidden />}
+          className="m-4"
         />
         <KPICard
           title="Total Likes"
           value={formatNumber(kpis.totalLikes)}
           kpiType={2}
           icon={<Heart className="text-[#004C5E]" aria-hidden />}
+          className="m-4"
         />
         <KPICard
           title="Total Comments"
           value={formatNumber(kpis.totalComments)}
           kpiType={3}
           icon={<MessageCircle className="text-[#004C5E]" aria-hidden />}
+          className="m-4"
         />
         <KPICard
           title="Total Shares"
           value={formatNumber(kpis.totalShares)}
           kpiType={4}
           icon={<Share2 className="text-[#004C5E]" aria-hidden />}
+          className="m-4"
         />
         <KPICard
           title="Avg. Watch Time"
           value={`${kpis.avgWatchSeconds} seconds`}
           kpiType={5}
           icon={<Clock className="text-[#004C5E]" aria-hidden />}
+          className="m-4"
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card className="overflow-hidden border-[#e8e9e8]">
-          <CardContent className="p-4 min-[1920px]:p-6">
-            <div className="mb-4">
-              <h2 className="text-sm font-medium text-foreground min-[1920px]:text-base">
-                Engagement Overview
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground min-[1920px]:text-sm">
-                Measure how audiences are interacting with your reels
-              </p>
-            </div>
-            <div className="relative mx-auto h-[260px] w-full max-w-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={engagementPie}
-                    dataKey="value"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={72}
-                    outerRadius={100}
-                    paddingAngle={2}
-                    startAngle={90}
-                    endAngle={-270}
-                  >
-                    {engagementPie.map((entry) => (
-                      <Cell
-                        key={entry.name}
-                        fill={entry.name === "Engaged" ? "#004C5E" : "#E8E9E8"}
-                        stroke="none"
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value: number) => [`${value}%`, "Share"]}
-                    contentStyle={{ borderRadius: 8 }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pt-2">
-                <span className="text-2xl font-semibold tabular-nums text-foreground min-[1920px]:text-3xl">
-                  {kpis.engagementRatePercent}%
-                </span>
-                <span className="mt-1 max-w-[140px] text-center text-[10px] text-muted-foreground min-[1920px]:text-xs">
-                  Overall Engagement Rate
-                </span>
+      <div className="grid min-h-0 grid-cols-1 items-stretch gap-0 lg:grid-cols-3 bg-[#F9FAF9]">
+        <div className="flex min-h-0 flex-col lg:h-full lg:min-h-0">
+          <Card className="m-4 flex min-h-0 flex-1 flex-col overflow-hidden border-0 bg-white shadow-none lg:min-h-0">
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0">
+              <div className="shrink-0 border-b border-border p-4">
+                <h2 className="text-sm font-medium text-foreground min-[1920px]:text-base">
+                  Engagement Overview
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground min-[1920px]:text-sm">
+                  Measure how audiences are interacting with your reels
+                </p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+              <EngagementRateOverview percent={kpis.engagementRatePercent} className="min-h-0 flex-1" />
+            </CardContent>
+          </Card>
+        </div>
 
-        <Card className="overflow-hidden border-[#e8e9e8]">
-          <CardContent className="p-4 min-[1920px]:p-6">
-            <div className="mb-4">
-              <h2 className="text-sm font-medium text-foreground min-[1920px]:text-base">
-                Views Over Time
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground min-[1920px]:text-sm">
-                Daily views and engagement for the past week
-              </p>
-            </div>
-            <div className="h-[260px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={lineData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted-foreground))" opacity={0.2} vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} width={36} />
-                  <Tooltip
-                    formatter={(v: number) => [formatNumber(v), "Views"]}
-                    contentStyle={{ borderRadius: 8 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="views"
-                    stroke="#004C5E"
-                    strokeWidth={2}
-                    dot={{ fill: "#004C5E", r: 3 }}
-                    activeDot={{ r: 5 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex min-h-0 flex-col lg:h-full lg:min-h-0">
+          <Card className="m-4 flex min-h-0 flex-1 flex-col overflow-hidden border-0 bg-white shadow-none lg:min-h-0">
+            <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="mb-4 shrink-0 border-b border-border p-4">
+                <h2 className="text-sm font-medium text-foreground min-[1920px]:text-base">
+                  Views Over Time
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground min-[1920px]:text-sm">
+                  Daily views and engagement for the past week
+                </p>
+              </div>
+              <LineChart data={viewsChartData} variant="views" color="#2563eb" />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex min-h-0 flex-col lg:h-full lg:min-h-0">
+          <Card className="m-4 flex min-h-0 flex-1 flex-col overflow-hidden border-0 bg-white shadow-none lg:min-h-0">
+            <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4 min-[1920px]:p-6">
+              <div className="mb-4 shrink-0 border-b border-border pb-4">
+                <h2 className="text-sm font-medium text-foreground min-[1920px]:text-base">
+                  Audience by Device
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground min-[1920px]:text-sm">
+                  How viewers are accessing your reel
+                </p>
+              </div>
+              <PieChart
+                data={audienceChartData}
+                layout="chart-left"
+                labelPosition="right"
+                showFooter={false}
+                showTitle={false}
+                compact
+                fluid
+                colors={[...AUDIENCE_COLORS]}
+                labelColumns={1}
+                className="min-h-0 flex-1 gap-2 p-0 w-full"
+              />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
