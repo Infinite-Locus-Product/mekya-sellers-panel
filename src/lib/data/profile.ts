@@ -7,6 +7,8 @@ export interface ProfileData {
   email: string
   phone: string
   role: string
+  brandName?: string
+  companyName?: string
 }
 
 export interface PersonalInfo {
@@ -31,6 +33,8 @@ const mockProfile: ProfileData = {
   email: "selleradmin@mekya.in",
   phone: "+91 9876543210",
   role: "Seller",
+  brandName: "Allen Solly",
+  companyName: "Aditya Birla Fashion & Retail Limited",
 }
 
 const mockPersonal: PersonalInfo = {
@@ -46,8 +50,8 @@ const mockPersonal: PersonalInfo = {
 }
 
 export async function getProfile(): Promise<ProfilePageData> {
-  return Promise.resolve({
+  return {
     profile: mockProfile,
     personal: mockPersonal,
-  })
+  }
 }

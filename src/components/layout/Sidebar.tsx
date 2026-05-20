@@ -147,7 +147,13 @@ export function Sidebar() {
               className="h-5 w-5 shrink-0 opacity-100 min-[1920px]:h-6 min-[1920px]:w-6"
               style={{ transform: "rotate(0deg)" }}
             />
-            <span className="font-semibold text-[#004C5E]">Mekya Seller Dashboard</span>
+            <span
+              className={cn(
+                "font-mekya-brand text-sm font-extrabold tracking-tight text-[#004C5E] min-[1920px]:text-base"
+              )}
+            >
+              Mekya Seller Dashboard
+            </span>
           </div>
         </div>
         <nav className="flex-1 space-y-1 px-4 py-4">
