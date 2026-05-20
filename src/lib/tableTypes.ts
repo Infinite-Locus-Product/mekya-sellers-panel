@@ -2,9 +2,22 @@ export type OrderStatus =
   | "Completed"
   | "Pending"
   | "Canceled"
+  | "Processing"
+  | "Shipped"
+  | "Delivered"
+  | "Returned"
 
 export type OrderType = "B2B" | "B2C"
 export type PaymentStatus = "Paid" | "Pending" | "Refunded"
+
+/** Return pipeline for rows shown in the Return Requests view. */
+export type ReturnStatus = "Return Requested" | "Approved" | "Completed"
+
+export interface OrderLineItem {
+  name: string
+  price: number | string
+  quantity: number
+}
 
 export interface AllOrder {
   id: string
@@ -15,6 +28,10 @@ export interface AllOrder {
   paymentStatus: PaymentStatus
   type: OrderType
   delivery: string
+  /** Line items for product list / return modal; optional for legacy mock rows. */
+  productList?: OrderLineItem[]
+  /** When set, the order appears in the Return Requests view. */
+  returnStatus?: ReturnStatus
 }
 
 export type UserStatus = "active" | "inactive" | "pending" | "suspended"

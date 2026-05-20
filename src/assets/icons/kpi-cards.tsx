@@ -47,3 +47,75 @@ export function KpiReturnUndoIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   )
 }
+
+/** Order management KPI: total revenue */
+export function KpiTotalRevenueIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...kpi24} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
+      <path
+        d="M12 3v18M7 8h10M7 12h6M7 16h8"
+        stroke="black"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M7 8l2-3h6l2 3" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/** Order management KPI: pending orders */
+export function KpiPendingOrdersIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...kpi24} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
+      <circle cx="12" cy="12" r="9" stroke="black" strokeWidth="2" />
+      <path d="M12 7v6l4 2" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/** Order management KPI: delivered */
+export function KpiDeliveredOrdersIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...kpi24} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
+      <path
+        d="M3 7h13v10H3V7zM16 9h3l2 2v6h-5V9z"
+        stroke="black"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <circle cx="7.5" cy="19" r="1.5" fill="black" />
+      <circle cx="17" cy="19" r="1.5" fill="black" />
+    </svg>
+  )
+}
+
+/** Order row: open detailed view */
+export function OrderViewIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...kpi24} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
+      <path
+        d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  )
+}
+
+/** Order row: invoice action */
+export function OrderInvoiceIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...kpi24} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden {...props}>
+      <path
+        d="M7 3h7l3 3v15H7V3zM14 3v4h4M9 12h6M9 16h6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}

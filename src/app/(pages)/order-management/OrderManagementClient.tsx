@@ -114,7 +114,9 @@ export function OrderManagementClient({ initialOrders }: Readonly<OrderManagemen
         return sum + (Number.isNaN(numeric) ? 0 : numeric);
     }, 0);
     const pendingOrders = initialOrders.filter((o) => String(o.status) === "Pending").length;
-    const deliveredOrders = initialOrders.filter((o) => String(o.status) === "Delivered").length;
+    const deliveredOrders = initialOrders.filter(
+        (o) => o.status === "Delivered" || o.status === "Completed"
+    ).length;
     const returnOrders = initialOrders.filter((o) => o.returnStatus != null).length;
 
     const filteredOrders = useMemo(() => {
@@ -162,7 +164,7 @@ export function OrderManagementClient({ initialOrders }: Readonly<OrderManagemen
     const returnStatusVariant = useCallback((status: ReturnStatus): StatusVariant => {
         if (status === "Return Requested") return "pending";
         if (status === "Approved") return "shipped";
-        return "completed";
+        return "delivered";
     }, []);
 
     const allOrdersColumns: TableColumn<AllOrder>[] = useMemo(
@@ -203,18 +205,18 @@ export function OrderManagementClient({ initialOrders }: Readonly<OrderManagemen
                     const value = String(row.status);
                     const variant =
                         value === "Completed"
-                            ? "completed"
-                            : value === "Delivered"
                             ? "delivered"
-                            : value === "Shipped"
+                            : value === "Delivered"
+                              ? "delivered"
+                              : value === "Shipped"
                                 ? "shipped"
                                 : value === "Processing"
-                                    ? "processing"
-                                    : value === "Returned"
-                                        ? "returned"
-                                        : value === "Canceled"
-                                            ? "canceled"
-                                            : "pending";
+                                  ? "processing"
+                                  : value === "Returned"
+                                    ? "returned"
+                                    : value === "Canceled"
+                                      ? "canceled"
+                                      : "pending";
 
                     const label = value;
 
@@ -449,31 +451,29 @@ export function OrderManagementClient({ initialOrders }: Readonly<OrderManagemen
                     title="Total Orders"
                     value={String(totalOrders)}
                     icon={<KpiOrdersBagIcon />}
-                    kpiType={1}
                 />
                 <KPICard
                     title="Total Revenue"
                     value={`₹${totalRevenue.toLocaleString("en-IN")}`}
                     icon={<KpiTotalRevenueIcon />}
-                    kpiType={2}
+                    variant="success"
                 />
                 <KPICard
                     title="Pending Orders"
                     value={String(pendingOrders)}
                     icon={<KpiPendingOrdersIcon />}
-                    kpiType={3}
+                    variant="warning"
                 />
                 <KPICard
                     title="Delivered"
                     value={String(deliveredOrders)}
                     icon={<KpiDeliveredOrdersIcon />}
-                    kpiType={4}
+                    variant="accent"
                 />
                 <KPICard
                     title="Return & Exchanges"
                     value={String(returnOrders)}
                     icon={<KpiReturnUndoIcon />}
-                    kpiType={5}
                 />
             </div>
 
@@ -512,7 +512,9 @@ export function OrderManagementClient({ initialOrders }: Readonly<OrderManagemen
                                 <AppSelect
                                     placeholder="All Status"
                                     value={statusFilter}
-                                    onChange={(value: string) => setStatusFilter((value as OrderStatus) || "all")}
+                                    onChange={(value: string) =>
+                                        setStatusFilter(value === "all" ? "all" : (value as OrderStatus))
+                                    }
                                     options={[
                                         { label: "All Status", value: "all" },
                                         { label: "Pending", value: "Pending" },

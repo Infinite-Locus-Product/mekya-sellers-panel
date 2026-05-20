@@ -20,6 +20,11 @@ export const mockOrders: AllOrder[] = [
     paymentStatus: "Pending",
     type: "B2B",
     delivery: "21 Jun 2025",
+    returnStatus: "Return Requested",
+    productList: [
+      { name: "Cotton Kurta Set", price: 1799, quantity: 1 },
+      { name: "Linen Dupatta", price: 899, quantity: 2 },
+    ],
   },
   {
     id: "ORD-2024-003",
@@ -30,6 +35,8 @@ export const mockOrders: AllOrder[] = [
     paymentStatus: "Paid",
     type: "B2B",
     delivery: "22 Jun 2025",
+    returnStatus: "Approved",
+    productList: [{ name: "Wholesale Kurti Pack (12 pc)", price: 1730, quantity: 12 }],
   },
   {
     id: "ORD-2024-004",
@@ -110,6 +117,11 @@ export const mockOrders: AllOrder[] = [
     paymentStatus: "Pending",
     type: "B2C",
     delivery: "10 Apr 2026",
+    returnStatus: "Completed",
+    productList: [
+      { name: "Graphic Tee", price: 1299, quantity: 2 },
+      { name: "Denim Jacket", price: 292, quantity: 1 },
+    ],
   },
   {
     id: "ORD-2026-012",
