@@ -1,8 +1,9 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { useAuth } from "@/contexts/auth-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,16 +15,20 @@ import {
   Save,
   UserCircle,
   Lock,
-  Eye,
-  EyeOff,
   Upload,
   LogOut,
   X,
   MapPin,
   AlertTriangle,
   Info,
+  Check,
+  ChevronDown,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  PasswordFieldConcealIcon,
+  PasswordFieldRevealIcon,
+} from "@/components/auth/password-visibility-icons"
 import {
   ChangePasswordTabLockIcon,
   LogoutWarningIcon,
@@ -86,7 +91,6 @@ const INDIAN_STATES = [
 
 export interface ProfileClientProps {
   initialData: ProfilePageData
-  onLogout?: () => void | Promise<void>
 }
 
 function isPersonalDirty(form: PersonalFormState, saved: PersonalFormState): boolean {
@@ -109,8 +113,9 @@ function isLocationRestrictionDirty(current: LocationRestrictionState, saved: Lo
   return current.restrictedStates.some((state, index) => state !== saved.restrictedStates[index])
 }
 
-export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientProps>) {
+export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
   const router = useRouter()
+  const { logout } = useAuth()
   const { profile, personal } = initialData
   const [activeTab, setActiveTab] = useState<TabId>("profile")
   const [savedPersonal, setSavedPersonal] = useState<PersonalFormState>(() => ({ ...personal }))
@@ -139,7 +144,8 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
     isEnabled: false,
     restrictedStates: [],
   })
-  const [stateToAdd, setStateToAdd] = useState("")
+  const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false)
+  const stateDropdownRef = useRef<HTMLDivElement | null>(null)
   const locationRestrictionIsDirty = useMemo(
     () =>
       isLocationRestrictionDirty(
@@ -267,12 +273,9 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
 
   const handleConfirmLogout = useCallback(async () => {
     setLogoutModalOpen(false)
-    if (onLogout) {
-      await onLogout()
-      return
-    }
-    router.push("/")
-  }, [onLogout, router])
+    await logout()
+    router.replace("/login")
+  }, [logout, router])
 
   const confirmDiscardPersonal = useCallback(() => {
     if (activeTab === "profile") {
@@ -282,7 +285,7 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
     if (activeTab === "locationRestriction") {
       setIsLocationRestrictionEnabled(savedLocationRestrictions.isEnabled)
       setRestrictedStates([...savedLocationRestrictions.restrictedStates])
-      setStateToAdd("")
+      setIsStateDropdownOpen(false)
     }
     setDiscardModalOpen(false)
     if (pendingTab !== null) {
@@ -306,10 +309,11 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
     resetPasswordSection()
   }, [passwordFormLocked, isPasswordValid, resetPasswordSection])
 
-  const availableStates = useMemo(
-    () => INDIAN_STATES.filter((state) => !restrictedStates.includes(state)),
-    [restrictedStates]
-  )
+  const selectedStatesSummary = useMemo(() => {
+    if (restrictedStates.length === 0) return "Select states to restrict visibility"
+    if (restrictedStates.length === 1) return restrictedStates[0]
+    return `${restrictedStates.length} states selected`
+  }, [restrictedStates])
   const isHighRestrictionSelection = useMemo(
     () => isLocationRestrictionEnabled && restrictedStates.length / INDIAN_STATES.length > 0.8,
     [isLocationRestrictionEnabled, restrictedStates]
@@ -322,7 +326,6 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
         return
       }
       setRestrictedStates((prev) => [...prev, state])
-      setStateToAdd("")
     },
     [restrictedStates]
   )
@@ -330,6 +333,17 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
   const handleRemoveRestrictedState = useCallback((state: string) => {
     setRestrictedStates((prev) => prev.filter((item) => item !== state))
   }, [])
+
+  const handleToggleRestrictedState = useCallback(
+    (state: string) => {
+      if (restrictedStates.includes(state)) {
+        handleRemoveRestrictedState(state)
+        return
+      }
+      handleAddRestrictedState(state)
+    },
+    [handleAddRestrictedState, handleRemoveRestrictedState, restrictedStates]
+  )
 
   const persistLocationRestrictions = useCallback(() => {
     setSavedLocationRestrictions({
@@ -356,11 +370,28 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
     setHighRestrictionWarningOpen(false)
   }, [])
 
+  useEffect(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (!stateDropdownRef.current) return
+      if (!stateDropdownRef.current.contains(event.target as Node)) {
+        setIsStateDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleDocumentClick)
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentClick)
+    }
+  }, [])
+
   const breadcrumbSuffix = useMemo(() => {
     if (activeTab === "security") return "Security"
     if (activeTab === "locationRestriction") return "Location Restriction"
     return "Profile"
   }, [activeTab])
+  const isSellerProfile = useMemo(() => /seller/i.test(profile.role), [profile.role])
+  const sellerBrandName = profile.brandName ?? personal.designation
+  const sellerCompanyName = profile.companyName ?? personal.company
 
   return (
     <div className="flex min-h-0 w-full flex-col px-4 py-6 sm:px-6 md:px-8 lg:px-10 xl:px-12">
@@ -443,6 +474,15 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
                   </div>
                   <div className="flex flex-col gap-2 text-start">
                     <h2 className="text-lg font-bold text-foreground sm:text-xl">{profile.name}</h2>
+                    {isSellerProfile && (sellerBrandName || sellerCompanyName) ? (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
+                        {sellerBrandName ? <span>{sellerBrandName}</span> : null}
+                        {sellerBrandName && sellerCompanyName ? (
+                          <span aria-hidden className="h-1 w-1 rounded-full bg-muted-foreground" />
+                        ) : null}
+                        {sellerCompanyName ? <span>{sellerCompanyName}</span> : null}
+                      </div>
+                    ) : null}
                     <div className="flex gap-4">
                       <span className="flex items-center justify-start gap-2 border-r border-black pr-4 text-sm text-muted-foreground">
                         <Mail className="h-4 w-4 shrink-0" aria-hidden />
@@ -730,11 +770,7 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
                       aria-label={showCurrentPassword ? "Hide password" : "Show password"}
                       disabled={passwordFormLocked}
                     >
-                      {showCurrentPassword ? (
-                        <EyeOff className="h-4 w-4" aria-hidden />
-                      ) : (
-                        <Eye className="h-4 w-4" aria-hidden />
-                      )}
+                      {showCurrentPassword ? <PasswordFieldConcealIcon /> : <PasswordFieldRevealIcon />}
                     </button>
                   </div>
                 </div>
@@ -761,11 +797,7 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
                       aria-label={showNewPassword ? "Hide password" : "Show password"}
                       disabled={passwordFormLocked}
                     >
-                      {showNewPassword ? (
-                        <EyeOff className="h-4 w-4" aria-hidden />
-                      ) : (
-                        <Eye className="h-4 w-4" aria-hidden />
-                      )}
+                      {showNewPassword ? <PasswordFieldConcealIcon /> : <PasswordFieldRevealIcon />}
                     </button>
                   </div>
                   <ul className="flex flex-col gap-1.5 pt-1">
@@ -813,11 +845,7 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
                       aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                       disabled={passwordFormLocked}
                     >
-                      {showConfirmPassword ? (
-                        <EyeOff className="h-4 w-4" aria-hidden />
-                      ) : (
-                        <Eye className="h-4 w-4" aria-hidden />
-                      )}
+                      {showConfirmPassword ? <PasswordFieldConcealIcon /> : <PasswordFieldRevealIcon />}
                     </button>
                   </div>
                   {confirmPassword.length > 0 && (
@@ -880,7 +908,7 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
                         >
                           <Info className="h-3.5 w-3.5" aria-hidden />
                         </button>
-                        <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 hidden w-max max-w-[360px] -translate-x-1/2 rounded-md bg-black px-3 py-2 text-sm text-white shadow-sm group-hover:block group-focus-within:block">
+                        <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 hidden w-max max-w-[360px] -translate-x-1/2 rounded-md bg-black px-3 py-2 text-md text-white shadow-sm group-hover:block group-focus-within:block">
                           <span className="block leading-snug whitespace-pre-wrap">Buyers in selected states will not see your products or content.</span>
                           <span
                             aria-hidden
@@ -897,7 +925,15 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
                     type="button"
                     role="switch"
                     aria-checked={isLocationRestrictionEnabled}
-                    onClick={() => setIsLocationRestrictionEnabled((prev) => !prev)}
+                    onClick={() =>
+                      setIsLocationRestrictionEnabled((prev) => {
+                        const next = !prev
+                        if (!next) {
+                          setIsStateDropdownOpen(false)
+                        }
+                        return next
+                      })
+                    }
                     className={cn(
                       "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                       isLocationRestrictionEnabled ? "bg-[#121F2C]" : "bg-gray-300"
@@ -919,24 +955,51 @@ export function ProfileClient({ initialData, onLogout }: Readonly<ProfileClientP
                     <label htmlFor="restricted-state" className="text-xs font-medium text-foreground">
                       Select states to restrict visibility
                     </label>
-                    <select
-                      id="restricted-state"
-                      value={stateToAdd}
-                      disabled={!isLocationRestrictionEnabled}
-                      onChange={(e) => {
-                        const state = e.target.value
-                        setStateToAdd(state)
-                        handleAddRestrictedState(state)
-                      }}
-                      className="h-10 w-full rounded-md border border-[#E5E7EB] bg-[#EFEFEF] px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      <option value="">Select states to restrict visibility</option>
-                      {availableStates.map((state) => (
-                        <option key={state} value={state}>
-                          {state}
-                        </option>
-                      ))}
-                    </select>
+                    <div ref={stateDropdownRef} className="relative">
+                      <button
+                        id="restricted-state"
+                        type="button"
+                        disabled={!isLocationRestrictionEnabled}
+                        aria-haspopup="listbox"
+                        aria-expanded={isStateDropdownOpen}
+                        onClick={() => setIsStateDropdownOpen((prev) => !prev)}
+                        className="flex h-10 w-full items-center justify-between rounded-md border border-[#E5E7EB] bg-[#EFEFEF] px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className={cn("truncate", restrictedStates.length === 0 ? "text-muted-foreground" : "")}>
+                          {selectedStatesSummary}
+                        </span>
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 text-muted-foreground transition-transform",
+                            isStateDropdownOpen ? "rotate-180" : ""
+                          )}
+                          aria-hidden
+                        />
+                      </button>
+
+                      {isStateDropdownOpen && (
+                        <div className="absolute left-0 top-full z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-[#E5E7EB] bg-white py-1 shadow-md">
+                          {INDIAN_STATES.map((state) => {
+                            const isSelected = restrictedStates.includes(state)
+                            return (
+                              <button
+                                key={state}
+                                type="button"
+                                aria-pressed={isSelected}
+                                onClick={() => handleToggleRestrictedState(state)}
+                                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-foreground hover:bg-[#F3F4F6]"
+                              >
+                                <span>{state}</span>
+                                <Check
+                                  className={cn("h-4 w-4", isSelected ? "text-foreground" : "invisible")}
+                                  aria-hidden
+                                />
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2">
