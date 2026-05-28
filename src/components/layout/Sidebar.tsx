@@ -2,11 +2,18 @@
 
 import { cn } from "@/lib/utils"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { useState, useCallback } from "react"
+import { usePathname, useSearchParams } from "next/navigation"
+import { useState, useCallback, useEffect } from "react"
 import { ChevronUp, Package } from "lucide-react"
 import Image from "next/image"
-import { DashboardIcon } from "@/assets/icons/sidebar"
+import {
+  CmsAnalyticsIcon,
+  CmsManagementIcon,
+  CmsReelsLibraryIcon,
+  DashboardIcon,
+  OrderManagementIcon,
+  ProfileIcon,
+} from "@/assets/icons/sidebar"
 
 /** Main app navigation: fixed sidebar with expandable Product Listing section. */
 interface NavItem {
@@ -27,15 +34,70 @@ const navItems: NavItem[] = [
     href: "/product-listing",
     icon: Package,
     subItems: [
-      { label: "B2C", href: "/product-listing", icon: Package },
-      { label: "B2B", href: "/product-listing/b2b", icon: Package },
+      { label: "B2C Products", href: "/product-listing", icon: Package },
+      { label: "B2B Products", href: "/product-listing/b2b", icon: Package },
     ],
   },
+  {
+    label: "Order Management",
+    href: "/order-management",
+    icon: OrderManagementIcon,
+    subItems: [
+      { label: "B2C Orders", href: "/order-management/b2c", icon: OrderManagementIcon },
+      { label: "B2B Orders", href: "/order-management/b2b", icon: Package },
+    ],
+  },
+  {
+    label: "CMS Management",
+    href: "/cms-management",
+    icon: CmsManagementIcon,
+    subItems: [
+      {
+        label: "Reels Library",
+        href: "/cms-management/reels",
+        icon: CmsReelsLibraryIcon,
+      },
+      {
+        label: "Analytics",
+        href: "/cms-management/analytics",
+        icon: CmsAnalyticsIcon,
+      },
+    ],
+  },
+  { label: "Profile", href: "/profile", icon: ProfileIcon },
 ]
+
+/** Expand the parent nav group whose route matches the current path (including nested routes). */
+function expandedHrefsForPathname(pathname: string): string[] {
+  for (const item of navItems) {
+    if (!item.subItems?.length) continue
+    if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
+      return [item.href]
+    }
+  }
+  return []
+}
+
+const ORDER_MANAGEMENT_DETAIL_PATH = /^\/order-management\/([^/]+)$/
+
+/** True when pathname is `/order-management/<orderId>` (not list routes b2b / b2c). */
+function isOrderDetailPathname(pathname: string): boolean {
+  const match = ORDER_MANAGEMENT_DETAIL_PATH.exec(pathname)
+  if (!match) return false
+  const first = match[1]
+  return first !== "b2b" && first !== "b2c"
+}
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [expandedItems, setExpandedItems] = useState<string[]>(["/product-listing"])
+  const searchParams = useSearchParams()
+  const [expandedItems, setExpandedItems] = useState<string[]>(() =>
+    expandedHrefsForPathname(pathname)
+  )
+
+  useEffect(() => {
+    setExpandedItems(expandedHrefsForPathname(pathname))
+  }, [pathname])
 
   const toggleExpanded = useCallback((href: string) => {
     setExpandedItems((prev) =>
@@ -49,9 +111,27 @@ export function Sidebar() {
     (subItemHref: string) => {
       if (pathname === subItemHref) return true
       if (subItemHref === "/product-listing") return false
+      const listSegment = searchParams.get("segment")
+      const onOrderDetail = isOrderDetailPathname(pathname)
+
+      if (subItemHref === "/order-management/b2c") {
+        if (pathname === "/order-management/b2c") return true
+        if (pathname.startsWith("/order-management/b2b")) return false
+        if (onOrderDetail) {
+          return listSegment !== "b2b"
+        }
+        return false
+      }
+      if (subItemHref === "/order-management/b2b") {
+        if (pathname === "/order-management/b2b" || pathname.startsWith("/order-management/b2b/")) {
+          return true
+        }
+        if (onOrderDetail && listSegment === "b2b") return true
+        return false
+      }
       return pathname.startsWith(`${subItemHref}/`)
     },
-    [pathname]
+    [pathname, searchParams]
   )
 
   return (
@@ -64,10 +144,16 @@ export function Sidebar() {
               alt="Mekya Seller Dashboard"
               width={24}
               height={24}
-              className="shrink-0 opacity-100"
+              className="h-5 w-5 shrink-0 opacity-100 min-[1920px]:h-6 min-[1920px]:w-6"
               style={{ transform: "rotate(0deg)" }}
             />
-            <span className="font-semibold text-[#004C5E]">Mekya Seller Dashboard</span>
+            <span
+              className={cn(
+                "font-mekya-brand text-sm font-extrabold tracking-tight text-[#004C5E] min-[1920px]:text-base"
+              )}
+            >
+              Mekya Seller Dashboard
+            </span>
           </div>
         </div>
         <nav className="flex-1 space-y-1 px-4 py-4">
@@ -91,19 +177,19 @@ export function Sidebar() {
                         onClick={() => toggleExpanded(item.href)}
                         className="flex flex-1 items-center gap-3 text-left"
                       >
-                        <Icon className="h-5 w-5" />
+                        <Icon className="h-4 w-4 shrink-0 min-[1920px]:h-5 min-[1920px]:w-5" />
                         <span>{item.label}</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => toggleExpanded(item.href)}
-                        className="flex h-6 w-6 items-center justify-center rounded bg-gray-100 hover:bg-gray-200 transition-colors"
+                        className="flex size-5 items-center justify-center rounded bg-gray-100 transition-colors hover:bg-gray-200 min-[1920px]:size-6"
                         aria-label={isExpanded ? "Collapse menu" : "Expand menu"}
                         aria-expanded={isExpanded}
                       >
                         <ChevronUp
                           className={cn(
-                            "h-3.5 w-3.5 text-foreground transition-transform",
+                            "size-3 text-foreground transition-transform min-[1920px]:size-3.5",
                             isExpanded ? "rotate-0" : "rotate-180"
                           )}
                         />
@@ -124,7 +210,7 @@ export function Sidebar() {
                                 isSubActive ? "bg-[#E8E9E8] text-foreground" : ""
                               )}
                             >
-                              <SubIcon className="h-5 w-5" />
+                              <SubIcon className="h-4 w-4 shrink-0 min-[1920px]:h-5 min-[1920px]:w-5" />
                               <span>{subItem.label}</span>
                             </Link>
                           )
@@ -140,7 +226,7 @@ export function Sidebar() {
                       isActive ? "bg-[#E8E9E8] text-foreground shadow-sm" : ""
                     )}
                   >
-                    <Icon className="h-5 w-5" />
+                    <Icon className="h-4 w-4 shrink-0 min-[1920px]:h-5 min-[1920px]:w-5" />
                     <span>{item.label}</span>
                   </Link>
                 )}

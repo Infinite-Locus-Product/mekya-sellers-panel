@@ -4,6 +4,7 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export interface UsePaginationOptions {
   totalCount: number;
+  /** Initial rows per page; becomes state when `setPageSize` is used from the hook return. */
   pageSize?: number;
   initialPage?: number;
 }
@@ -15,6 +16,7 @@ export interface UsePaginationReturn {
   startIndex: number;
   endIndex: number;
   setPage: (page: number) => void;
+  setPageSize: (size: number) => void;
   nextPage: () => void;
   prevPage: () => void;
   hasNext: boolean;
@@ -23,19 +25,26 @@ export interface UsePaginationReturn {
 
 export function usePagination({
   totalCount,
-  pageSize = DEFAULT_PAGE_SIZE,
+  pageSize: initialPageSize = DEFAULT_PAGE_SIZE,
   initialPage = 1,
 }: UsePaginationOptions): UsePaginationReturn {
   const [currentPage, setCurrentPage] = useState(initialPage);
+  const [pageSize, setPageSizeState] = useState(initialPageSize);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalCount / pageSize)),
     [totalCount, pageSize]
   );
 
+  /** When `totalCount` shrinks, avoid out-of-range page without syncing in an effect. */
+  const effectivePage = useMemo(
+    () => Math.min(Math.max(1, currentPage), totalPages),
+    [currentPage, totalPages]
+  );
+
   const startIndex = useMemo(
-    () => (currentPage - 1) * pageSize,
-    [currentPage, pageSize]
+    () => (effectivePage - 1) * pageSize,
+    [effectivePage, pageSize]
   );
   const endIndex = useMemo(
     () => Math.min(startIndex + pageSize, totalCount),
@@ -50,19 +59,26 @@ export function usePagination({
     [totalPages]
   );
 
-  const nextPage = useCallback(() => setPage(currentPage + 1), [currentPage, setPage]);
-  const prevPage = useCallback(() => setPage(currentPage - 1), [currentPage, setPage]);
+  const setPageSize = useCallback((size: number) => {
+    const safe = Math.max(1, Math.floor(Number(size)) || 1);
+    setPageSizeState(safe);
+    setCurrentPage(1);
+  }, []);
+
+  const nextPage = useCallback(() => setPage(effectivePage + 1), [effectivePage, setPage]);
+  const prevPage = useCallback(() => setPage(effectivePage - 1), [effectivePage, setPage]);
 
   return {
-    currentPage,
+    currentPage: effectivePage,
     pageSize,
     totalPages,
     startIndex,
     endIndex,
     setPage,
+    setPageSize,
     nextPage,
     prevPage,
-    hasNext: currentPage < totalPages,
-    hasPrev: currentPage > 1,
+    hasNext: effectivePage < totalPages,
+    hasPrev: effectivePage > 1,
   };
 }

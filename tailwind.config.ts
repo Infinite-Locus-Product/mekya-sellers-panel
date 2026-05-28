@@ -62,6 +62,7 @@ export default {
       fontFamily: {
         sans: "var(--font-geist-sans)",
         mono: "var(--font-geist-mono)",
+        "mekya-brand": ['"Bodrum Style 17"', "Georgia", "serif"],
       },
     },
   },

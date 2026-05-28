@@ -31,14 +31,47 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "group flex w-fit cursor-pointer items-center justify-between gap-2  rounded-md border border-border px-3 py-2 text-sm text-muted-foreground whitespace-nowrap shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "group flex w-fit cursor-pointer items-center justify-between gap-2  rounded-[4px] border border-border px-3 py-2 text-sm text-muted-foreground whitespace-nowrap shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-4 opacity-100 transition-transform duration-200 ease-out group-data-[state=open]:rotate-180" />
+        <span className="relative inline-flex size-4 items-center justify-center min-[1920px]:size-5">
+          <svg
+            viewBox="0 0 20 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="size-3.5 opacity-100 transition-opacity duration-150 group-data-[state=open]:opacity-0 min-[1920px]:size-4"
+            aria-hidden="true"
+          >
+            <path
+              d="M9.29225 12.9493L9.99925 13.6563L15.6563 7.99925L14.2423 6.58525L9.99925 10.8273L5.75625 6.58525L4.34225 7.99925L9.29225 12.9493Z"
+              fill="black"
+            />
+          </svg>
+          <svg
+            viewBox="0 0 20 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="absolute size-3.5 opacity-0 transition-opacity duration-150 group-data-[state=open]:opacity-100 min-[1920px]:size-4"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M4.55778 4.55778C4.67497 4.44074 4.83382 4.375 4.99945 4.375C5.16508 4.375 5.32393 4.44074 5.44112 4.55778L15.4411 14.5578C15.5025 14.615 15.5518 14.684 15.5859 14.7607C15.6201 14.8373 15.6385 14.9201 15.6399 15.004C15.6414 15.0879 15.626 15.1713 15.5946 15.2491C15.5631 15.3269 15.5163 15.3976 15.457 15.457C15.3976 15.5163 15.3269 15.5631 15.2491 15.5946C15.1713 15.626 15.0879 15.6414 15.004 15.6399C14.9201 15.6385 14.8373 15.6201 14.7607 15.5859C14.684 15.5518 14.615 15.5025 14.5578 15.4411L4.55778 5.44112C4.44074 5.32393 4.375 5.16508 4.375 4.99945C4.375 4.83382 4.44074 4.67497 4.55778 4.55778Z"
+              fill="black"
+            />
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M15.4456 4.55778C15.5627 4.67497 15.6284 4.83382 15.6284 4.99945C15.6284 5.16508 15.5627 5.32393 15.4456 5.44112L5.44561 15.4411C5.32713 15.5515 5.17042 15.6116 5.00851 15.6088C4.84659 15.6059 4.6921 15.5403 4.57759 15.4258C4.46308 15.3113 4.39749 15.1568 4.39463 14.9949C4.39177 14.833 4.45187 14.6763 4.56227 14.5578L14.5623 4.55778C14.6795 4.44074 14.8383 4.375 15.0039 4.375C15.1696 4.375 15.3284 4.44074 15.4456 4.55778Z"
+              fill="black"
+            />
+          </svg>
+        </span>
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )

@@ -3,8 +3,8 @@
 import { cn } from "@/lib/utils"
 import { ReactNode, useCallback, useState } from "react"
 import { TableSortIcon } from "@/assets/icons/shared"
+import { Pagination } from "@/components/shared/Pagination"
 
-/** Passed as the second argument to `TableColumn.cell` for row-level UI such as visibility / mute toggles. */
 export type TableRowHelpers = {
   rowIndex: number
   rowKey: string | number
@@ -22,6 +22,22 @@ export type TableColumn<T> = {
   checkbox?: boolean
 }
 
+/** Pass from the parent together with paginated `data` and `usePagination` (or equivalent). */
+export type DataTablePaginationProps = {
+  currentPage: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  pageSize: number
+  onPageSizeChange: (pageSize: number) => void
+  /** Length of the full filtered dataset (not only the current page). */
+  totalRowCount: number
+  pageSizeOptions?: readonly number[]
+  /** Extra classes on the footer wrapper below the table (default includes `mt-4` and horizontal/vertical padding). */
+  footerClassName?: string
+  /** Extra classes passed to `Pagination` root. */
+  paginationClassName?: string
+}
+
 interface DataTableProps<T> {
   columns: TableColumn<T>[]
   data: T[]
@@ -31,6 +47,7 @@ interface DataTableProps<T> {
   selectedRows?: Set<T>
   bodyRowClassName?: string
   striped?: boolean
+  pagination?: DataTablePaginationProps
 }
 
 function isStandaloneCheckboxColumn<T>(col: TableColumn<T>): boolean {
@@ -48,6 +65,7 @@ export function DataTable<T>({
   selectedRows = new Set(),
   bodyRowClassName,
   striped = false,
+  pagination,
 }: DataTableProps<T>) {
   const [sortConfig, setSortConfig] = useState<{
     key: string | keyof T
@@ -121,8 +139,8 @@ export function DataTable<T>({
         type="button"
         onClick={() => handleSort(col.key)}
         className={cn(
-          "inline-flex w-full min-w-0 items-center gap-2 text-foreground transition-colors",
-          "rounded-sm px-0.5 py-1 -my-1 hover:bg-black/[0.06] hover:text-foreground",
+          "inline-flex w-full min-w-0 items-center gap-1 text-[11px] text-foreground transition-colors min-[1920px]:gap-2 min-[1920px]:text-sm",
+          "rounded-sm px-0.5 py-0.5 -my-1 min-[1920px]:py-1 hover:bg-black/[0.06] hover:text-foreground",
           col.align === "right" && "justify-end text-right",
           col.align === "center" && "justify-center text-center",
           (col.align === "left" || !col.align) && "justify-start text-left"
@@ -130,7 +148,7 @@ export function DataTable<T>({
         aria-label={`Sort by ${String(col.header)} ${sortDirection === "asc" ? "ascending" : sortDirection === "desc" ? "descending" : ""}`.trim()}
       >
         <span className="min-w-0">{col.header}</span>
-        <TableSortIcon state={sortState} className="shrink-0" />
+        <TableSortIcon state={sortState} className="size-2.5 shrink-0 sm:size-3 min-[1920px]:size-3.5" />
       </button>
     )
   }
@@ -145,7 +163,7 @@ export function DataTable<T>({
             if (input) input.indeterminate = someSelected
           }}
           onChange={(e) => onSelectAll?.(e.target.checked)}
-          className="h-4 w-4 shrink-0 rounded border-gray-300"
+          className="size-3.5 shrink-0 rounded border-gray-300 accent-black min-[1920px]:size-4"
           aria-label="Select all rows"
         />
       )
@@ -155,7 +173,7 @@ export function DataTable<T>({
       }
 
       return (
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {selectAllCheckbox}
           {col.sortable ? renderSortableHeaderButton(col) : col.header}
         </div>
@@ -169,16 +187,21 @@ export function DataTable<T>({
     return col.header
   }
 
+  const cellWrapClass =
+    "min-w-0 whitespace-normal break-words [overflow-wrap:anywhere] align-middle"
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse">
+    <div className="w-full min-w-0">
+      <div className="w-full min-w-0 max-w-full overflow-hidden rounded-md">
+      <table className="w-full min-w-0 table-fixed border-collapse">
         <thead>
           <tr className="border-b">
             {columns.map((col) => (
               <th
                 key={String(col.key)}
                 className={cn(
-                  "p-3 font-normal bg-[#E8E9E8]",
+                  "bg-[#E8E9E8] p-1.5 text-[10px] font-normal leading-tight sm:p-2 sm:text-[11px] xl:p-2.5 xl:text-xs min-[1920px]:p-3 min-[1920px]:text-sm min-[1920px]:leading-normal",
+                  cellWrapClass,
                   getAlignClass(col.align),
                   col.className
                 )}
@@ -193,7 +216,7 @@ export function DataTable<T>({
             <tr className={bodyRowClassName}>
               <td
                 colSpan={columns.length}
-                className="p-4 text-center text-sm text-muted-foreground"
+                className="p-3 text-center text-[11px] text-muted-foreground min-[1920px]:p-4 min-[1920px]:text-sm"
               >
                 {emptyMessage}
               </td>
@@ -223,7 +246,12 @@ export function DataTable<T>({
                   {columns.map((col) => (
                     <td
                       key={String(col.key)}
-                      className={cn("p-3 text-sm", getAlignClass(col.align), col.className)}
+                      className={cn(
+                        "p-1.5 text-[10px] leading-tight sm:p-2 sm:text-[11px] xl:p-2.5 xl:text-xs min-[1920px]:p-3 min-[1920px]:text-sm min-[1920px]:leading-normal",
+                        cellWrapClass,
+                        getAlignClass(col.align),
+                        col.className
+                      )}
                     >
                       {col.checkbox ? (
                         isStandaloneCheckboxColumn(col) ? (
@@ -231,27 +259,29 @@ export function DataTable<T>({
                             type="checkbox"
                             checked={isSelected}
                             onChange={(e) => onSelectRow?.(row, e.target.checked)}
-                            className="h-4 w-4 shrink-0 rounded border-gray-300"
+                            className="size-3.5 shrink-0 rounded border-gray-300 accent-black min-[1920px]:size-4"
                             aria-label="Select row"
                           />
                         ) : (
-                          <div className="flex items-center gap-2">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5 min-[1920px]:gap-2">
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={(e) => onSelectRow?.(row, e.target.checked)}
-                              className="h-4 w-4 shrink-0 rounded border-gray-300"
+                              className="size-3.5 shrink-0 rounded border-gray-300 accent-black min-[1920px]:size-4"
                               aria-label="Select row"
                             />
-                            {col.cell ? (
-                              col.cell(row, rowHelpers)
-                            ) : (
-                              String((row[col.key as keyof T] ?? "") as string)
-                            )}
+                            <span className="min-w-0 flex-1">
+                              {col.cell ? (
+                                col.cell(row, rowHelpers)
+                              ) : (
+                                String((row[col.key as keyof T] ?? "") as string)
+                              )}
+                            </span>
                           </div>
                         )
                       ) : col.cell ? (
-                        col.cell(row, rowHelpers)
+                        <div className="min-w-0">{col.cell(row, rowHelpers)}</div>
                       ) : (
                         String((row[col.key as keyof T] ?? "") as string)
                       )}
@@ -263,6 +293,26 @@ export function DataTable<T>({
           )}
         </tbody>
       </table>
+      </div>
+      {pagination ? (
+        <div
+          className={cn(
+            "mt-4 flex items-center px-3 py-2 sm:px-4 sm:py-3",
+            pagination.footerClassName
+          )}
+        >
+          <Pagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            onPageChange={pagination.onPageChange}
+            pageSize={pagination.pageSize}
+            onPageSizeChange={pagination.onPageSizeChange}
+            totalRowCount={pagination.totalRowCount}
+            pageSizeOptions={pagination.pageSizeOptions}
+            className={pagination.paginationClassName}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }

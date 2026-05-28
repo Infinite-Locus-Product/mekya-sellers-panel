@@ -7,10 +7,14 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronDown, FileText, Plus, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
-import { PRODUCT_INVENTORY_TYPE_LABELS, type ProductRow } from "@/lib/tableTypes";
+import { InventoryTypeBadge } from "@/components/shared/InventoryTypeBadge";
+import {
+  PRODUCT_INVENTORY_TYPE_LABELS,
+  TABLE_BADGE_PILL_COLUMN_CLASS,
+  type ProductRow,
+} from "@/lib/tableTypes";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { StatusToggle } from "@/components/shared/StatusToggle";
-import { Pagination } from "@/components/shared";
 import { usePagination } from "@/hooks";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -21,7 +25,7 @@ import { B2BPricingPopup } from "./_components/B2BPricingPopup";
 import { B2BDescriptionPopup } from "./_components/B2BDescriptionPopup";
 import { getB2BWizardPrefillFromProductRow, type B2BProductWizardPrefill } from "@/lib/data/products";
 
-const PAGE_SIZE = 10;
+const INITIAL_PAGE_SIZE = 10;
 const B2B_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const B2B_ACCEPTED_IMAGES = new Set(["image/png", "image/jpeg", "image/jpg"]);
 
@@ -157,7 +161,10 @@ export function ProductListingClient({
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [isPriceFilterOpen]);
 
-  const pagination = usePagination({ totalCount: filteredProducts.length, pageSize: PAGE_SIZE });
+  const pagination = usePagination({
+    totalCount: filteredProducts.length,
+    pageSize: INITIAL_PAGE_SIZE,
+  });
   const paginatedProducts = useMemo(
     () => filteredProducts.slice(pagination.startIndex, pagination.endIndex),
     [filteredProducts, pagination.startIndex, pagination.endIndex]
@@ -316,13 +323,14 @@ export function ProductListingClient({
     ...(isB2B
       ? []
       : [
-          { key: "sizes", header: "Size" } as TableColumn<ProductRow>,
-          { key: "colors", header: "Color" } as TableColumn<ProductRow>,
-        ]),
+        { key: "sizes", header: "Size" } as TableColumn<ProductRow>,
+        { key: "colors", header: "Color" } as TableColumn<ProductRow>,
+      ]),
     {
       key: "inventoryType",
       header: "Inventory Type",
-      cell: (row) => PRODUCT_INVENTORY_TYPE_LABELS[row.inventoryType],
+      className: TABLE_BADGE_PILL_COLUMN_CLASS,
+      cell: (row) => <InventoryTypeBadge type={row.inventoryType} />,
     },
     { key: "price", header: isB2B ? "WSP" : "Price", sortable: true },
     {
@@ -333,16 +341,16 @@ export function ProductListingClient({
     {
       key: "status",
       header: "Status",
-      cell: (row) =>
-        row.status === "active" ? (
-          <span className="inline-flex rounded-full bg-black px-3 py-0.5 text-xs font-medium text-white">
-            Active
-          </span>
+      className: TABLE_BADGE_PILL_COLUMN_CLASS,
+      cell: (row) => {
+        const pill =
+          "inline-flex h-[22px] w-full min-w-0 max-w-full items-center justify-center whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[9px] font-medium leading-none sm:h-7 sm:px-2 sm:text-[11px] min-[1920px]:h-8 min-[1920px]:text-sm";
+        return row.status === "active" ? (
+          <span className={`${pill} bg-[#DCFCE7] text-[#166534]`}>Active</span>
         ) : (
-          <span className="inline-flex rounded-full border border-black bg-white px-3 py-0.5 text-xs font-medium text-black whitespace-nowrap">
-            In-active
-          </span>
-        ),
+          <span className={`${pill} bg-[#E5E7EB] text-[#374151]`}>In-active</span>
+        );
+      },
     },
     {
       key: "toggle",
@@ -367,7 +375,9 @@ export function ProductListingClient({
             className="h-8 w-8"
             aria-label={`Edit ${row.name}`}
             onClick={() =>
-              isB2B ? openB2BEditProduct(row) : router.push(`/add-product?productId=${encodeURIComponent(row.id)}`)
+              isB2B
+                ? openB2BEditProduct(row)
+                : router.push(`/product-listing/add-product?productId=${encodeURIComponent(row.id)}`)
             }
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -418,7 +428,7 @@ export function ProductListingClient({
             </Button>
           ) : (
             <Link
-              href="/add-product"
+              href="/product-listing/add-product"
               className={cn(buttonVariants({ variant: "default", size: "lg" }))}
             >
               <Plus className="h-4 w-4" aria-hidden />
@@ -441,8 +451,8 @@ export function ProductListingClient({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center">
-            <div className="relative w-full lg:max-w-md">
+          <div className="mb-4 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:gap-3">
+            <div className="relative min-w-0 w-full shrink-0 lg:max-w-md">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <input
                 type="search"
@@ -453,12 +463,13 @@ export function ProductListingClient({
                 aria-label="Search products"
               />
             </div>
-            <div className="flex flex-wrap gap-4">
+            <div className="flex min-w-0 w-full flex-nowrap items-center gap-1 overflow-hidden sm:gap-1.5 min-[1920px]:gap-3">
               <AppSelect
                 placeholder="All Categories"
                 value={category}
                 onChange={(value: string) => setCategory(value)}
                 options={categoryOptions}
+                className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
               />
               <AppSelect
                 placeholder="All Status"
@@ -469,6 +480,7 @@ export function ProductListingClient({
                   { label: "Active", value: "active" },
                   { label: "In-active", value: "inactive" },
                 ]}
+                className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
               />
               <AppSelect
                 placeholder="All Inventory Types"
@@ -481,20 +493,21 @@ export function ProductListingClient({
                   { label: PRODUCT_INVENTORY_TYPE_LABELS.stock_clearance, value: "stock_clearance" },
                   { label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return, value: "sale_or_return" },
                 ]}
+                className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
               />
               {isB2B && (
-                <div className="relative ml-auto" ref={priceFilterRef}>
+                <div className="relative ml-1 shrink-0 min-[1920px]:ml-2" ref={priceFilterRef}>
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-10 min-w-[170px] justify-between gap-2 border-0 bg-[#E8E9E8] px-3 text-sm font-medium shadow-none hover:bg-[#dde0dd]"
+                    className="h-7 max-w-[min(100%,9rem)] min-w-0 justify-between gap-1 border-0 bg-[#E8E9E8] px-2 text-[10px] font-medium shadow-none hover:bg-[#dde0dd] sm:h-8 sm:max-w-[10.5rem] sm:gap-1.5 sm:text-xs min-[1920px]:h-10 min-[1920px]:min-w-[170px] min-[1920px]:max-w-none min-[1920px]:gap-2 min-[1920px]:px-3 min-[1920px]:text-sm"
                     onClick={() => setIsPriceFilterOpen((prev) => !prev)}
                   >
-                    <span className="inline-flex items-center gap-2">
-                      <SlidersHorizontal className="h-4 w-4" />
-                      Price Range
+                    <span className="inline-flex min-w-0 items-center gap-1 truncate sm:gap-1.5 min-[1920px]:gap-2">
+                      <SlidersHorizontal className="size-3 shrink-0 sm:size-3.5 min-[1920px]:size-4" aria-hidden />
+                      <span className="truncate">Price Range</span>
                     </span>
-                    <ChevronDown className="h-4 w-4" />
+                    <ChevronDown className="size-3 shrink-0 sm:size-3.5 min-[1920px]:size-4" aria-hidden />
                   </Button>
                   {isPriceFilterOpen && (
                     <div className="absolute right-0 top-12 z-30 h-[210px] w-[315px] rounded-[5px] border border-border bg-white p-4 opacity-100 shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
@@ -569,15 +582,15 @@ export function ProductListingClient({
             data={paginatedProducts}
             striped
             emptyMessage="No products match your filters"
+            pagination={{
+              currentPage: pagination.currentPage,
+              totalPages: pagination.totalPages,
+              onPageChange: pagination.setPage,
+              pageSize: pagination.pageSize,
+              onPageSizeChange: pagination.setPageSize,
+              totalRowCount: filteredProducts.length,
+            }}
           />
-
-          <div className="mt-4">
-            <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPageChange={pagination.setPage}
-            />
-          </div>
         </CardContent>
       </Card>
 

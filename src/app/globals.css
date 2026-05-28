@@ -2,6 +2,17 @@
 @config "../../tailwind.config.ts";
 @import "../../node_modules/tw-animate-css/dist/tw-animate.css";
 
+/* Bodrum Style 17 Extra Bold — add licensed webfont: public/fonts/bodrum-style-17-extra-bold.woff2 */
+@font-face {
+  font-family: "Bodrum Style 17";
+  src:
+    url("/fonts/bodrum-style-17-extra-bold.woff2") format("woff2"),
+    url("/fonts/bodrum-style-17-extra-bold.woff") format("woff");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -49,6 +60,10 @@
   --neutral-dark: #2a2a2a;
   --accent-light: #fcdbf2;
   --accent-dark: #720050;
+  --font-geist-sans: "Sebino", "Sebino Regular", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-geist-mono: "Sebino", "Sebino Regular", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
 }
 
 .dark {
