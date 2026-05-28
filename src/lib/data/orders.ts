@@ -49,6 +49,13 @@ function parseAmount(value: string): number {
   return Number.isNaN(numeric) ? 0 : numeric;
 }
 
+function parseLinePrice(price: number | string | undefined, fallback: number): number {
+  if (price === undefined) return fallback;
+  if (typeof price === "number") return Number.isFinite(price) ? price : fallback;
+  const numeric = Number(String(price).replaceAll(/[^\d.]/g, ""));
+  return Number.isNaN(numeric) ? fallback : numeric;
+}
+
 function normalizeStatus(value: string): StatusVariant {
   const key = normalizeStatusKey(value);
   return ORDER_STATUS_MAP[key] ?? "pending";
@@ -127,8 +134,8 @@ function buildB2BLineDisplay(order: AllOrder): B2BOrderLineDisplay {
 
   const setsA = first?.quantity ?? 10;
   const setsB = second?.quantity ?? 10;
-  const wspA = first?.price ?? 2000;
-  const wspB = second?.price ?? 2000;
+  const wspA = parseLinePrice(first?.price, 2000);
+  const wspB = parseLinePrice(second?.price, 2000);
 
   const lineTotalA = setsA * wspA;
   const lineTotalB = setsB * wspB;
