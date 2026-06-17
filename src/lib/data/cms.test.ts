@@ -1,27 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { getCmsAnalyticsKpis, getCmsReels, getCmsViewsOverTime } from "./cms";
+import { describe, it } from "vitest";
+import type { CmsReel, ReelStatus } from "./cms";
 
-describe("cms dummy data", () => {
-  it("getCmsReels returns rows with statuses and engagement rules", () => {
-    const reels = getCmsReels();
-    expect(reels.length).toBeGreaterThan(0);
-    for (const r of reels) {
-      expect(r.uploadedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    }
-    const published = reels.find((r) => r.status === "published");
-    expect(published?.views).not.toBeNull();
-    expect(published?.engagement.likes).not.toBeNull();
-    const draft = reels.find((r) => r.status === "draft");
-    expect(draft?.views).toBeNull();
-  });
-
-  it("getCmsAnalyticsKpis returns engagement rate in 0-100", () => {
-    const k = getCmsAnalyticsKpis();
-    expect(k.engagementRatePercent).toBeGreaterThan(0);
-    expect(k.engagementRatePercent).toBeLessThanOrEqual(100);
-  });
-
-  it("getCmsViewsOverTime returns 7 points", () => {
-    expect(getCmsViewsOverTime()).toHaveLength(7);
+describe("cms types", () => {
+  it("CmsReel type has required fields", () => {
+    const reel: CmsReel = {
+      id: "test-001",
+      title: "Test reel",
+      duration: "0:45",
+      status: "draft" as ReelStatus,
+      uploadedAt: "2025-06-14",
+      uploadDate: "14 Jun 2025, 10:30 am",
+      views: null,
+      engagement: { likes: null, comments: null, shares: null },
+    };
+    // just checks the type compiles correctly
+    void reel;
   });
 });

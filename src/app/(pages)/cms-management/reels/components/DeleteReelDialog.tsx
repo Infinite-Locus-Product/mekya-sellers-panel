@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CmsReelIconAlertTriangle } from "./cms-reels-icons";
@@ -6,15 +7,17 @@ export interface DeleteReelDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
+  isDeleting?: boolean;
 }
 
 export function DeleteReelDialog({
   open,
   onOpenChange,
   onConfirm,
+  isDeleting = false,
 }: Readonly<DeleteReelDialogProps>) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={isDeleting ? undefined : onOpenChange}>
       <DialogContent className="max-w-[min(calc(100vw-1.5rem),400px)] rounded-xl border border-[#E8E9E8] bg-white px-6 pb-6 pt-9 text-center shadow-[0_10px_40px_-10px_rgba(15,23,42,0.2)]">
         <div className="flex flex-col items-center">
           <div
@@ -31,6 +34,7 @@ export function DeleteReelDialog({
             <Button
               type="button"
               variant="outline"
+              disabled={isDeleting}
               className="h-11 border-[#2A2A2A] bg-white font-medium text-[#2A2A2A] shadow-none hover:bg-[#F9FAF9]"
               onClick={() => onOpenChange(false)}
             >
@@ -38,10 +42,18 @@ export function DeleteReelDialog({
             </Button>
             <Button
               type="button"
+              disabled={isDeleting}
               className="h-11 bg-[#121C2D] font-semibold text-white shadow-none hover:bg-[#121C2D]/90"
               onClick={onConfirm}
             >
-              Yes! Delete
+              {isDeleting ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  Deleting…
+                </span>
+              ) : (
+                "Yes! Delete"
+              )}
             </Button>
           </div>
         </div>

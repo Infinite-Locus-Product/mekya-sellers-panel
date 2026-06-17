@@ -6,20 +6,12 @@ import { Button } from "@/components/ui/button";
 import type { TableColumn } from "@/components/shared/DataTable";
 import { ReelStatusBadge } from "@/components/cms/ReelStatusBadge";
 import type { CmsReel } from "@/lib/data/cms";
-import { REEL_THUMBNAIL_FRAME_SAMPLES } from "../lib/constants";
 import { ReelEngagementIcons } from "./ReelEngagementIcons";
 
 export interface ReelsTableColumnsOptions {
   onEdit: (reel: CmsReel) => void;
   onPreview: (reel: CmsReel) => void;
   onDelete: (reel: CmsReel) => void;
-}
-
-function thumbnailSrcForRow(row: CmsReel): string {
-  const samples = [...REEL_THUMBNAIL_FRAME_SAMPLES];
-  const idx =
-    row.id.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % samples.length;
-  return samples[idx] ?? samples[0];
 }
 
 export function useReelsTableColumns({
@@ -35,15 +27,24 @@ export function useReelsTableColumns({
         className: "w-[88px]",
         cell: (row) => (
           <div className="relative flex h-[72px] w-[75px] shrink-0 overflow-hidden rounded-[6px] bg-[#2A2A2A] ring-1 ring-[#E8E9E8]">
-            {/* eslint-disable-next-line @next/next/no-img-element -- static poster frames from /public */}
-            <img
-              src={thumbnailSrcForRow(row)}
-              alt=""
-              width={75}
-              height={72}
-              className="h-full w-full object-cover"
-              draggable={false}
-            />
+            {row.thumbnail_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={row.thumbnail_url}
+                alt=""
+                width={75}
+                height={72}
+                className="h-full w-full object-cover"
+                draggable={false}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M9.71973 16.9502V9.0498L16.5596 13L9.71973 16.9502Z" stroke="#71717A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <rect x="2.75" y="2.75" width="18.5" height="18.5" rx="1.25" stroke="#71717A" strokeWidth="1.5" />
+                </svg>
+              </div>
+            )}
           </div>
         ),
       },

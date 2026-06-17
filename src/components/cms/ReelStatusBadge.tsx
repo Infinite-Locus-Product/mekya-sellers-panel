@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { ReelStatus } from "@/lib/data/cms";
-import { BadgeCheck, Clock, FileText } from "lucide-react";
+import { BadgeCheck, Clock, FileText, Hourglass, RotateCcw, XCircle } from "lucide-react";
 
 const STYLES: Record<
   ReelStatus,
@@ -20,6 +20,21 @@ const STYLES: Record<
     className: "bg-[#DBFCE7] text-[#016630]",
     label: "Published",
     Icon: BadgeCheck,
+  },
+  pending: {
+    className: "bg-[#FEE2E2] text-[#991B1B]",
+    label: "Pending Review",
+    Icon: Hourglass,
+  },
+  rejected: {
+    className: "bg-[#FEE2E2] text-[#7F1D1D]",
+    label: "Rejected",
+    Icon: XCircle,
+  },
+  resubmitted: {
+    className: "bg-[#F3E8FF] text-[#6B21A8]",
+    label: "Resubmitted",
+    Icon: RotateCcw,
   },
 };
 

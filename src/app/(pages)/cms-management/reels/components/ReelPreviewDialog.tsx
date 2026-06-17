@@ -1,16 +1,17 @@
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { CMS_DUMMY_REEL_VIDEO_SRC } from "../lib/constants";
 import { CmsReelIconClose } from "./cms-reels-icons";
 
 export interface ReelPreviewDialogProps {
   open: boolean;
   title: string;
+  videoSrc: string | null | undefined;
   onOpenChange: (open: boolean) => void;
 }
 
 export function ReelPreviewDialog({
   open,
   title,
+  videoSrc,
   onOpenChange,
 }: Readonly<ReelPreviewDialogProps>) {
   return (
@@ -30,14 +31,21 @@ export function ReelPreviewDialog({
             <CmsReelIconClose className="size-5" aria-hidden />
           </button>
         </div>
-        <video
-          src={CMS_DUMMY_REEL_VIDEO_SRC}
-          className="mx-auto max-h-[min(70vh,520px)] w-full bg-black object-contain"
-          controls
-          playsInline
-          preload="metadata"
-          aria-label="Reel preview"
-        />
+        {videoSrc ? (
+          <video
+            key={videoSrc}
+            src={videoSrc}
+            className="mx-auto max-h-[min(70vh,520px)] w-full bg-black object-contain"
+            controls
+            playsInline
+            preload="metadata"
+            aria-label="Reel preview"
+          />
+        ) : (
+          <div className="flex min-h-[200px] items-center justify-center bg-black text-sm text-[#666666]">
+            No video available
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -6,10 +6,10 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "NODE_OPTIONS='--max-old-space-size=8192' next dev --webpack",
-    "dev:turbo": "NODE_OPTIONS='--max-old-space-size=8192' next dev",
-    "dev:webpack": "NODE_OPTIONS='--max-old-space-size=8192' next dev --webpack",
-    "build": "NODE_OPTIONS='--max-old-space-size=8192' next build",
+    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev --webpack -p 3001",
+    "dev:turbo": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev -p 3001",
+    "dev:webpack": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev --webpack -p 3001",
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
@@ -40,6 +40,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.0",
     "jsdom": "^25.0.0",

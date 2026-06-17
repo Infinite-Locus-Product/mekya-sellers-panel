@@ -1,5 +1,15 @@
 import type { ApiResponse, AuthTokens } from "./types"
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number,
+  ) {
+    super(message)
+    this.name = "ApiError"
+  }
+}
+
 export interface ApiClientConfig {
   baseURL: string
   timeout?: number
@@ -98,7 +108,7 @@ export class ApiClient {
           typeof (payload as { message: unknown }).message === "string"
             ? (payload as { message: string }).message
             : `Request failed (${res.status})`
-        throw new Error(msg)
+        throw new ApiError(msg, res.status)
       }
 
       if (
@@ -130,5 +140,13 @@ export class ApiClient {
 
   async put<T>(path: string, body?: unknown): Promise<ApiResponse<T>> {
     return this.request<T>(path, { method: "PUT", body })
+  }
+
+  async patch<T>(path: string, body?: unknown): Promise<ApiResponse<T>> {
+    return this.request<T>(path, { method: "PATCH", body })
+  }
+
+  async delete<T>(path: string): Promise<ApiResponse<T>> {
+    return this.request<T>(path, { method: "DELETE" })
   }
 }

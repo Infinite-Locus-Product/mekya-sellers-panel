@@ -3,23 +3,11 @@ import type { ReelStatus } from "@/lib/data/cms";
 import {
   EditReelStepIconCaptions,
   EditReelStepIconCrop,
-  EditReelStepIconDescription,
+  EditReelStepIconTagProducts,
   EditReelStepIconThumbnail,
 } from "../components/cms-reels-icons";
 
 export const PAGE_SIZE = 10;
-
-/** Dummy reel video from `public/reel/reel.mp4` until CMS media API exists */
-export const CMS_DUMMY_REEL_VIDEO_SRC = "/reel/reel.mp4";
-
-/** Sample frames for thumbnail picker (`public/images/…`) until CMS returns poster URLs */
-export const REEL_THUMBNAIL_FRAME_SAMPLES = [
-  "/images/cms1.jpg",
-  "/images/cms2.jpg",
-  "/images/cms3.jpg",
-  "/images/cms4.jpg",
-  "/images/cms5.jpg",
-] as const;
 
 export const UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
 export const VIDEO_ACCEPT = "video/mp4,video/quicktime,video/x-msvideo,.mp4,.mov,.avi";
@@ -46,11 +34,20 @@ export const EDIT_FLOW_STEPS: ReadonlyArray<{
 }> = [
   { label: "Crop", Icon: EditReelStepIconCrop },
   { label: "Captions", Icon: EditReelStepIconCaptions },
-  { label: "Description", Icon: EditReelStepIconDescription },
+  { label: "Tag Products", Icon: EditReelStepIconTagProducts },
   { label: "Thumbnail", Icon: EditReelStepIconThumbnail },
 ];
 
 export const DESCRIPTION_MAX_CHARS = 1000;
+
+export const MIN_DURATION_SECONDS = 15;
+export const MAX_TAGGED_PRODUCTS = 5;
+
+export const AUDIENCE_OPTIONS = [
+  { label: "B2C (Consumers)", value: "b2c" as const },
+  { label: "B2B (Businesses)", value: "b2b" as const },
+  { label: "Both", value: "both" as const },
+] as const;
 
 export const CAPTION_COLOR_OPTIONS = [
   { label: "Black", value: "#000000" },

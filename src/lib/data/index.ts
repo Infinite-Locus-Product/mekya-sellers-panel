@@ -10,13 +10,11 @@ export {
   type EditableProductDraft,
 } from "./products";
 export {
-  getCmsReels,
-  getCmsAnalyticsKpis,
-  getCmsViewsOverTime,
   type CmsReel,
   type CmsReelEngagement,
   type ReelStatus,
   type CmsAnalyticsKpis,
   type CmsViewsOverTimePoint,
+  type CmsAudienceByDeviceSlice,
 } from "./cms";
 export { getProfile, type ProfilePageData } from "./profile"

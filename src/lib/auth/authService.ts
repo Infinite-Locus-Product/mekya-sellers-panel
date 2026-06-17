@@ -1,34 +1,19 @@
 import { getPublicApiUrl } from "@/lib/env"
-import { ApiClient } from "./apiClient"
+import { ApiClient, ApiError } from "./apiClient"
 import { secureStorage } from "./secureStorage"
 import type { AdminUser, AuthTokens, LoginCredentials, RegisterPayload } from "./types"
 
 const STORAGE_KEY = "auth_tokens"
-/** Client-only mock auth: no API calls; remove when backend auth is wired. */
-const MOCK_SESSION_KEY = "auth_mock_session"
 const USER_PROFILE_KEY = "auth_user_profile"
 
-function buildMockUser(email: string, displayName?: string): AdminUser {
-  const trimmed = email.trim() || "user@local.dev"
-  const normalizedEmail = trimmed.includes("@") ? trimmed : `${trimmed}@local.dev`
-  const localPart = normalizedEmail.split("@")[0] ?? "user"
-  return {
-    id: `mock_${normalizedEmail.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 48)}`,
-    email: normalizedEmail,
-    name: displayName?.trim() || localPart || "User",
-    isVerified: true,
-  }
-}
-
-function createMockTokens(): AuthTokens {
-  const suffix =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}_${Math.random().toString(36).slice(2)}`
-  return {
-    accessToken: `mock_access_${suffix}`,
-    refreshToken: `mock_refresh_${suffix}`,
-    expiresAt: Date.now() + 24 * 3600_000,
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".")
+    if (parts.length !== 3) return null
+    const base64 = (parts[1] ?? "").replace(/-/g, "+").replace(/_/g, "/")
+    return JSON.parse(atob(base64)) as Record<string, unknown>
+  } catch {
+    return null
   }
 }
 
@@ -73,20 +58,9 @@ export class AuthService {
 
   private clearTokens(): void {
     secureStorage.removeItem(STORAGE_KEY)
-    secureStorage.removeItem(MOCK_SESSION_KEY)
     secureStorage.removeItem(USER_PROFILE_KEY)
     this.tokens = null
     this.api.setAuthTokens(null)
-  }
-
-  private isMockSession(): boolean {
-    return secureStorage.getItem(MOCK_SESSION_KEY) === "1"
-  }
-
-  private saveMockSession(user: AdminUser, tokens: AuthTokens): void {
-    secureStorage.setItem(MOCK_SESSION_KEY, "1")
-    secureStorage.setItem(USER_PROFILE_KEY, JSON.stringify(user))
-    this.saveTokens(tokens)
   }
 
   getTokens(): AuthTokens | null {
@@ -102,31 +76,64 @@ export class AuthService {
   }
 
   async login(credentials: LoginCredentials): Promise<{ user: AdminUser; tokens: AuthTokens }> {
-    const user = buildMockUser(credentials.email)
-    const tokens = createMockTokens()
-    this.saveMockSession(user, tokens)
+    let response: Awaited<ReturnType<typeof this.api.post<{ access_token: string; refresh_token: string; token_type: string }>>>
+    try {
+      response = await this.api.post<{ access_token: string; refresh_token: string; token_type: string }>(
+        "/B2B/auth/login",
+        { identifier: credentials.email, password: credentials.password, method: "email" },
+      )
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.statusCode === 401) throw new Error("Invalid email or password.")
+        if (err.statusCode === 403) throw new Error("Your account is pending admin approval.")
+        if (err.statusCode === 423) throw new Error("Account locked after 3 failed attempts. Try again in 10 minutes.")
+      }
+      throw err
+    }
+
+    const { access_token, refresh_token } = response.data
+    const claims = decodeJwtPayload(access_token)
+    const tokens: AuthTokens = {
+      accessToken: access_token,
+      refreshToken: refresh_token,
+      // Access token expires in 15 min — refresh slightly before that
+      expiresAt: Date.now() + 14 * 60 * 1000,
+    }
+    const user: AdminUser = {
+      id: String(claims?.sub ?? credentials.email),
+      email: String(claims?.email ?? credentials.email),
+      name: String(claims?.name ?? (credentials.email.split("@")[0] ?? "User")),
+      isVerified: true,
+    }
+
+    this.saveTokens(tokens)
+    secureStorage.setItem(USER_PROFILE_KEY, JSON.stringify(user))
     return { user, tokens }
+  }
+
+  async refreshTokens(): Promise<void> {
+    if (!this.tokens?.refreshToken) throw new Error("No refresh token available")
+    const response = await this.api.post<{ access_token: string }>(
+      "/B2B/auth/refresh",
+      { refresh_token: this.tokens.refreshToken },
+    )
+    this.saveTokens({
+      ...this.tokens,
+      accessToken: response.data.access_token,
+      expiresAt: Date.now() + 14 * 60 * 1000,
+    })
   }
 
   async register(
     payload: RegisterPayload
   ): Promise<{ user: AdminUser; tokens: AuthTokens }> {
-    const user = buildMockUser(payload.email, payload.fullName)
-    const tokens = createMockTokens()
-    this.saveMockSession(user, tokens)
-    return { user, tokens }
+    // No register API specified — seller accounts are created by admin
+    void payload
+    throw new Error("New accounts are created by the Mekya admin team. Please contact support.")
   }
 
   async logout(): Promise<void> {
-    try {
-      if (this.tokens && !this.isMockSession()) {
-        await this.api.post("/auth/logout", { refreshToken: this.tokens.refreshToken })
-      }
-    } catch {
-      /* still clear local session */
-    } finally {
-      this.clearTokens()
-    }
+    this.clearTokens()
   }
 
   async getCurrentUser(): Promise<AdminUser> {
@@ -134,27 +141,31 @@ export class AuthService {
       throw new Error("Not authenticated")
     }
 
-    if (this.isMockSession()) {
-      const raw = secureStorage.getItem(USER_PROFILE_KEY)
-      if (!raw) {
-        throw new Error("Not authenticated")
-      }
+    // Use profile stored at login time
+    const raw = secureStorage.getItem(USER_PROFILE_KEY)
+    if (raw) {
       try {
         const user = JSON.parse(raw) as AdminUser
-        if (user?.id && user?.email) {
-          return user
-        }
+        if (user?.id && user?.email) return user
       } catch {
         /* fall through */
       }
-      throw new Error("Not authenticated")
     }
 
-    const response = await this.api.get<{ user: AdminUser }>("/auth/me")
-    if (!response.success || !response.data?.user) {
-      throw new Error("Failed to load user")
+    // Fallback: decode claims from the JWT itself
+    if (this.tokens?.accessToken) {
+      const claims = decodeJwtPayload(this.tokens.accessToken)
+      if (claims?.sub) {
+        return {
+          id: String(claims.sub),
+          email: String(claims.email ?? claims.sub),
+          name: String(claims.name ?? (String(claims.email ?? "").split("@")[0] ?? "User")),
+          isVerified: true,
+        }
+      }
     }
-    return response.data.user
+
+    throw new Error("Not authenticated")
   }
 
   /** Step 1 — request reset email / code (same contract as b2b AuthService). */

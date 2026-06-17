@@ -239,6 +239,21 @@ export function EditReelStepIconDescription(props: Readonly<SVGProps<SVGSVGEleme
   );
 }
 
+export function EditReelStepIconTagProducts(props: Readonly<SVGProps<SVGSVGElement>>) {
+  return (
+    <EditReelFlowIconShell {...props}>
+      <path
+        d="M8.16667 8.16667H8.18333M7 3.5H13.4167C13.8696 3.5002 14.3039 3.68013 14.6256 4.0011L23.9989 13.3744C24.3196 13.6963 24.4995 14.1304 24.4995 14.5831C24.4995 15.0358 24.3196 15.4699 23.9989 15.7917L15.7917 23.9989C15.4699 24.3196 15.0358 24.4995 14.5831 24.4995C14.1304 24.4995 13.6963 24.3196 13.3744 23.9989L4.0011 14.6256C3.68013 14.3039 3.5002 13.8696 3.5 13.4167V7C3.5 6.07174 3.86875 5.1815 4.52513 4.52513C5.1815 3.86875 6.07174 3.5 7 3.5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </EditReelFlowIconShell>
+  );
+}
+
 export function EditReelStepIconThumbnail(props: Readonly<SVGProps<SVGSVGElement>>) {
   return (
     <EditReelFlowIconShell {...props}>

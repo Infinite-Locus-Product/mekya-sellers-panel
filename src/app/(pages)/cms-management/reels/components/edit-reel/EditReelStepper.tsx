@@ -3,14 +3,12 @@ import { EDIT_FLOW_STEPS } from "../../lib/constants";
 
 export interface EditReelStepperProps {
   editStep: number;
+  onStepClick?: (index: number) => void;
 }
 
 const LAST_INDEX = EDIT_FLOW_STEPS.length - 1;
 
-/**
- * Labels + nodes; connector from circle center (`left: 50%`, `w-full`) to next circle center — not `150%`, which drew past the last node.
- */
-export function EditReelStepper({ editStep }: Readonly<EditReelStepperProps>) {
+export function EditReelStepper({ editStep, onStepClick }: Readonly<EditReelStepperProps>) {
   return (
     <div className="shrink-0 border-b border-[#E8E9E8] bg-white px-4 pb-5 pt-5 sm:px-6">
       <div className="flex w-full items-stretch">
@@ -20,7 +18,10 @@ export function EditReelStepper({ editStep }: Readonly<EditReelStepperProps>) {
             className="relative flex min-w-0 flex-1 basis-0 flex-col items-center gap-2"
             aria-current={index === editStep ? "step" : undefined}
           >
-            <span className="w-full text-center text-[10px] font-medium leading-tight text-[#2A2A2A] sm:text-xs">
+            <span className={cn(
+              "w-full text-center text-[10px] font-medium leading-tight sm:text-xs",
+              index === editStep ? "text-[#004C5E]" : "text-[#2A2A2A]"
+            )}>
               {step.label}
             </span>
             {index < LAST_INDEX ? (
@@ -32,14 +33,18 @@ export function EditReelStepper({ editStep }: Readonly<EditReelStepperProps>) {
                 aria-hidden
               />
             ) : null}
-            <div
+            <button
+              type="button"
+              aria-label={`Go to ${step.label}`}
+              onClick={() => onStepClick?.(index)}
               className={cn(
-                "relative z-10 flex size-10 shrink-0 items-center justify-center rounded-full transition-colors",
-                index <= editStep ? "bg-[#5BD387]" : "bg-[#E5E5E5]"
+                "relative z-10 flex size-10 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004C5E] focus-visible:ring-offset-2",
+                index <= editStep ? "bg-[#5BD387] hover:brightness-95" : "bg-[#E5E5E5] hover:bg-[#D4D4D4]",
+                !onStepClick && "cursor-default"
               )}
             >
               <step.Icon className="size-5 text-black" aria-hidden />
-            </div>
+            </button>
           </div>
         ))}
       </div>
