@@ -153,7 +153,7 @@ export function UploadReelDialog({
             <p className="mb-2 text-sm font-normal text-[#666666]">Upload Requirements :</p>
             <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-[#666666]">
               <li>Supported formats: MP4, MOV, AVI</li>
-              <li>Maximum file size: 500MB</li>
+              <li>Maximum file size: 100MB</li>
               <li>Duration: 15-60 seconds</li>
               <li>Recommended resolution: 1080×1920 (9:16)</li>
             </ul>
