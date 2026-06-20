@@ -225,16 +225,11 @@ export async function listReels(params?: { status?: ReelStatus; limit?: number }
 }
 
 interface ApiReelDetail extends ApiReel {
-  products?: Array<{
-    product_id: string;
-    name: string;
-    thumbnail_url: string | null;
-    sku: string;
-  }>;
+  product_tags?: Array<{ saleor_product_id: string }>;
 }
 
 export interface ReelDetail extends CmsReel {
-  products: Array<{ product_id: string; name: string; thumbnail_url: string | null; sku: string }>;
+  product_ids: string[];
 }
 
 export async function getReelById(reelId: string): Promise<ReelDetail> {
@@ -242,7 +237,7 @@ export async function getReelById(reelId: string): Promise<ReelDetail> {
   const r = res.data;
   return {
     ...mapApiReel(r),
-    products: r.products ?? [],
+    product_ids: (r.product_tags ?? []).map((t) => t.saleor_product_id),
   };
 }
 

@@ -11,6 +11,7 @@ import {
   createReel,
   deleteReel,
   getReelById,
+  getSellerProducts,
   listReels,
   presignThumbnailUpload,
   presignVideoUpload,
@@ -195,20 +196,31 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     // New uploads don't exist in the backend yet — skip detail fetch
     if (reel.id.startsWith("local-upload-")) return;
 
-    // Fetch full detail to populate description, products, and accurate audience
+    // Fetch full detail to populate description, audience, and tagged products
     getReelById(reel.id)
       .then((detail) => {
         setReelDescription(detail.description ?? "");
         setReelAudience(detail.audience ?? "b2c");
-        setTaggedProducts(
-          detail.products.map((p) => ({
-            id: p.product_id,
-            name: p.name,
-            sku: p.sku,
-            imageUrl: p.thumbnail_url ?? "",
-          })),
-        );
         setEditingReel(detail);
+
+        const ids = detail.product_ids ?? [];
+        if (ids.length === 0) return;
+
+        getSellerProducts({ limit: 200 })
+          .then(({ products }) => {
+            const idSet = new Set(ids);
+            setTaggedProducts(
+              products
+                .filter((p) => idSet.has(p.product_id))
+                .map((p) => ({
+                  id: p.product_id,
+                  name: p.name,
+                  sku: p.sku,
+                  imageUrl: p.thumbnail_url ?? "",
+                })),
+            );
+          })
+          .catch(() => {});
       })
       .catch(() => {
         // Dialog already open with list data — silently ignore
