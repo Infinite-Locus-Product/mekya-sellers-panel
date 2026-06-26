@@ -16,14 +16,16 @@ export interface ApiClientConfig {
   timeout?: number
 }
 
-// Ported from admin portal: callback type injected by AuthService — no circular dependency.
+// callback type injected by AuthService — no circular dependency.
 export type RefreshHandler = () => Promise<boolean>
 
-// Ported from admin portal: shared error message extractor for all response shapes.
+// shared error message extractor for all response shapes.
 export function extractApiErrorMessage(
   payload: unknown,
-  fallback = "Request failed"
+  fallback = "Request failed",
+  depth = 0
 ): string {
+  if (depth >= 3) return fallback
   if (payload == null) return fallback
   if (typeof payload === "string" && payload.trim()) return payload.trim()
   if (typeof payload !== "object") return fallback
@@ -34,7 +36,7 @@ export function extractApiErrorMessage(
     if (first && typeof first === "object" && !Array.isArray(first)) {
       const item = first as Record<string, unknown>
       if (typeof item.msg === "string" && item.msg.trim()) return item.msg.trim()
-      const nested = extractApiErrorMessage(first, "")
+      const nested = extractApiErrorMessage(first, "", depth + 1)
       if (nested) return nested
     }
     return fallback
@@ -46,16 +48,16 @@ export function extractApiErrorMessage(
   if (typeof o.message === "string" && o.message.trim()) return o.message.trim()
   if (typeof o.detail === "string" && o.detail.trim()) return o.detail.trim()
   if (Array.isArray(o.detail) && o.detail.length > 0) {
-    const fromDetail = extractApiErrorMessage(o.detail[0], "")
+    const fromDetail = extractApiErrorMessage(o.detail[0], "", depth + 1)
     if (fromDetail) return fromDetail
   }
   if (typeof o.error === "string" && o.error.trim()) return o.error.trim()
   if (o.error && typeof o.error === "object" && !Array.isArray(o.error)) {
-    const nested = extractApiErrorMessage(o.error, "")
+    const nested = extractApiErrorMessage(o.error, "", depth + 1)
     if (nested) return nested
   }
   if (Array.isArray(o.errors) && o.errors.length > 0) {
-    const fromErrors = extractApiErrorMessage(o.errors[0], "")
+    const fromErrors = extractApiErrorMessage(o.errors[0], "", depth + 1)
     if (fromErrors) return fromErrors
   }
 
@@ -63,14 +65,15 @@ export function extractApiErrorMessage(
 }
 
 export class ApiClient {
-  // Ported from admin portal: proactive refresh fires 5 s before token expires.
+  // proactive refresh fires 5 s before token expires.
   private static readonly ACCESS_EXPIRY_SKEW_MS = 5_000
 
   private baseURL: string
   private timeout: number
   private authTokens: AuthTokens | null = null
-  // Ported from admin portal: injected by AuthService — ApiClient never imports AuthService.
+  // injected by AuthService — ApiClient never imports AuthService.
   private refreshHandler: RefreshHandler | null = null
+  private refreshPromise: Promise<boolean> | null = null
 
   constructor(config: ApiClientConfig) {
     this.baseURL = config.baseURL.replace(/\/$/, "")
@@ -85,7 +88,7 @@ export class ApiClient {
     return this.authTokens
   }
 
-  // Ported from admin portal: wired in AuthService constructor.
+  // wired in AuthService constructor.
   setRefreshHandler(handler: RefreshHandler | null): void {
     this.refreshHandler = handler
   }
@@ -98,7 +101,7 @@ export class ApiClient {
     return { Authorization: `Bearer ${token}` }
   }
 
-  // Ported from admin portal: runs before every non-auth request.
+  // runs before every non-auth request.
   private async ensureAccessTokenFresh(): Promise<void> {
     if (this.authTokens === null || this.refreshHandler === null) return
     const skewedExpiry = this.authTokens.expiresAt - ApiClient.ACCESS_EXPIRY_SKEW_MS
@@ -120,17 +123,16 @@ export class ApiClient {
     }
   }
 
-  // Ported from admin portal: swallows refresh errors — caller handles via 401 path.
   private async tryRefresh(): Promise<boolean> {
     if (this.refreshHandler === null || this.authTokens === null) return false
-    try {
-      return await this.refreshHandler()
-    } catch {
-      return false
-    }
+    if (this.refreshPromise) return this.refreshPromise
+    this.refreshPromise = this.refreshHandler()
+      .catch(() => false)
+      .finally(() => { this.refreshPromise = null })
+    return this.refreshPromise
   }
 
-  // Ported from admin portal: AbortController errors vary by browser/runtime.
+  // AbortController errors vary by browser/runtime.
   private static isAbortError(error: unknown): boolean {
     if (error instanceof DOMException && error.name === "AbortError") return true
     if (error instanceof Error && error.name === "AbortError") return true
@@ -140,7 +142,7 @@ export class ApiClient {
   private async request<T>(
     path: string,
     init: { method?: string; headers?: Record<string, string>; body?: unknown },
-    // Ported from admin portal: skipRefresh prevents re-entry on auth-only calls
+    // skipRefresh prevents re-entry on auth-only calls
     // (login, refresh, logout). timeoutMs allows per-call override.
     options: { skipRefresh?: boolean; timeoutMs?: number } = {}
   ): Promise<ApiResponse<T>> {
@@ -177,8 +179,21 @@ export class ApiClient {
 
       // Reactive: on 401, refresh once and retry. 401 means _extract_bearer fired
       // before any business logic — safe to retry for all HTTP methods.
+      // Fresh AbortController for the retry so the original timeout does not carry over.
       if (res.status === 401 && !options.skipRefresh && (await this.tryRefresh())) {
-        res = await doFetch()
+        clearTimeout(id)
+        const retryController = new AbortController()
+        const retryId = setTimeout(() => retryController.abort(), timeoutMs)
+        try {
+          res = await fetch(`${this.baseURL}${path}`, {
+            method: init.method ?? "GET",
+            headers: buildHeaders(),
+            body,
+            signal: retryController.signal,
+          })
+        } finally {
+          clearTimeout(retryId)
+        }
       }
 
       const rawPayload = await this.parseBody(res)

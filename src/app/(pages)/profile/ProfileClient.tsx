@@ -733,7 +733,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                       type="email"
                       value={personalForm.email}
                       disabled
-                      readOnly
                     />
                   </div>
                   <div className="flex flex-col gap-2">
@@ -747,7 +746,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                         className="w-20 shrink-0 rounded-none"
                         aria-label="Country code"
                         disabled
-                        readOnly
                       />
                       <Input
                         id="phone"
