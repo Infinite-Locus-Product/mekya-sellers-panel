@@ -1,5 +1,5 @@
 /**
- * Profile data layer. API-ready: replace with fetch when backend is integrated.
+ * Profile data layer. Provides an empty skeleton for SSR; ProfileClient fetches real data on mount.
  */
 
 export interface ProfileData {
@@ -7,8 +7,8 @@ export interface ProfileData {
   email: string
   phone: string
   role: string
-  brandName?: string
   companyName?: string
+  profile_image_url?: string | null
 }
 
 export interface PersonalInfo {
@@ -18,9 +18,8 @@ export interface PersonalInfo {
   phoneCode: string
   phone: string
   company: string
-  designation: string
   address: string
-  bio: string
+  gstin: string
 }
 
 export interface ProfilePageData {
@@ -28,30 +27,24 @@ export interface ProfilePageData {
   personal: PersonalInfo
 }
 
-const mockProfile: ProfileData = {
-  name: "Seller Admin",
-  email: "selleradmin@mekya.in",
-  phone: "+91 9876543210",
-  role: "Seller",
-  brandName: "Allen Solly",
-  companyName: "Aditya Birla Fashion & Retail Limited",
-}
-
-const mockPersonal: PersonalInfo = {
-  firstName: "Seller",
-  lastName: "Admin",
-  email: "selleradmin@mekya.in",
-  phoneCode: "+91",
-  phone: "9876543210",
-  company: "Mekya",
-  designation: "Seller",
-  address: "Ludhiana, Punjab, India",
-  bio: "Experienced seller manager focused on catalog quality, orders, and customer satisfaction.",
-}
-
 export async function getProfile(): Promise<ProfilePageData> {
   return {
-    profile: mockProfile,
-    personal: mockPersonal,
+    profile: {
+      name: "",
+      email: "",
+      phone: "",
+      role: "",
+      profile_image_url: null,
+    },
+    personal: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      phoneCode: "+91",
+      phone: "",
+      company: "",
+      address: "",
+      gstin: "",
+    },
   }
 }
