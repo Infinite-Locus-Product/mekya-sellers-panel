@@ -123,7 +123,7 @@ function mapApiToState(data: UserProfileApiResponse): {
       name: fullName,
       email: data.email,
       phone: data.phone ? `+91 ${data.phone}` : "",
-      role: data.business_type ?? data.role ?? "Seller",
+      role: data.user_subtype ?? data.business_type ?? data.role ?? "Seller",
       companyName: data.company_name ?? undefined,
       profile_image_url: data.profile_image_url,
     },

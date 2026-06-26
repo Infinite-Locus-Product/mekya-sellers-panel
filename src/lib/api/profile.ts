@@ -12,6 +12,7 @@ export interface UserProfileApiResponse {
   gstin: string | null
   role: string | null
   business_type: string | null
+  user_subtype: string | null
   profile_image_url: string | null
   current_pincode: string | null
   is_active: boolean
