@@ -26,6 +26,14 @@ export class AuthService {
     this.api = new ApiClient({ baseURL: getPublicApiUrl(), timeout: 15000 })
     this.loadTokensFromStorage()
     this.api.setAuthTokens(this.tokens)
+    this.api.setRefreshHandler(async () => {
+      try {
+        await this.refreshTokens()
+        return true
+      } catch {
+        return false
+      }
+    })
   }
 
   static getInstance(): AuthService {
@@ -81,6 +89,7 @@ export class AuthService {
       response = await this.api.post<{ access_token: string; refresh_token: string; token_type: string }>(
         "/B2B/auth/login",
         { identifier: credentials.email, password: credentials.password, method: "email" },
+        { skipRefresh: true },
       )
     } catch (err) {
       if (err instanceof ApiError) {
@@ -116,6 +125,7 @@ export class AuthService {
     const response = await this.api.post<{ access_token: string }>(
       "/B2B/auth/refresh",
       { refresh_token: this.tokens.refreshToken },
+      { skipRefresh: true },
     )
     this.saveTokens({
       ...this.tokens,

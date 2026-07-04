@@ -4,6 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/auth-context"
+import {
+  fetchUserProfile,
+  updateUserProfile,
+  presignAvatarUpload,
+  changePassword,
+  uploadFileToStorage,
+  type UserProfileApiResponse,
+} from "@/lib/api/profile"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -97,14 +105,39 @@ function isPersonalDirty(form: PersonalFormState, saved: PersonalFormState): boo
   return (
     form.firstName !== saved.firstName ||
     form.lastName !== saved.lastName ||
-    form.email !== saved.email ||
     form.phoneCode !== saved.phoneCode ||
     form.phone !== saved.phone ||
     form.company !== saved.company ||
-    form.designation !== saved.designation ||
-    form.address !== saved.address ||
-    form.bio !== saved.bio
+    form.gstin !== saved.gstin ||
+    form.address !== saved.address
   )
+}
+
+function mapApiToState(data: UserProfileApiResponse): {
+  profileData: import("@/lib/data").ProfilePageData["profile"]
+  personalInfo: import("@/lib/data").ProfilePageData["personal"]
+} {
+  const fullName = [data.first_name, data.last_name].filter(Boolean).join(" ") || data.email
+  return {
+    profileData: {
+      name: fullName,
+      email: data.email,
+      phone: data.phone ? `+91 ${data.phone}` : "",
+      role: data.user_subtype ?? data.business_type ?? data.role ?? "Seller",
+      companyName: data.company_name ?? undefined,
+      profile_image_url: data.profile_image_url,
+    },
+    personalInfo: {
+      firstName: data.first_name ?? "",
+      lastName: data.last_name ?? "",
+      email: data.email,
+      phoneCode: "+91",
+      phone: data.phone ?? "",
+      company: data.company_name ?? "",
+      address: data.company_address ?? "",
+      gstin: data.gstin ?? "",
+    },
+  }
 }
 
 function isLocationRestrictionDirty(current: LocationRestrictionState, saved: LocationRestrictionState): boolean {
@@ -116,11 +149,18 @@ function isLocationRestrictionDirty(current: LocationRestrictionState, saved: Lo
 export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
   const router = useRouter()
   const { logout } = useAuth()
-  const { profile, personal } = initialData
+  const { personal } = initialData
+  const [profileData, setProfileData] = useState(initialData.profile)
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(
+    initialData.profile.profile_image_url ?? null
+  )
   const [activeTab, setActiveTab] = useState<TabId>("profile")
   const [savedPersonal, setSavedPersonal] = useState<PersonalFormState>(() => ({ ...personal }))
   const [personalForm, setPersonalForm] = useState<PersonalFormState>(() => ({ ...personal }))
   const [isPersonalEditing, setIsPersonalEditing] = useState(false)
+  const [isSavingPersonal, setIsSavingPersonal] = useState(false)
+  const [isSavingPassword, setIsSavingPassword] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [successModalOpen, setSuccessModalOpen] = useState(false)
   const [logoutModalOpen, setLogoutModalOpen] = useState(false)
   const [discardModalOpen, setDiscardModalOpen] = useState(false)
@@ -225,10 +265,21 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     setIsDragging(false)
   }, [])
 
-  const handleUploadSubmit = useCallback(() => {
-    if (selectedFile) {
+  const handleUploadSubmit = useCallback(async () => {
+    if (!selectedFile) return
+    setIsUploadingAvatar(true)
+    try {
+      const presign = await presignAvatarUpload(selectedFile.name, selectedFile.type, selectedFile.size)
+      await uploadFileToStorage(presign.upload_url, selectedFile)
+      await updateUserProfile({ profile_image_url: presign.profile_image_url })
+      setProfileImageUrl(presign.profile_image_url)
       setUploadImageOpen(false)
       setSelectedFile(null)
+      toast.success("Profile picture updated.")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed. Please try again.")
+    } finally {
+      setIsUploadingAvatar(false)
     }
   }, [selectedFile])
 
@@ -257,10 +308,29 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     setIsPersonalEditing(true)
   }, [])
 
-  const handleSavePersonal = useCallback(() => {
-    setSavedPersonal({ ...personalForm })
-    setIsPersonalEditing(false)
-    setSuccessModalOpen(true)
+  const handleSavePersonal = useCallback(async () => {
+    setIsSavingPersonal(true)
+    try {
+      const updated = await updateUserProfile({
+        first_name: personalForm.firstName || null,
+        last_name: personalForm.lastName || null,
+        phone: personalForm.phone || null,
+        company_name: personalForm.company || null,
+        company_address: personalForm.address || null,
+        gstin: personalForm.gstin || null,
+      })
+      const { profileData: pd, personalInfo: pi } = mapApiToState(updated)
+      setProfileData(pd)
+      setProfileImageUrl(updated.profile_image_url ?? null)
+      setSavedPersonal(pi)
+      setPersonalForm(pi)
+      setIsPersonalEditing(false)
+      setSuccessModalOpen(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save changes.")
+    } finally {
+      setIsSavingPersonal(false)
+    }
   }, [personalForm])
 
   const closeSuccessModal = useCallback(() => {
@@ -303,11 +373,19 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     setPersonalForm((prev) => ({ ...prev, [key]: value }))
   }, [])
 
-  const handleUpdatePassword = useCallback(() => {
+  const handleUpdatePassword = useCallback(async () => {
     if (passwordFormLocked || !isPasswordValid) return
-    toast.success("Your password has been changed successfully.", { icon: "🎉" })
-    resetPasswordSection()
-  }, [passwordFormLocked, isPasswordValid, resetPasswordSection])
+    setIsSavingPassword(true)
+    try {
+      await changePassword({ old_password: currentPassword, new_password: newPassword })
+      toast.success("Your password has been changed successfully.", { icon: "🎉" })
+      resetPasswordSection()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to change password.")
+    } finally {
+      setIsSavingPassword(false)
+    }
+  }, [passwordFormLocked, isPasswordValid, currentPassword, newPassword, resetPasswordSection])
 
   const selectedStatesSummary = useMemo(() => {
     if (restrictedStates.length === 0) return "Select states to restrict visibility"
@@ -384,14 +462,32 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    fetchUserProfile()
+      .then((data) => {
+        if (cancelled) return
+        const { profileData: pd, personalInfo: pi } = mapApiToState(data)
+        setProfileData(pd)
+        setSavedPersonal(pi)
+        setPersonalForm(pi)
+        setProfileImageUrl(data.profile_image_url ?? null)
+      })
+      .catch(() => {
+        toast.error("Failed to load profile data.")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const breadcrumbSuffix = useMemo(() => {
     if (activeTab === "security") return "Security"
     if (activeTab === "locationRestriction") return "Location Restriction"
     return "Profile"
   }, [activeTab])
-  const isSellerProfile = useMemo(() => /seller/i.test(profile.role), [profile.role])
-  const sellerBrandName = profile.brandName ?? personal.designation
-  const sellerCompanyName = profile.companyName ?? personal.company
+  const isSellerProfile = useMemo(() => /seller/i.test(profileData.role), [profileData.role])
+  const sellerCompanyName = profileData.companyName ?? personalForm.company
 
   return (
     <div className="flex min-h-0 w-full flex-col px-4 py-6 sm:px-6 md:px-8 lg:px-10 xl:px-12">
@@ -455,14 +551,23 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
               <CardContent className="flex flex-col gap-5 bg-[#F9FAF9] p-6 sm:p-8">
                 <div className="flex flex-row items-start justify-start gap-5">
                   <div className="relative shrink-0">
-                    <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-background bg-sky-100 text-sky-800 shadow-sm sm:h-24 sm:w-24">
-                      <span className="text-xl font-semibold sm:text-2xl">
-                        {profile.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </span>
-                    </div>
+                    {profileImageUrl ? (
+                      <img
+                        src={profileImageUrl}
+                        alt="Profile"
+                        className="h-20 w-20 rounded-full border-2 border-background object-cover shadow-sm sm:h-24 sm:w-24"
+                      />
+                    ) : (
+                      <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-background bg-sky-100 text-sky-800 shadow-sm sm:h-24 sm:w-24">
+                        <span className="text-xl font-semibold sm:text-2xl">
+                          {profileData.name
+                            .split(" ")
+                            .filter(Boolean)
+                            .map((n) => n[0])
+                            .join("")}
+                        </span>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => setUploadImageOpen(true)}
@@ -473,28 +578,24 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                     </button>
                   </div>
                   <div className="flex flex-col gap-2 text-start">
-                    <h2 className="text-lg font-bold text-foreground sm:text-xl">{profile.name}</h2>
-                    {isSellerProfile && (sellerBrandName || sellerCompanyName) ? (
+                    <h2 className="text-lg font-bold text-foreground sm:text-xl">{profileData.name}</h2>
+                    {isSellerProfile && sellerCompanyName ? (
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
-                        {sellerBrandName ? <span>{sellerBrandName}</span> : null}
-                        {sellerBrandName && sellerCompanyName ? (
-                          <span aria-hidden className="h-1 w-1 rounded-full bg-muted-foreground" />
-                        ) : null}
-                        {sellerCompanyName ? <span>{sellerCompanyName}</span> : null}
+                        <span>{sellerCompanyName}</span>
                       </div>
                     ) : null}
                     <div className="flex gap-4">
                       <span className="flex items-center justify-start gap-2 border-r border-black pr-4 text-sm text-muted-foreground">
                         <Mail className="h-4 w-4 shrink-0" aria-hidden />
-                        <span className="truncate">{profile.email}</span>
+                        <span className="truncate">{profileData.email}</span>
                       </span>
                       <span className="flex items-center justify-start gap-2 text-sm text-muted-foreground">
                         <Phone className="h-4 w-4 shrink-0" aria-hidden />
-                        {profile.phone}
+                        {profileData.phone}
                       </span>
                     </div>
                     <span className="mt-2 inline-flex w-fit items-center justify-start rounded-full bg-foreground px-3 py-1 text-sm font-medium text-background">
-                      {profile.role}
+                      {profileData.role}
                     </span>
                   </div>
                 </div>
@@ -569,8 +670,9 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                     type="button"
                     className="h-10 w-full rounded-md bg-[#111827] text-sm font-medium text-white shadow-none hover:bg-[#111827]/90"
                     onClick={handleUploadSubmit}
+                    disabled={!selectedFile || isUploadingAvatar}
                   >
-                    Upload Image
+                    {isUploadingAvatar ? "Uploading…" : "Upload Image"}
                   </Button>
                 </div>
               </DialogContent>
@@ -630,8 +732,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                       id="email"
                       type="email"
                       value={personalForm.email}
-                      onChange={(e) => updatePersonalField("email", e.target.value)}
-                      disabled={!isPersonalEditing}
+                      disabled
                     />
                   </div>
                   <div className="flex flex-col gap-2">
@@ -642,10 +743,9 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                       <Input
                         id="phone-code"
                         value={personalForm.phoneCode}
-                        onChange={(e) => updatePersonalField("phoneCode", e.target.value)}
                         className="w-20 shrink-0 rounded-none"
                         aria-label="Country code"
-                        disabled={!isPersonalEditing}
+                        disabled
                       />
                       <Input
                         id="phone"
@@ -669,13 +769,15 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <label htmlFor="designation" className="text-sm font-medium text-foreground">
-                      Designation
+                    <label htmlFor="gstin" className="text-sm font-medium text-foreground">
+                      GSTIN
                     </label>
                     <Input
-                      id="designation"
-                      value={personalForm.designation}
-                      onChange={(e) => updatePersonalField("designation", e.target.value)}
+                      id="gstin"
+                      value={personalForm.gstin}
+                      onChange={(e) => updatePersonalField("gstin", e.target.value.toUpperCase())}
+                      placeholder="e.g. 22AAAAA0000A1Z5"
+                      maxLength={15}
                       disabled={!isPersonalEditing}
                     />
                   </div>
@@ -690,30 +792,17 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                       disabled={!isPersonalEditing}
                     />
                   </div>
-                  <div className="flex flex-col gap-2 md:col-span-2">
-                    <label htmlFor="bio" className="text-sm font-medium text-foreground">
-                      Bio
-                    </label>
-                    <textarea
-                      id="bio"
-                      rows={4}
-                      value={personalForm.bio}
-                      onChange={(e) => updatePersonalField("bio", e.target.value)}
-                      disabled={!isPersonalEditing}
-                      className="w-full min-w-0 resize-none rounded-md border border-input bg-[#E8E9E8] px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                  </div>
                 </div>
 
                 <Button
                   type="button"
                   className="w-full sm:w-auto sm:min-w-[180px]"
                   size="lg"
-                  disabled={!isPersonalEditing || !personalIsDirty}
+                  disabled={!isPersonalEditing || !personalIsDirty || isSavingPersonal}
                   onClick={handleSavePersonal}
                 >
                   <Save className="mr-2 h-4 w-4" aria-hidden />
-                  Save Changes
+                  {isSavingPersonal ? "Saving…" : "Save Changes"}
                 </Button>
               </CardContent>
             </Card>
@@ -872,11 +961,11 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                 type="button"
                 className="w-full sm:w-auto sm:min-w-[200px]"
                 size="lg"
-                disabled={passwordFormLocked || !isPasswordValid}
+                disabled={passwordFormLocked || !isPasswordValid || isSavingPassword}
                 onClick={handleUpdatePassword}
               >
                 <Lock className="mr-2 h-4 w-4" aria-hidden />
-                Update Password
+                {isSavingPassword ? "Updating…" : "Update Password"}
               </Button>
             </CardContent>
           </Card>
