@@ -31,6 +31,7 @@ import {
     useOrderManagementSegmentColumns,
     useOrderManagementSegmentModals,
 } from "@/app/(pages)/order-management/_components/segment";
+import { listOrders } from "@/lib/api/orders";
 
 export interface OrderManagementSegmentClientProps {
     initialOrders: AllOrder[];
@@ -42,6 +43,13 @@ export function OrderManagementSegmentClient({
     segment,
 }: Readonly<OrderManagementSegmentClientProps>) {
     const router = useRouter();
+    const [orders, setOrders] = useState<AllOrder[]>(initialOrders);
+
+    useEffect(() => {
+        listOrders({ limit: 50 })
+            .then(({ orders: fetched }) => setOrders(fetched))
+            .catch(() => {});
+    }, []);
 
     const handleOrderClick = useCallback(
         (orderId: string) => {
@@ -84,8 +92,8 @@ export function OrderManagementSegmentClient({
     const [bulkActionOpen, setBulkActionOpen] = useState(false);
 
     const segmentOrders = useMemo(
-        () => initialOrders.filter((o) => (segment === "b2b" ? o.type === "B2B" : o.type === "B2C")),
-        [initialOrders, segment]
+        () => orders.filter((o) => (segment === "b2b" ? o.type === "B2B" : o.type === "B2C")),
+        [orders, segment]
     );
 
     const segmentOrdersForKpis = useMemo(

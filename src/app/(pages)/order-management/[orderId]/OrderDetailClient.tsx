@@ -2,10 +2,12 @@
 
 import { useEffect } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 import { OrderDetails } from "@/components/shared"
 import { Breadcrumb } from "@/components/shared/Breadcrumb"
 import type { OrderDetailsData } from "@/components/shared/OrderDetails"
 import type { StatusVariant } from "@/components/shared/StatusBadge"
+import { fulfillOrder } from "@/lib/api/orders"
 
 export interface OrderDetailClientProps {
   order: OrderDetailsData
@@ -25,9 +27,15 @@ export function OrderDetailClient({ order }: Readonly<OrderDetailClientProps>) {
   }, [order.orderType, pathname, router, searchParams])
 
   const handleStatusUpdate = (orderId: string, status: StatusVariant, notes: string) => {
-    void orderId
-    void status
-    void notes
+    if (status === "shipped") {
+      fulfillOrder(orderId, { tracking_number: notes || null })
+        .then(() => toast.success("Order marked as fulfilled"))
+        .catch((err: unknown) =>
+          toast.error("Fulfillment failed", {
+            description: err instanceof Error ? err.message : "Please try again.",
+          }),
+        )
+    }
   }
   const handleExportPDF = (orderId: string) => {
     void orderId
