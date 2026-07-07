@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronDown, FileText, Plus, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, FileText, Loader2, Plus, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import { InventoryTypeBadge } from "@/components/shared/InventoryTypeBadge";
 import {
@@ -14,6 +14,7 @@ import {
   type ProductRow,
 } from "@/lib/tableTypes";
 import { AppSelect } from "@/components/shared/AppSelect";
+import { MultiSelectFilter } from "@/components/shared/MultiSelectFilter";
 import { StatusToggle } from "@/components/shared/StatusToggle";
 import { usePagination } from "@/hooks";
 import { toast } from "sonner";
@@ -24,6 +25,7 @@ import { B2BOrderTypePopup } from "./_components/B2BOrderTypePopup";
 import { B2BPricingPopup } from "./_components/B2BPricingPopup";
 import { B2BDescriptionPopup } from "./_components/B2BDescriptionPopup";
 import { getB2BWizardPrefillFromProductRow, type B2BProductWizardPrefill } from "@/lib/data/products";
+import { deleteProduct, listProducts, publishProduct, toProductRow, unpublishProduct } from "@/lib/api/products";
 
 const INITIAL_PAGE_SIZE = 10;
 const B2B_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -62,9 +64,10 @@ export function ProductListingClient({
 }: Readonly<ProductListingClientProps>) {
   const router = useRouter();
   const [products, setProducts] = useState<ProductRow[]>(initialProducts);
-  const [category, setCategory] = useState<string | undefined>(undefined);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(listingVariant !== "b2b");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [listingStatus, setListingStatus] = useState<string | undefined>(undefined);
-  const [inventoryType, setInventoryType] = useState<string | undefined>(undefined);
+  const [selectedInventoryTypes, setSelectedInventoryTypes] = useState<string[]>([]);
   const [isPriceFilterOpen, setIsPriceFilterOpen] = useState(false);
   const [priceMinDraft, setPriceMinDraft] = useState("0");
   const [priceMaxDraft, setPriceMaxDraft] = useState("100000");
@@ -72,6 +75,8 @@ export function ProductListingClient({
   const [priceMaxApplied, setPriceMaxApplied] = useState("100000");
   const [searchQuery, setSearchQuery] = useState("");
   const [productToDelete, setProductToDelete] = useState<ProductRow | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [toggleLoadingIds, setToggleLoadingIds] = useState<Set<string>>(new Set());
   const [isAddB2BDialogOpen, setIsAddB2BDialogOpen] = useState(false);
   const [b2bWizardPrefill, setB2BWizardPrefill] = useState<B2BProductWizardPrefill | null>(null);
   /** Remount pricing/description steps so their state matches add vs edit prefill. */
@@ -93,10 +98,7 @@ export function ProductListingClient({
     const unique = [...new Set(products.map((p) => p.category))].sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
-    return [
-      { label: "All Categories", value: "all" },
-      ...unique.map((c) => ({ label: c, value: c })),
-    ];
+    return unique.map((c) => ({ label: c, value: c }));
   }, [products]);
 
   useEffect(() => {
@@ -109,18 +111,30 @@ export function ProductListingClient({
     };
   }, []);
 
+  useEffect(() => {
+    if (isB2B) return;
+    listProducts({ limit: 50 })
+      .then((res) => {
+        setProducts(res.products.map(toProductRow));
+      })
+      .catch(() => {
+        toast.error("Failed to load products. Please refresh the page.");
+      })
+      .finally(() => {
+        setIsLoadingProducts(false);
+      });
+  }, [isB2B]);
+
   const filteredProducts = useMemo(() => {
     const getPriceValue = (value: string) => Number(value.replaceAll(/[^\d.]/g, "")) || 0;
     const minPrice = Number(priceMinApplied) || 0;
     const maxPrice = Number(priceMaxApplied) || Number.MAX_SAFE_INTEGER;
     let filtered = products.filter((p) => {
-      const catOk = !category || category === "all" || p.category === category;
+      const catOk = selectedCategories.length === 0 || selectedCategories.includes(p.category);
       const statusOk =
         !listingStatus || listingStatus === "all" || p.status === listingStatus;
       const invOk =
-        !inventoryType ||
-        inventoryType === "all" ||
-        p.inventoryType === inventoryType;
+        selectedInventoryTypes.length === 0 || selectedInventoryTypes.includes(p.inventoryType);
       const price = getPriceValue(p.price);
       const rangeOk = !isB2B || (price >= minPrice && price <= maxPrice);
       return catOk && statusOk && invOk && rangeOk;
@@ -140,9 +154,9 @@ export function ProductListingClient({
     return filtered;
   }, [
     products,
-    category,
+    selectedCategories,
     listingStatus,
-    inventoryType,
+    selectedInventoryTypes,
     isB2B,
     priceMinApplied,
     priceMaxApplied,
@@ -174,24 +188,53 @@ export function ProductListingClient({
     setProducts((prev) =>
       prev.map((p) => (p.id === row.id ? { ...p, status: newStatus } : p))
     );
-    toast.success(newStatus === "active" ? "Product is now active" : "Product set to inactive");
+    setToggleLoadingIds((prev) => new Set([...prev, row.id]));
+    const apiCall = newStatus === "active" ? publishProduct(row.id) : unpublishProduct(row.id);
+    apiCall
+      .then(() => {
+        toast.success(
+          newStatus === "active"
+            ? "Product marked as Active successfully."
+            : "Product marked as Inactive successfully."
+        );
+      })
+      .catch((err: unknown) => {
+        setProducts((prev) =>
+          prev.map((p) => (p.id === row.id ? { ...p, status: row.status } : p))
+        );
+        toast.error(
+          err instanceof Error ? err.message : "Failed to update product status."
+        );
+      })
+      .finally(() => {
+        setToggleLoadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(row.id);
+          return next;
+        });
+      });
   };
 
   const handleConfirmDelete = () => {
-    if (!productToDelete) return;
-    const { id, articleNumber, name } = productToDelete;
-    setProducts((prev) => prev.filter((p) => p.id !== id));
-    toast.success(`${name} (${articleNumber}) was removed`);
-    setProductToDelete(null);
+    if (!productToDelete || isDeleting) return;
+    const deleted = productToDelete;
+    setIsDeleting(true);
+    setProducts((prev) => prev.filter((p) => p.id !== deleted.id));
+    deleteProduct(deleted.id)
+      .then(() => {
+        try { localStorage.removeItem(`mekya_seller_draft_${deleted.id}`); } catch { /* ignore */ }
+        toast.success("Product deleted successfully.");
+        setProductToDelete(null);
+      })
+      .catch((err: unknown) => {
+        setProducts((prev) => [deleted, ...prev]);
+        toast.error(err instanceof Error ? err.message : "Failed to delete product.");
+        setProductToDelete(null);
+      })
+      .finally(() => setIsDeleting(false));
   };
 
-  const b2bCategoryOptions = useMemo(
-    () =>
-      categoryOptions
-        .filter((option) => option.value !== "all")
-        .map((option) => ({ label: option.label, value: option.value })),
-    [categoryOptions]
-  );
+  const b2bCategoryOptions = categoryOptions;
 
   const b2bInventoryTypeOptions = useMemo(
     () => [
@@ -317,7 +360,12 @@ export function ProductListingClient({
   };
 
   const columns: TableColumn<ProductRow>[] = [
-    { key: "name", header: "Product Name" },
+    {
+      key: "name",
+      header: "Product Name",
+      sortable: true,
+      cell: (row) => <span className="line-clamp-2 break-all">{row.name}</span>,
+    },
     { key: "articleNumber", header: "Article Number" },
     { key: "category", header: "Category" },
     ...(isB2B
@@ -341,6 +389,7 @@ export function ProductListingClient({
     {
       key: "status",
       header: "Status",
+      sortable: true,
       className: TABLE_BADGE_PILL_COLUMN_CLASS,
       cell: (row) => {
         const pill =
@@ -359,6 +408,7 @@ export function ProductListingClient({
       cell: (row) => (
         <StatusToggle
           status={row.status}
+          isLoading={toggleLoadingIds.has(row.id)}
           onToggle={(newStatus) => handleListingToggle(row, newStatus)}
         />
       ),
@@ -368,7 +418,7 @@ export function ProductListingClient({
       header: "Actions",
       align: "center",
       cell: (row) => (
-        <div className="flex items-center justify-center gap-1">
+        <div className={isB2B ? "flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100" : "flex items-center justify-center gap-1"}>
           <Button
             variant="ghost"
             size="icon"
@@ -464,12 +514,11 @@ export function ProductListingClient({
               />
             </div>
             <div className="flex min-w-0 w-full flex-nowrap items-center gap-1 overflow-hidden sm:gap-1.5 min-[1920px]:gap-3">
-              <AppSelect
+              <MultiSelectFilter
                 placeholder="All Categories"
-                value={category}
-                onChange={(value: string) => setCategory(value)}
                 options={categoryOptions}
-                className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
+                selected={selectedCategories}
+                onChange={setSelectedCategories}
               />
               <AppSelect
                 placeholder="All Status"
@@ -482,19 +531,35 @@ export function ProductListingClient({
                 ]}
                 className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
               />
-              <AppSelect
+              <MultiSelectFilter
                 placeholder="All Inventory Types"
-                value={inventoryType}
-                onChange={(value: string) => setInventoryType(value)}
                 options={[
-                  { label: "All Inventory Types", value: "all" },
                   { label: PRODUCT_INVENTORY_TYPE_LABELS.ready_to_ship, value: "ready_to_ship" },
                   { label: PRODUCT_INVENTORY_TYPE_LABELS.pre_booking, value: "pre_booking" },
                   { label: PRODUCT_INVENTORY_TYPE_LABELS.stock_clearance, value: "stock_clearance" },
-                  { label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return, value: "sale_or_return" },
+                  ...(isB2B ? [{ label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return, value: "sale_or_return" }] : []),
                 ]}
-                className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
+                selected={selectedInventoryTypes}
+                onChange={setSelectedInventoryTypes}
               />
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategories([]);
+                  setListingStatus(undefined);
+                  setSelectedInventoryTypes([]);
+                  setSearchQuery("");
+                  setPriceMinDraft("0");
+                  setPriceMaxDraft("100000");
+                  setPriceMinApplied("0");
+                  setPriceMaxApplied("100000");
+                }}
+                className="ml-1 shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors sm:text-xs min-[1920px]:text-sm"
+                aria-label="Reset all filters"
+              >
+                <RotateCcw className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
+                Reset
+              </button>
               {isB2B && (
                 <div className="relative ml-1 shrink-0 min-[1920px]:ml-2" ref={priceFilterRef}>
                   <Button
@@ -577,11 +642,15 @@ export function ProductListingClient({
             </div>
           </div>
 
-          <DataTable
+          {isLoadingProducts && (
+            <p className="py-8 text-center text-sm text-muted-foreground">Loading products…</p>
+          )}
+          {!isLoadingProducts && <DataTable
             columns={columns}
             data={paginatedProducts}
             striped
             emptyMessage="No products match your filters"
+            bodyRowClassName={isB2B ? "group" : undefined}
             pagination={{
               currentPage: pagination.currentPage,
               totalPages: pagination.totalPages,
@@ -590,7 +659,7 @@ export function ProductListingClient({
               onPageSizeChange: pagination.setPageSize,
               totalRowCount: filteredProducts.length,
             }}
-          />
+          />}
         </CardContent>
       </Card>
 
@@ -611,7 +680,7 @@ export function ProductListingClient({
             <h2 className="mb-2 text-lg font-semibold text-foreground mt-4">
               Are you sure you want to delete this product?
             </h2>
-            <p className="mb-8 text-sm text-muted-foreground">This action cannot be undone</p>
+            <p className="mb-8 text-sm text-muted-foreground">This action cannot be undone.</p>
             <div className="flex w-full gap-3">
               <Button
                 type="button"
@@ -623,10 +692,11 @@ export function ProductListingClient({
               </Button>
               <Button
                 type="button"
+                disabled={isDeleting}
                 className="h-11 flex-1 rounded-md bg-[#122130] font-medium text-white hover:bg-[#0d1a28]"
                 onClick={handleConfirmDelete}
               >
-                Yes! Delete
+                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Yes! Delete"}
               </Button>
             </div>
           </div>

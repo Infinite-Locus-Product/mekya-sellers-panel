@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import {
   Plus,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { COLOR_PALETTE, ColorSelect } from "@/components/shared/ColorSelect";
@@ -20,14 +20,47 @@ import {
   PRODUCT_INVENTORY_TYPE_LABELS,
   type ProductInventoryType,
 } from "@/lib/tableTypes";
+import {
+  createProduct,
+  getCategories,
+  getProduct,
+  parseProductDescription,
+  updateProduct,
+  uploadImagesToStorage,
+} from "@/lib/api/products";
 
 const SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"] as const;
+const GENDER_OPTIONS = [
+  { label: "Men", value: "men" },
+  { label: "Women", value: "women" },
+  { label: "Kids", value: "kids" },
+  { label: "Unisex", value: "unisex" },
+];
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGES = 5;
 const ACCEPT_IMAGES = ["image/png", "image/jpeg", "image/jpg"];
 const DESCRIPTION_MAX = 1000;
 
 type ImageItem = { id: string; url: string; file: File };
+
+type ProductDraftState = {
+  productName: string;
+  articleNumber: string;
+  categoryId: string | undefined;
+  inventoryType: string | undefined;
+  gender: string | undefined;
+  deliveryTimeline: string;
+  mrp: string;
+  sellingPrice: string;
+  availableQty: string;
+  minQty: number;
+  maxQty: number;
+  selectedColors: string[];
+  selectedSizes: string[];
+  tags: string[];
+  description: string;
+};
 
 function QuantityStepper({
   label,
@@ -73,21 +106,28 @@ function RequiredMark() {
 }
 
 export interface AddProductClientProps {
-  categoryOptions: string[];
+  categoryOptions: { id: string; name: string }[];
   initialProduct?: EditableProductDraft | null;
+  productId?: string;
 }
 
-export function AddProductClient({ categoryOptions, initialProduct }: AddProductClientProps) {
+export function AddProductClient({ categoryOptions: initialCategoryOptions, initialProduct: initialProductProp, productId }: AddProductClientProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<ImageItem[]>([]);
-  const isEditMode = Boolean(initialProduct);
+  const [categoryOptions, setCategoryOptions] = useState(initialCategoryOptions);
+  const [initialProduct, setInitialProduct] = useState<EditableProductDraft | null>(initialProductProp ?? null);
+  const isEditMode = Boolean(productId ?? initialProduct);
+  const [isFetchingProduct, setIsFetchingProduct] = useState(() => Boolean(productId));
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [productName, setProductName] = useState(initialProduct?.name ?? "");
   const [articleNumber, setArticleNumber] = useState(initialProduct?.articleNumber ?? "");
-  const [category, setCategory] = useState<string | undefined>(initialProduct?.category);
+  const [category, setCategory] = useState<string | undefined>(initialProduct?.categoryId);
   const [inventoryType, setInventoryType] = useState<string | undefined>(initialProduct?.inventoryType);
+  const [gender, setGender] = useState<string | undefined>(initialProduct?.gender);
+  const [deliveryTimeline, setDeliveryTimeline] = useState(initialProduct?.deliveryTimeline ?? "");
   const [selectedSizes, setSelectedSizes] = useState<Set<string>>(
     () =>
       new Set(
@@ -99,7 +139,8 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
   const [selectedColors, setSelectedColors] = useState<string[]>(initialProduct?.colors ?? []);
   const [activeColorSelection, setActiveColorSelection] = useState<string | undefined>(undefined);
   const [isColorDropdownOpen, setIsColorDropdownOpen] = useState(false);
-  const [price, setPrice] = useState(initialProduct?.price ?? "");
+  const [mrp, setMrp] = useState(initialProduct?.mrp ?? "");
+  const [sellingPrice, setSellingPrice] = useState(initialProduct?.sellingPrice ?? "");
   const [availableQty, setAvailableQty] = useState(
     initialProduct ? String(initialProduct.availableQty) : ""
   );
@@ -109,6 +150,10 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
   const [tagInput, setTagInput] = useState("");
   const [description, setDescription] = useState(initialProduct?.description ?? "");
   const [isDragging, setIsDragging] = useState(false);
+  const [showRestorePrompt, setShowRestorePrompt] = useState(false);
+  const [restoredDraft, setRestoredDraft] = useState<ProductDraftState | null>(null);
+
+  const draftKey = `mekya_seller_draft_${productId ?? "new"}`;
 
   useEffect(() => {
     imagesRef.current = images;
@@ -120,20 +165,171 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
     };
   }, []);
 
-  const categorySelectOptions = [...new Set([...categoryOptions, ...(initialProduct?.category ? [initialProduct.category] : [])])].map((c) => ({ label: c, value: c }));
+  useEffect(() => {
+    getCategories()
+      .then(setCategoryOptions)
+      .catch(() => toast.error("Failed to load categories. Please refresh the page."));
+
+    if (productId) {
+      getProduct(productId)
+        .then((prod) => {
+          const meta = prod.metadata;
+          const firstVariant = prod.variants[0];
+          setInitialProduct({
+            id: prod.id,
+            name: prod.name,
+            articleNumber: meta.article_number ?? "",
+            category: prod.category?.name ?? "",
+            categoryId: prod.category?.id ?? "",
+            inventoryType: (meta.inventory_type as ProductInventoryType) ?? "ready_to_ship",
+            gender: meta.gender ?? undefined,
+            deliveryTimeline: meta.shipping_days ?? "",
+            sizes: (meta.sizes ?? "").split(",").filter(Boolean),
+            colors: (meta.colors ?? "").split(",").filter(Boolean),
+            mrp: meta.mrp ?? "",
+            sellingPrice: firstVariant?.price != null ? String(firstVariant.price) : "",
+            availableQty: firstVariant?.quantity ?? 0,
+            minQty: 1,
+            maxQty: 0,
+            tags: [],
+            description: parseProductDescription(prod.description),
+          });
+        })
+        .catch(() => toast.error("Failed to load product details. Please go back and try again."))
+        .finally(() => setIsFetchingProduct(false));
+    }
+  }, [productId]);
+
+  useEffect(() => {
+    if (!initialProduct) return;
+    setProductName(initialProduct.name);
+    setArticleNumber(initialProduct.articleNumber);
+    setCategory(initialProduct.categoryId);
+    setInventoryType(initialProduct.inventoryType);
+    setGender(initialProduct.gender);
+    setDeliveryTimeline(initialProduct.deliveryTimeline ?? "");
+    setSelectedSizes(
+      new Set(
+        (initialProduct.sizes).filter((s) =>
+          SIZE_OPTIONS.includes(s as (typeof SIZE_OPTIONS)[number])
+        )
+      )
+    );
+    setSelectedColors(initialProduct.colors);
+    setMrp(initialProduct.mrp);
+    setSellingPrice(initialProduct.sellingPrice);
+    setAvailableQty(String(initialProduct.availableQty));
+    setMinQty(initialProduct.minQty);
+    setMaxQty(initialProduct.maxQty);
+    setTags(initialProduct.tags);
+    setDescription(initialProduct.description);
+  }, [initialProduct]);
+
+  const saveDraftToStorage = useCallback(() => {
+    try {
+      const data: ProductDraftState = {
+        productName,
+        articleNumber,
+        categoryId: category,
+        inventoryType,
+        gender,
+        deliveryTimeline,
+        mrp,
+        sellingPrice,
+        availableQty,
+        minQty,
+        maxQty,
+        selectedColors,
+        selectedSizes: [...selectedSizes],
+        tags,
+        description,
+      };
+      localStorage.setItem(draftKey, JSON.stringify(data));
+    } catch {
+      // localStorage unavailable — silent fail
+    }
+  }, [productName, articleNumber, category, inventoryType, gender, deliveryTimeline, mrp, sellingPrice, availableQty, minQty, maxQty, selectedColors, selectedSizes, tags, description, draftKey]);
+
+  const saveDraftRef = useRef(saveDraftToStorage);
+  useEffect(() => {
+    saveDraftRef.current = saveDraftToStorage;
+  }, [saveDraftToStorage]);
+
+  useEffect(() => {
+    const interval = setInterval(() => saveDraftRef.current(), 30_000);
+    const handleBeforeUnload = () => saveDraftRef.current();
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isFetchingProduct) return;
+    try {
+      const saved = localStorage.getItem(draftKey);
+      if (!saved) return;
+      const draft = JSON.parse(saved) as ProductDraftState;
+      setRestoredDraft(draft);
+      setShowRestorePrompt(true);
+    } catch {
+      // ignore parse errors
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFetchingProduct]);
+
+  const handleRestoreDraft = () => {
+    if (!restoredDraft) return;
+    setProductName(restoredDraft.productName);
+    setArticleNumber(restoredDraft.articleNumber);
+    setCategory(restoredDraft.categoryId);
+    setInventoryType(restoredDraft.inventoryType);
+    setGender(restoredDraft.gender);
+    setDeliveryTimeline(restoredDraft.deliveryTimeline);
+    setMrp(restoredDraft.mrp);
+    setSellingPrice(restoredDraft.sellingPrice);
+    setAvailableQty(restoredDraft.availableQty);
+    setMinQty(restoredDraft.minQty);
+    setMaxQty(restoredDraft.maxQty);
+    setSelectedColors(restoredDraft.selectedColors);
+    setSelectedSizes(new Set(restoredDraft.selectedSizes));
+    setTags(restoredDraft.tags);
+    setDescription(restoredDraft.description);
+    setShowRestorePrompt(false);
+    setRestoredDraft(null);
+  };
+
+  const handleDiscardDraft = () => {
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+    setShowRestorePrompt(false);
+    setRestoredDraft(null);
+  };
+
+  const categorySelectOptions = categoryOptions.map((c) => ({ label: c.name, value: c.id }));
   const inventorySelectOptions = (
     Object.entries(PRODUCT_INVENTORY_TYPE_LABELS) as [ProductInventoryType, string][]
   ).map(([value, label]) => ({ label, value }));
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const list = Array.from(files);
-    for (const file of list) {
+    const currentCount = imagesRef.current.length;
+    const remaining = MAX_IMAGES - currentCount;
+    if (remaining <= 0) {
+      toast.error("Maximum 5 images allowed.");
+      return;
+    }
+    const toAdd = list.slice(0, remaining);
+    if (list.length > remaining) {
+      toast.error(`Maximum 5 images allowed. Only ${remaining} more image${remaining === 1 ? "" : "s"} can be added.`);
+    }
+    for (const file of toAdd) {
       if (!ACCEPT_IMAGES.includes(file.type)) {
-        toast.error(`${file.name}: use PNG or JPG only`);
+        toast.error(`${file.name}: Only JPG/PNG formats supported.`);
         continue;
       }
       if (file.size > MAX_IMAGE_BYTES) {
-        toast.error(`${file.name}: max size is 5 MB`);
+        toast.error(`${file.name}: File exceeds 2MB size limit.`);
         continue;
       }
       const url = URL.createObjectURL(file);
@@ -186,8 +382,95 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
   const hasQtyRangeInput = minQty > 0 || maxQty > 0;
   const qtyRangeInvalid = hasQtyRangeInput && maxQty <= minQty;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const isFormValid = useMemo(
+    () =>
+      productName.trim().length > 0 &&
+      articleNumber.trim().length > 0 &&
+      Boolean(category) &&
+      Boolean(inventoryType) &&
+      Boolean(gender) &&
+      Boolean(mrp) &&
+      Boolean(sellingPrice) &&
+      selectedColors.length > 0 &&
+      selectedSizes.size > 0 &&
+      images.length > 0 &&
+      description.trim().length > 0 &&
+      !qtyRangeInvalid,
+    [productName, articleNumber, category, inventoryType, gender, mrp, sellingPrice, selectedColors, selectedSizes, images, description, qtyRangeInvalid]
+  );
+
+  const handleSaveDraft = async () => {
+    if (isSubmitting) return;
+    if (!productName.trim()) {
+      toast.error("Product name is required to save a draft.");
+      return;
+    }
+    if (!category) {
+      toast.error("Category is required to save a draft.");
+      return;
+    }
+    if (!inventoryType) {
+      toast.error("Inventory type is required to save a draft.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const imageUrls = images.length > 0
+        ? await uploadImagesToStorage(images.map((i) => i.file))
+        : [];
+      const draftDescription = description.trim() || productName.trim();
+      if (isEditMode && initialProduct) {
+        await updateProduct(initialProduct.id, {
+          name: productName.trim(),
+          description: draftDescription,
+          category_id: category,
+          inventory_type: inventoryType,
+          article_number: articleNumber.trim() || undefined,
+          gender: gender || undefined,
+          shipping_days: deliveryTimeline.trim() || undefined,
+          colors: selectedColors.length > 0 ? selectedColors : undefined,
+          sizes: selectedSizes.size > 0 ? [...selectedSizes] : undefined,
+          mrp: mrp ? parseFloat(mrp) : undefined,
+          selling_price: sellingPrice ? parseFloat(sellingPrice) : undefined,
+          available_qty: availableQty ? parseInt(availableQty, 10) : undefined,
+          tags: tags.length > 0 ? tags : undefined,
+          images: imageUrls.length > 0 ? imageUrls : undefined,
+        });
+        toast.success("Draft updated successfully.");
+      } else {
+        await createProduct({
+          name: productName.trim(),
+          description: draftDescription,
+          category_id: category,
+          inventory_type: inventoryType,
+          article_number: articleNumber.trim() || undefined,
+          gender: gender || undefined,
+          shipping_days: deliveryTimeline.trim() || undefined,
+          colors: selectedColors,
+          sizes: [...selectedSizes],
+          tags,
+          mrp: mrp ? parseFloat(mrp) : undefined,
+          selling_price: sellingPrice ? parseFloat(sellingPrice) : undefined,
+          available_qty: availableQty ? parseInt(availableQty, 10) : undefined,
+          images: imageUrls,
+        });
+        toast.success("Draft saved successfully.");
+      }
+      try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+      router.push("/product-listing");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save draft.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (productId && !initialProduct) {
+      toast.error("Product is still loading, please wait a moment.");
+      return;
+    }
     if (!productName.trim()) {
       toast.error("Product name is required");
       return;
@@ -204,6 +487,14 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
       toast.error("Inventory type is required");
       return;
     }
+    if (!gender) {
+      toast.error("Gender is required");
+      return;
+    }
+    if (images.length === 0) {
+      toast.error("At least one image is required");
+      return;
+    }
     if (selectedColors.length === 0) {
       toast.error("Select at least one color");
       return;
@@ -216,10 +507,81 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
       toast.error("Maximum quantity must be greater than minimum quantity");
       return;
     }
-    toast.success(
-      isEditMode ? "Product updated (demo — connect API when ready)" : "Product saved (demo — connect API when ready)"
-    );
-    router.push("/product-listing");
+    if (!mrp.trim()) {
+      toast.error("MRP is required");
+      return;
+    }
+    if (!sellingPrice.trim()) {
+      toast.error("Selling Price is required");
+      return;
+    }
+    const mrpNum = parseFloat(mrp);
+    const spNum = parseFloat(sellingPrice);
+    if (isNaN(mrpNum) || mrpNum <= 0) {
+      toast.error("Enter a valid MRP");
+      return;
+    }
+    if (isNaN(spNum) || spNum <= 0) {
+      toast.error("Enter a valid Selling Price");
+      return;
+    }
+    if (spNum > mrpNum) {
+      toast.error("Selling Price cannot exceed MRP");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const imageUrls = images.length > 0
+        ? await uploadImagesToStorage(images.map((i) => i.file))
+        : [];
+
+      if (isEditMode && initialProduct) {
+        await updateProduct(initialProduct.id, {
+          name: productName.trim(),
+          description: description.trim() || undefined,
+          category_id: category || undefined,
+          inventory_type: inventoryType || undefined,
+          article_number: articleNumber.trim() || undefined,
+          gender: gender || undefined,
+          shipping_days: deliveryTimeline.trim() || undefined,
+          colors: selectedColors.length > 0 ? selectedColors : undefined,
+          sizes: selectedSizes.size > 0 ? [...selectedSizes] : undefined,
+          mrp: mrp ? parseFloat(mrp) : undefined,
+          selling_price: sellingPrice ? parseFloat(sellingPrice) : undefined,
+          available_qty: availableQty ? parseInt(availableQty, 10) : undefined,
+          tags: tags.length > 0 ? tags : undefined,
+          images: imageUrls.length > 0 ? imageUrls : undefined,
+        });
+        toast.success("Product updated successfully.");
+      } else {
+        await createProduct({
+          name: productName.trim(),
+          description: description.trim() || productName.trim(),
+          category_id: category,
+          inventory_type: inventoryType,
+          article_number: articleNumber.trim() || undefined,
+          gender: gender || undefined,
+          shipping_days: deliveryTimeline.trim() || undefined,
+          colors: selectedColors,
+          sizes: [...selectedSizes],
+          tags,
+          mrp: mrpNum,
+          selling_price: spNum,
+          available_qty: availableQty ? parseInt(availableQty, 10) : undefined,
+          min_quantity_per_set: minQty > 0 ? minQty : undefined,
+          max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
+          images: imageUrls,
+        });
+        toast.success("Product published successfully.");
+      }
+      try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+      router.push("/product-listing");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save product");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -254,6 +616,27 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
 
       </div>
 
+      {showRestorePrompt && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span>A saved draft was found. Would you like to restore it?</span>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="rounded bg-amber-700 px-3 py-1 text-xs font-medium text-white hover:bg-amber-800"
+            >
+              Restore
+            </button>
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="rounded px-3 py-1 text-xs font-medium hover:bg-amber-100"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
       <form id="add-product-form" onSubmit={handleSubmit} className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-2">
           <ProductImageUploadCard
@@ -261,9 +644,10 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
             onFilesAdded={addFiles}
             uploadedImages={images}
             onRemoveImage={removeImage}
+            onReorder={(newOrder) => setImages((prev) => newOrder.map(({ id }) => prev.find((img) => img.id === id)!).filter(Boolean))}
             isDragging={isDragging}
             setIsDragging={setIsDragging}
-            maxFileSizeLabel="5 MB."
+            maxFileSizeLabel="2 MB."
           />
 
           <Card className="border bg-white shadow-sm">
@@ -323,6 +707,30 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
                   value={inventoryType}
                   onChange={(v) => setInventoryType(v)}
                   options={inventorySelectOptions}
+                />
+              </div>
+              <div className="space-y-3">
+                <span className="text-sm font-medium">
+                  Gender <RequiredMark />
+                </span>
+                <AppSelect
+                  className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
+                  placeholder="Select gender."
+                  value={gender}
+                  onChange={(v) => setGender(v)}
+                  options={GENDER_OPTIONS}
+                />
+              </div>
+              <div className="space-y-3">
+                <label htmlFor="delivery-timeline" className="text-sm font-medium">
+                  Delivery Timeline
+                </label>
+                <Input
+                  id="delivery-timeline"
+                  placeholder="e.g. 5–7 days"
+                  value={deliveryTimeline}
+                  onChange={(e) => setDeliveryTimeline(e.target.value)}
+                  className="bg-white"
                 />
               </div>
             </CardContent>
@@ -460,18 +868,36 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
-              <div className="space-y-3 sm:col-span-2">
-                <label htmlFor="price" className="text-sm font-medium">
-                  Price (₹)
+              <div className="space-y-3">
+                <label htmlFor="mrp" className="text-sm font-medium">
+                  MRP (₹) <RequiredMark />
                 </label>
                 <Input
-                  id="price"
+                  id="mrp"
                   inputMode="decimal"
-                  placeholder="Enter product's price."
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="Enter MRP."
+                  value={mrp}
+                  onChange={(e) => setMrp(e.target.value)}
                   className="bg-white"
                 />
+              </div>
+              <div className="space-y-3">
+                <label htmlFor="selling-price" className="text-sm font-medium">
+                  Selling Price (₹) <RequiredMark />
+                </label>
+                <Input
+                  id="selling-price"
+                  inputMode="decimal"
+                  placeholder="Enter selling price."
+                  value={sellingPrice}
+                  onChange={(e) => setSellingPrice(e.target.value)}
+                  className="bg-white"
+                />
+                {mrp && sellingPrice && parseFloat(sellingPrice) > parseFloat(mrp) && (
+                  <p className="text-xs text-destructive" role="alert">
+                    Selling Price cannot exceed MRP.
+                  </p>
+                )}
               </div>
               <div className="space-y-3 sm:col-span-2">
                 <label htmlFor="qty" className="text-sm font-medium">
@@ -592,11 +1018,25 @@ export function AddProductClient({ categoryOptions, initialProduct }: AddProduct
         </Card>
       </form>
       <div className="flex flex-wrap gap-2 justify-end">
-        <Link href="/product-listing" className={cn(buttonVariants({ variant: "outline", size: "default" }))}>
-          Save as Draft
-        </Link>
-        <Button type="submit" form="add-product-form" className="bg-[#122130] hover:bg-[#0d1a28]">
-          {isEditMode ? "Update product" : "Publish product"}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isSubmitting || isFetchingProduct}
+          onClick={handleSaveDraft}
+        >
+          {isSubmitting ? "Saving…" : "Save as Draft"}
+        </Button>
+        <Button
+          type="submit"
+          form="add-product-form"
+          disabled={isSubmitting || isFetchingProduct || !isFormValid}
+          className="bg-[#122130] hover:bg-[#0d1a28]"
+        >
+          {isFetchingProduct
+            ? "Loading…"
+            : isSubmitting
+              ? isEditMode ? "Updating…" : "Publishing…"
+              : isEditMode ? "Update product" : "Publish product"}
         </Button>
       </div>
     </div>

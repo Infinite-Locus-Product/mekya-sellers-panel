@@ -1,8 +1,9 @@
 "use client";
 
 import type { RefObject } from "react";
+import { useRef } from "react";
 import Image from "next/image";
-import { ImageIcon, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,7 @@ interface ProductImageUploadCardProps {
   onFilesAdded: (files: FileList | File[]) => void;
   uploadedImages: UploadedImage[];
   onRemoveImage: (id: string) => void;
+  onReorder?: (newImages: UploadedImage[]) => void;
   isDragging: boolean;
   setIsDragging: (value: boolean) => void;
   maxFileSizeLabel?: string;
@@ -30,6 +32,7 @@ export function ProductImageUploadCard({
   onFilesAdded,
   uploadedImages,
   onRemoveImage,
+  onReorder,
   isDragging,
   setIsDragging,
   maxFileSizeLabel = "5 MB.",
@@ -38,6 +41,8 @@ export function ProductImageUploadCard({
   contentClassName,
   uploadAreaClassName,
 }: Readonly<ProductImageUploadCardProps>) {
+  const dragIndexRef = useRef<number | null>(null);
+
   return (
     <Card className={cn("border bg-white shadow-sm", cardClassName)}>
       <CardHeader className={cn("border-b pb-4", headerClassName)}>
@@ -93,11 +98,43 @@ export function ProductImageUploadCard({
         {uploadedImages.length > 0 && (
           <div>
             <p className="mb-2 text-sm font-medium text-foreground">
-              {uploadedImages.length} Image{uploadedImages.length === 1 ? "" : "s"} uploaded
+              {uploadedImages.length} / 5 Image{uploadedImages.length === 1 ? "" : "s"} uploaded
             </p>
             <ul className="flex flex-wrap gap-3">
-              {uploadedImages.map((image) => (
-                <li key={image.id} className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md border">
+              {uploadedImages.map((image, index) => (
+                <li
+                  key={image.id}
+                  draggable={Boolean(onReorder)}
+                  className={cn(
+                    "relative h-20 w-20 shrink-0 overflow-hidden rounded-md border",
+                    onReorder && "cursor-grab active:cursor-grabbing"
+                  )}
+                  onDragStart={(e) => {
+                    dragIndexRef.current = index;
+                    e.currentTarget.style.opacity = "0.5";
+                  }}
+                  onDragEnd={(e) => {
+                    e.currentTarget.style.opacity = "1";
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.outline = "2px solid #122130";
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.style.outline = "";
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.outline = "";
+                    const from = dragIndexRef.current;
+                    dragIndexRef.current = null;
+                    if (from === null || from === index) return;
+                    const newOrder = [...uploadedImages];
+                    const [moved] = newOrder.splice(from, 1);
+                    newOrder.splice(index, 0, moved);
+                    onReorder?.(newOrder);
+                  }}
+                >
                   <Image
                     src={image.url}
                     alt=""
@@ -106,6 +143,11 @@ export function ProductImageUploadCard({
                     height={80}
                     unoptimized
                   />
+                  {index === 0 && (
+                    <span className="absolute bottom-0 left-0 right-0 bg-black/60 py-0.5 text-center text-[9px] font-medium leading-none text-white">
+                      Primary
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="absolute right-1 top-1 rounded text-destructive cursor-pointer"

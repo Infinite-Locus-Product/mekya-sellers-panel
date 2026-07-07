@@ -164,10 +164,14 @@ export interface EditableProductDraft {
   name: string;
   articleNumber: string;
   category: string;
+  categoryId?: string;
   inventoryType: ProductInventoryType;
+  gender?: string;
+  deliveryTimeline?: string;
   sizes: string[];
   colors: string[];
-  price: string;
+  mrp: string;
+  sellingPrice: string;
   availableQty: number;
   minQty: number;
   maxQty: number;
@@ -199,7 +203,7 @@ export type B2BProductWizardPrefill = {
 /** Maps a listing row to defaults for the B2B add/edit wizard (pricing + description steps). */
 export function getB2BWizardPrefillFromProductRow(row: ProductRow): B2BProductWizardPrefill {
   const d = toEditableDraft(row);
-  const priceStr = d.price || "";
+  const priceStr = d.sellingPrice || "";
   return {
     pricing: {
       wholeSalePricePerUnit: priceStr,
@@ -223,7 +227,8 @@ function toEditableDraft(row: ProductRow): EditableProductDraft {
     inventoryType: row.inventoryType,
     sizes: parseCsv(row.sizes),
     colors: parseCsv(row.colors),
-    price: cleanPrice,
+    mrp: cleanPrice,
+    sellingPrice: cleanPrice,
     availableQty: row.quantity,
     minQty: 1,
     maxQty: Math.max(2, Math.min(20, row.quantity)),
