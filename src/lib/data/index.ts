@@ -3,12 +3,7 @@
  */
 
 export { getOrders } from "./orders";
-export {
-  getProducts,
-  getB2BProducts,
-  getEditableProductDraftById,
-  type EditableProductDraft,
-} from "./products";
+export { type EditableProductDraft } from "./products";
 export {
   type CmsReel,
   type CmsReelEngagement,

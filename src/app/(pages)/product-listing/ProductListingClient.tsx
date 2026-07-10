@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronDown, FileText, Loader2, Plus, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
+import {
+  ChevronDown,
+  Eye,
+  FileText,
+  Plus,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import { InventoryTypeBadge } from "@/components/shared/InventoryTypeBadge";
 import {
@@ -16,158 +24,248 @@ import {
 import { AppSelect } from "@/components/shared/AppSelect";
 import { MultiSelectFilter } from "@/components/shared/MultiSelectFilter";
 import { StatusToggle } from "@/components/shared/StatusToggle";
-import { usePagination } from "@/hooks";
+import { useServerTableSort } from "@/hooks";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { B2BBasicInfoPopup } from "./_components/B2BBasicInfoPopup";
-import { B2BOrderTypePopup } from "./_components/B2BOrderTypePopup";
-import { B2BPricingPopup } from "./_components/B2BPricingPopup";
-import { B2BDescriptionPopup } from "./_components/B2BDescriptionPopup";
-import { getB2BWizardPrefillFromProductRow, type B2BProductWizardPrefill } from "@/lib/data/products";
-import { deleteProduct, listProducts, publishProduct, toProductRow, unpublishProduct } from "@/lib/api/products";
+import {
+  deleteProduct,
+  getCategories,
+  listProducts,
+  publishProduct,
+  toProductRow,
+  unpublishProduct,
+  type Category,
+} from "@/lib/api/products";
 
-const INITIAL_PAGE_SIZE = 10;
-const B2B_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const B2B_ACCEPTED_IMAGES = new Set(["image/png", "image/jpeg", "image/jpg"]);
-
-const B2B_ORDER_TYPES = [
-  {
-    value: "set_purchase",
-    label: "Set Purchase (Multiple Sizes, Same Color)",
-    description: "Customers buy a set of products in different sizes but same color",
-  },
-  {
-    value: "single_size_bundle",
-    label: "Single Size Bundle (Multiple Colors)",
-    description: "Customers buy products in one size but multiple colors",
-  },
-  {
-    value: "custom_purchase",
-    label: "Custom Purchase (Any Size, Any Color)",
-    description: "Customers can mix and match any available sizes and colors",
-  },
-] as const;
-
-type B2BOrderTypeValue = (typeof B2B_ORDER_TYPES)[number]["value"];
-type B2BWizardStep = "basic_information" | "order_type" | "pricing" | "description";
-type B2BImageItem = { id: string; url: string; file: File };
+type PageSlice = {
+  products: ProductRow[];
+  nextCursor: string | null;
+  hasNext: boolean;
+};
 
 export interface ProductListingClientProps {
-  initialProducts: ProductRow[];
   listingVariant?: "b2b" | "b2c";
 }
 
 export function ProductListingClient({
-  initialProducts,
   listingVariant = "b2c",
 }: Readonly<ProductListingClientProps>) {
   const router = useRouter();
-  const [products, setProducts] = useState<ProductRow[]>(initialProducts);
-  const [isLoadingProducts, setIsLoadingProducts] = useState(listingVariant !== "b2b");
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [listingStatus, setListingStatus] = useState<string | undefined>(undefined);
+
+  // ── Pagination stack ──────────────────────────────────────────────────────
+  const [stack, setStack] = useState<PageSlice[]>([]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [isLoading, setIsLoading] = useState(true);
+  const fetchGenRef = useRef(0);
+
+  // ── Categories (fetched once for the filter dropdown) ─────────────────────
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  // ── Filters ────────────────────────────────────────────────────────────────
+  const [searchInput, setSearchInput] = useState("");
+  const [searchPage, setSearchPage] = useState(1);
+  const [listingStatus, setListingStatus] = useState("all");
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+
+  // ── Client-side filters (applied to current page only) ────────────────────
   const [selectedInventoryTypes, setSelectedInventoryTypes] = useState<string[]>([]);
   const [isPriceFilterOpen, setIsPriceFilterOpen] = useState(false);
   const [priceMinDraft, setPriceMinDraft] = useState("0");
   const [priceMaxDraft, setPriceMaxDraft] = useState("100000");
   const [priceMinApplied, setPriceMinApplied] = useState("0");
   const [priceMaxApplied, setPriceMaxApplied] = useState("100000");
-  const [searchQuery, setSearchQuery] = useState("");
+
+  // ── Modals ────────────────────────────────────────────────────────────────
   const [productToDelete, setProductToDelete] = useState<ProductRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [toggleLoadingIds, setToggleLoadingIds] = useState<Set<string>>(new Set());
-  const [isAddB2BDialogOpen, setIsAddB2BDialogOpen] = useState(false);
-  const [b2bWizardPrefill, setB2BWizardPrefill] = useState<B2BProductWizardPrefill | null>(null);
-  /** Remount pricing/description steps so their state matches add vs edit prefill. */
-  const [b2bWizardInstanceKey, setB2BWizardInstanceKey] = useState("");
-  const [b2bWizardStep, setB2BWizardStep] = useState<B2BWizardStep>("basic_information");
-  const [b2bProductName, setB2BProductName] = useState("");
-  const [b2bArticleNumber, setB2BArticleNumber] = useState("");
-  const [b2bCategory, setB2BCategory] = useState<string | undefined>(undefined);
-  const [b2bInventoryType, setB2BInventoryType] = useState<string | undefined>(undefined);
-  const [b2bOrderTypes, setB2BOrderTypes] = useState<B2BOrderTypeValue[]>([]);
-  const [b2bUploadedImages, setB2BUploadedImages] = useState<B2BImageItem[]>([]);
-  const [isDraggingImage, setIsDraggingImage] = useState(false);
-  const isB2B = listingVariant === "b2b";
+
   const priceFilterRef = useRef<HTMLDivElement>(null);
-  const b2bFileInputRef = useRef<HTMLInputElement>(null);
-  const b2bImagesRef = useRef<B2BImageItem[]>([]);
+  const isB2B = listingVariant === "b2b";
 
-  const categoryOptions = useMemo(() => {
-    const unique = [...new Set(products.map((p) => p.category))].sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
+  // ── Server sort ────────────────────────────────────────────────────────────
+  const { sortBy, sortOrder, serverSortKey, serverSortDirection, handleServerSortColumn } =
+    useServerTableSort(
+      [{ columnKey: "name", sortField: "NAME", initialOrder: "ASC" }],
+      { sortBy: "DATE", sortOrder: "DESC" },
     );
-    return unique.map((c) => ({ label: c, value: c }));
-  }, [products]);
 
+  // ── Categories load (once) ─────────────────────────────────────────────────
   useEffect(() => {
-    b2bImagesRef.current = b2bUploadedImages;
-  }, [b2bUploadedImages]);
-
-  useEffect(() => {
-    return () => {
-      b2bImagesRef.current.forEach((img) => URL.revokeObjectURL(img.url));
-    };
+    getCategories().then(setCategories).catch(() => {});
   }, []);
 
+  // ── Main fetch — resets to page 1 on any backend filter change ─────────────
   useEffect(() => {
-    if (isB2B) return;
-    listProducts({ limit: 50 })
+    const gen = ++fetchGenRef.current;
+    setIsLoading(true);
+    listProducts({
+      channel: listingVariant,
+      status: listingStatus !== "all" ? listingStatus : undefined,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+      limit: pageSize,
+      category_ids: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
+    })
       .then((res) => {
-        setProducts(res.products.map(toProductRow));
+        if (gen !== fetchGenRef.current) return;
+        setStack([
+          {
+            products: res.products.map(toProductRow),
+            nextCursor: res.cursor ?? null,
+            hasNext: res.has_next,
+          },
+        ]);
+        setPageIndex(0);
       })
-      .catch(() => {
-        toast.error("Failed to load products. Please refresh the page.");
-      })
+      .catch(() => toast.error("Failed to load products. Please refresh the page."))
       .finally(() => {
-        setIsLoadingProducts(false);
+        if (gen === fetchGenRef.current) setIsLoading(false);
       });
-  }, [isB2B]);
+  }, [listingVariant, listingStatus, sortBy, sortOrder, pageSize, selectedCategoryIds]);
 
-  const filteredProducts = useMemo(() => {
-    const getPriceValue = (value: string) => Number(value.replaceAll(/[^\d.]/g, "")) || 0;
+  // ── Pagination helpers ─────────────────────────────────────────────────────
+  const currentSlice = stack[pageIndex];
+
+  const goNextPage = useCallback(async () => {
+    if (isLoading) return;
+    // Already have it cached
+    if (pageIndex < stack.length - 1) {
+      setPageIndex((p) => p + 1);
+      return;
+    }
+    const slice = stack[pageIndex];
+    if (!slice?.hasNext || !slice.nextCursor) return;
+
+    const gen = ++fetchGenRef.current;
+    setIsLoading(true);
+    try {
+      const res = await listProducts({
+        channel: listingVariant,
+        status: listingStatus !== "all" ? listingStatus : undefined,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        limit: pageSize,
+        category_ids: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
+        cursor: slice.nextCursor,
+      });
+      if (gen !== fetchGenRef.current) return;
+      const newSlice: PageSlice = {
+        products: res.products.map(toProductRow),
+        nextCursor: res.cursor ?? null,
+        hasNext: res.has_next,
+      };
+      setStack((prev) => [...prev, newSlice]);
+      setPageIndex(stack.length);
+    } catch {
+      toast.error("Failed to load next page. Please try again.");
+    } finally {
+      if (gen === fetchGenRef.current) setIsLoading(false);
+    }
+  }, [
+    isLoading,
+    pageIndex,
+    stack,
+    listingVariant,
+    listingStatus,
+    sortBy,
+    sortOrder,
+    pageSize,
+    selectedCategoryIds,
+  ]);
+
+  const goPrevPage = useCallback(() => {
+    if (pageIndex > 0) setPageIndex((p) => p - 1);
+  }, [pageIndex]);
+
+  const goToPage = useCallback(
+    (page: number) => {
+      const idx = page - 1;
+      if (idx >= 0 && idx < stack.length) {
+        setPageIndex(idx);
+      } else if (idx === stack.length && (stack[pageIndex]?.hasNext ?? false)) {
+        void goNextPage();
+      }
+    },
+    [stack, pageIndex, goNextPage],
+  );
+
+  // ── All loaded products across the full cursor stack ───────────────────────
+  const allStackProducts = useMemo(() => stack.flatMap((s) => s.products), [stack]);
+
+  // Search is active when the user has typed something
+  const isSearching = searchInput.trim().length > 0;
+
+  // ── Search: client-side icontains across all loaded products ───────────────
+  const filteredSearchProducts = useMemo(() => {
+    if (!isSearching) return [];
+    const q = searchInput.toLowerCase().trim();
     const minPrice = Number(priceMinApplied) || 0;
     const maxPrice = Number(priceMaxApplied) || Number.MAX_SAFE_INTEGER;
-    let filtered = products.filter((p) => {
-      const catOk = selectedCategories.length === 0 || selectedCategories.includes(p.category);
-      const statusOk =
-        !listingStatus || listingStatus === "all" || p.status === listingStatus;
+    return allStackProducts.filter((p) => {
+      const nameOk =
+        p.name.toLowerCase().includes(q) ||
+        p.articleNumber.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        p.sizes.toLowerCase().includes(q) ||
+        p.colors.toLowerCase().includes(q) ||
+        PRODUCT_INVENTORY_TYPE_LABELS[p.inventoryType].toLowerCase().includes(q);
       const invOk =
-        selectedInventoryTypes.length === 0 || selectedInventoryTypes.includes(p.inventoryType);
-      const price = getPriceValue(p.price);
+        selectedInventoryTypes.length === 0 ||
+        selectedInventoryTypes.includes(p.inventoryType);
+      const price = Number(p.price.replaceAll(/[^\d.]/g, "")) || 0;
       const rangeOk = !isB2B || (price >= minPrice && price <= maxPrice);
-      return catOk && statusOk && invOk && rangeOk;
+      return nameOk && invOk && rangeOk;
     });
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.articleNumber.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q) ||
-          p.sizes.toLowerCase().includes(q) ||
-          p.colors.toLowerCase().includes(q) ||
-          PRODUCT_INVENTORY_TYPE_LABELS[p.inventoryType].toLowerCase().includes(q)
-      );
+  }, [isSearching, searchInput, allStackProducts, selectedInventoryTypes, isB2B, priceMinApplied, priceMaxApplied]);
+
+  // ── Search pagination ──────────────────────────────────────────────────────
+  const searchTotalPages = Math.max(1, Math.ceil(filteredSearchProducts.length / pageSize));
+  const searchEffectivePage = Math.min(searchPage, searchTotalPages);
+
+  // ── Category options ───────────────────────────────────────────────────────
+  const categoryOptions = useMemo(
+    () => categories.map((c) => ({ label: c.name, value: c.id })),
+    [categories],
+  );
+
+  // ── Display products: search mode (all stack, icontains) vs cursor mode ────
+  const displayProducts = useMemo(() => {
+    if (isSearching) {
+      const start = (searchEffectivePage - 1) * pageSize;
+      return filteredSearchProducts.slice(start, start + pageSize);
     }
-    return filtered;
+    // Cursor mode: apply non-search client-side filters on current page
+    const currentProducts = currentSlice?.products ?? [];
+    const minPrice = Number(priceMinApplied) || 0;
+    const maxPrice = Number(priceMaxApplied) || Number.MAX_SAFE_INTEGER;
+    return currentProducts.filter((p) => {
+      const invOk =
+        selectedInventoryTypes.length === 0 ||
+        selectedInventoryTypes.includes(p.inventoryType);
+      const price = Number(p.price.replaceAll(/[^\d.]/g, "")) || 0;
+      const rangeOk = !isB2B || (price >= minPrice && price <= maxPrice);
+      return invOk && rangeOk;
+    });
   }, [
-    products,
-    selectedCategories,
-    listingStatus,
+    isSearching,
+    filteredSearchProducts,
+    searchEffectivePage,
+    pageSize,
+    currentSlice,
     selectedInventoryTypes,
     isB2B,
     priceMinApplied,
     priceMaxApplied,
-    searchQuery,
   ]);
 
+  // ── Outside-click for price filter ────────────────────────────────────────
   useEffect(() => {
     if (!isPriceFilterOpen) return;
     const handleOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (priceFilterRef.current && !priceFilterRef.current.contains(target)) {
+      if (priceFilterRef.current && !priceFilterRef.current.contains(event.target as Node)) {
         setIsPriceFilterOpen(false);
       }
     };
@@ -175,18 +273,16 @@ export function ProductListingClient({
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [isPriceFilterOpen]);
 
-  const pagination = usePagination({
-    totalCount: filteredProducts.length,
-    pageSize: INITIAL_PAGE_SIZE,
-  });
-  const paginatedProducts = useMemo(
-    () => filteredProducts.slice(pagination.startIndex, pagination.endIndex),
-    [filteredProducts, pagination.startIndex, pagination.endIndex]
-  );
-
+  // ── Status toggle ─────────────────────────────────────────────────────────
   const handleListingToggle = (row: ProductRow, newStatus: "active" | "inactive") => {
-    setProducts((prev) =>
-      prev.map((p) => (p.id === row.id ? { ...p, status: newStatus } : p))
+    // Update across all slices so the change is visible in both cursor and search modes
+    setStack((prev) =>
+      prev.map((slice) => ({
+        ...slice,
+        products: slice.products.map((p) =>
+          p.id === row.id ? { ...p, status: newStatus } : p,
+        ),
+      })),
     );
     setToggleLoadingIds((prev) => new Set([...prev, row.id]));
     const apiCall = newStatus === "active" ? publishProduct(row.id) : unpublishProduct(row.id);
@@ -195,16 +291,19 @@ export function ProductListingClient({
         toast.success(
           newStatus === "active"
             ? "Product marked as Active successfully."
-            : "Product marked as Inactive successfully."
+            : "Product marked as Inactive successfully.",
         );
       })
       .catch((err: unknown) => {
-        setProducts((prev) =>
-          prev.map((p) => (p.id === row.id ? { ...p, status: row.status } : p))
+        setStack((prev) =>
+          prev.map((slice) => ({
+            ...slice,
+            products: slice.products.map((p) =>
+              p.id === row.id ? { ...p, status: row.status } : p,
+            ),
+          })),
         );
-        toast.error(
-          err instanceof Error ? err.message : "Failed to update product status."
-        );
+        toast.error(err instanceof Error ? err.message : "Failed to update product status.");
       })
       .finally(() => {
         setToggleLoadingIds((prev) => {
@@ -215,182 +314,144 @@ export function ProductListingClient({
       });
   };
 
+  // ── Delete ────────────────────────────────────────────────────────────────
   const handleConfirmDelete = () => {
     if (!productToDelete || isDeleting) return;
     const deleted = productToDelete;
+    // Find which slice contains this product (works in both cursor and search modes)
+    const deletedSliceIndex = stack.findIndex((s) => s.products.some((p) => p.id === deleted.id));
+    const deletedProductIndex =
+      deletedSliceIndex >= 0
+        ? stack[deletedSliceIndex].products.findIndex((p) => p.id === deleted.id)
+        : -1;
     setIsDeleting(true);
-    setProducts((prev) => prev.filter((p) => p.id !== deleted.id));
+    setStack((prev) =>
+      prev.map((slice) => ({
+        ...slice,
+        products: slice.products.filter((p) => p.id !== deleted.id),
+      })),
+    );
     deleteProduct(deleted.id)
       .then(() => {
-        try { localStorage.removeItem(`mekya_seller_draft_${deleted.id}`); } catch { /* ignore */ }
+        try {
+          localStorage.removeItem(`mekya_seller_draft_${deleted.id}`);
+        } catch { /* ignore */ }
         toast.success("Product deleted successfully.");
         setProductToDelete(null);
       })
       .catch((err: unknown) => {
-        setProducts((prev) => [deleted, ...prev]);
+        setStack((prev) =>
+          prev.map((slice, idx) => {
+            if (idx !== deletedSliceIndex) return slice;
+            const prods = [...slice.products];
+            prods.splice(Math.min(deletedProductIndex, prods.length), 0, deleted);
+            return { ...slice, products: prods };
+          }),
+        );
         toast.error(err instanceof Error ? err.message : "Failed to delete product.");
         setProductToDelete(null);
       })
       .finally(() => setIsDeleting(false));
   };
 
-  const b2bCategoryOptions = categoryOptions;
-
-  const b2bInventoryTypeOptions = useMemo(
-    () => [
-      { label: PRODUCT_INVENTORY_TYPE_LABELS.ready_to_ship, value: "ready_to_ship" },
-      { label: PRODUCT_INVENTORY_TYPE_LABELS.pre_booking, value: "pre_booking" },
-      { label: PRODUCT_INVENTORY_TYPE_LABELS.stock_clearance, value: "stock_clearance" },
-      { label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return, value: "sale_or_return" },
-    ],
-    []
-  );
-
-  const resetB2BDialog = () => {
-    b2bImagesRef.current.forEach((img) => URL.revokeObjectURL(img.url));
-    setB2BProductName("");
-    setB2BArticleNumber("");
-    setB2BCategory(undefined);
-    setB2BInventoryType(undefined);
-    setB2BOrderTypes([]);
-    setB2BWizardStep("basic_information");
-    setB2BUploadedImages([]);
-    setIsDraggingImage(false);
-    setB2BWizardPrefill(null);
-    setB2BWizardInstanceKey("");
+  // ── Reset ──────────────────────────────────────────────────────────────────
+  const handleReset = () => {
+    setSelectedCategoryIds([]);
+    setListingStatus("all");
+    setSelectedInventoryTypes([]);
+    setSearchInput("");
+    setSearchPage(1);
+    setPriceMinDraft("0");
+    setPriceMaxDraft("100000");
+    setPriceMinApplied("0");
+    setPriceMaxApplied("100000");
   };
 
-  const openB2BEditProduct = (row: ProductRow) => {
-    setB2BWizardInstanceKey(`edit:${row.id}`);
-    b2bImagesRef.current.forEach((img) => URL.revokeObjectURL(img.url));
-    setB2BUploadedImages([]);
-    setIsDraggingImage(false);
-    const prefill = getB2BWizardPrefillFromProductRow(row);
-    setB2BWizardPrefill(prefill);
-    setB2BProductName(row.name);
-    setB2BArticleNumber(row.articleNumber);
-    setB2BCategory(row.category);
-    setB2BInventoryType(row.inventoryType);
-    setB2BOrderTypes(B2B_ORDER_TYPES.map((t) => t.value));
-    setB2BWizardStep("basic_information");
-    setIsAddB2BDialogOpen(true);
-  };
-
-  const handleB2BDialogOpenChange = (open: boolean) => {
-    if (!open) resetB2BDialog();
-    setIsAddB2BDialogOpen(open);
-  };
-
-  const handleB2BSaveAsDraft = () => {
-    toast.success("Details are saved in draft.");
-    handleB2BDialogOpenChange(false);
-  };
-
-  const addB2BFiles = (files: FileList | File[]) => {
-    const list = Array.from(files);
-    for (const file of list) {
-      if (!B2B_ACCEPTED_IMAGES.has(file.type)) {
-        toast.error(`${file.name}: use PNG or JPG only`);
-        continue;
-      }
-      if (file.size > B2B_MAX_IMAGE_BYTES) {
-        toast.error(`${file.name}: max size is 5 MB`);
-        continue;
-      }
-      const url = URL.createObjectURL(file);
-      const id = `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      setB2BUploadedImages((prev) => [...prev, { id, url, file }]);
-    }
-  };
-
-  const removeB2BImage = (id: string) => {
-    setB2BUploadedImages((prev) => {
-      const item = prev.find((img) => img.id === id);
-      if (item) URL.revokeObjectURL(item.url);
-      return prev.filter((img) => img.id !== id);
-    });
-  };
-
-  const handleBasicInfoNext = () => {
-    if (!b2bProductName.trim()) {
-      toast.error("Product name is required");
-      return;
-    }
-    if (!b2bArticleNumber.trim()) {
-      toast.error("Article number is required");
-      return;
-    }
-    if (!b2bCategory) {
-      toast.error("Category is required");
-      return;
-    }
-    if (!b2bInventoryType) {
-      toast.error("Inventory type is required");
-      return;
-    }
-    setB2BWizardStep("order_type");
-  };
-
-  const handleB2BWizardNext = () => {
-    if (b2bWizardStep === "basic_information") {
-      handleBasicInfoNext();
-      return;
-    }
-    if (b2bWizardStep === "order_type") {
-      if (b2bOrderTypes.length === 0) {
-        toast.error("Select at least one order type to continue");
-        return;
-      }
-      setB2BWizardStep("pricing");
-      return;
-    }
-    if (b2bWizardStep === "pricing") {
-      setB2BWizardStep("description");
-      return;
-    }
-    toast.success("🎉 Product has been listed successfully.");
-    handleB2BDialogOpenChange(false);
-  };
-
-  const toggleB2BOrderType = (value: B2BOrderTypeValue) => {
-    setB2BOrderTypes((prev) => {
-      if (prev.includes(value)) return prev.filter((item) => item !== value);
-      return [...prev, value];
-    });
-  };
-
+  // ── Table columns ──────────────────────────────────────────────────────────
   const columns: TableColumn<ProductRow>[] = [
     {
       key: "name",
       header: "Product Name",
       sortable: true,
-      cell: (row) => <span className="line-clamp-2 break-all">{row.name}</span>,
+      className: "w-[14%]",
+      cell: (row) => (
+        <span className="line-clamp-2 break-words" title={row.name}>
+          {row.name}
+        </span>
+      ),
     },
-    { key: "articleNumber", header: "Article Number" },
-    { key: "category", header: "Category" },
+    { key: "articleNumber", header: "Article Number", className: "w-[10%]" },
+    { key: "category", header: "Category", className: "w-[9%]" },
     ...(isB2B
       ? []
       : [
-        { key: "sizes", header: "Size" } as TableColumn<ProductRow>,
-        { key: "colors", header: "Color" } as TableColumn<ProductRow>,
-      ]),
+          {
+            key: "sizes",
+            header: "Size",
+            className: "w-[8%]",
+            cell: (row: ProductRow) => (
+              <span className="break-words">
+                {row.sizes.split(",").filter(Boolean).join(", ")}
+              </span>
+            ),
+          } as TableColumn<ProductRow>,
+          {
+            key: "colors",
+            header: "Color",
+            className: "w-[11%]",
+            cell: (row: ProductRow) => {
+              const colorList = row.colors.split(",").filter(Boolean);
+              return (
+                <div className="flex min-w-0 flex-wrap gap-0.5">
+                  {colorList.map((c) => (
+                    <span
+                      key={c}
+                      className="inline-block max-w-full truncate rounded bg-muted px-1 py-0.5 text-[9px] leading-tight sm:text-[10px]"
+                      title={c.trim()}
+                    >
+                      {c.trim()}
+                    </span>
+                  ))}
+                </div>
+              );
+            },
+          } as TableColumn<ProductRow>,
+        ]),
     {
       key: "inventoryType",
       header: "Inventory Type",
-      className: TABLE_BADGE_PILL_COLUMN_CLASS,
+      className: `${TABLE_BADGE_PILL_COLUMN_CLASS} w-[10%]`,
       cell: (row) => <InventoryTypeBadge type={row.inventoryType} />,
     },
-    { key: "price", header: isB2B ? "WSP" : "Price", sortable: true },
+    {
+      key: "channels",
+      header: "Channel",
+      align: "center" as const,
+      className: "w-[8%]",
+      cell: (row: ProductRow) => {
+        const ch = row.channels ?? "both";
+        const cfg = {
+          b2c: { label: "B2C", cls: "bg-blue-100 text-blue-700" },
+          b2b: { label: "B2B", cls: "bg-purple-100 text-purple-700" },
+          both: { label: "B2C & B2B", cls: "bg-green-100 text-green-700" },
+        } as const;
+        return (
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${cfg[ch].cls}`}>
+            {cfg[ch].label}
+          </span>
+        );
+      },
+    },
+    { key: "price", header: isB2B ? "WSP" : "Price", className: "w-[7%]" },
     {
       key: "quantity",
-      header: isB2B ? "Inventory Available" : "Quantity",
-      sortable: true,
+      header: isB2B ? "Inventory" : "Quantity",
+      className: "w-[7%]",
     },
     {
       key: "status",
       header: "Status",
-      sortable: true,
-      className: TABLE_BADGE_PILL_COLUMN_CLASS,
+      className: `${TABLE_BADGE_PILL_COLUMN_CLASS} w-[7%]`,
       cell: (row) => {
         const pill =
           "inline-flex h-[22px] w-full min-w-0 max-w-full items-center justify-center whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[9px] font-medium leading-none sm:h-7 sm:px-2 sm:text-[11px] min-[1920px]:h-8 min-[1920px]:text-sm";
@@ -405,6 +466,7 @@ export function ProductListingClient({
       key: "toggle",
       header: "Status Switch",
       align: "center",
+      className: "w-[8%]",
       cell: (row) => (
         <StatusToggle
           status={row.status}
@@ -417,74 +479,103 @@ export function ProductListingClient({
       key: "actions",
       header: "Actions",
       align: "center",
+      className: "w-[10%]",
       cell: (row) => (
-        <div className={isB2B ? "flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100" : "flex items-center justify-center gap-1"}>
+        <div className="flex items-center justify-center gap-0.5">
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
-            aria-label={`Edit ${row.name}`}
-            onClick={() =>
-              isB2B
-                ? openB2BEditProduct(row)
-                : router.push(`/product-listing/add-product?productId=${encodeURIComponent(row.id)}`)
-            }
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            aria-label={`View ${row.name}`}
+            onClick={() => router.push(`/product-listing/${encodeURIComponent(row.id)}`)}
+            title="View product details"
           >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M16.475 5.40783L18.592 7.52483M17.836 3.54283L12.109 9.26983C11.8122 9.56467 11.6102 9.94144 11.529 10.3518L11 12.9998L13.648 12.4698C14.058 12.3878 14.434 12.1868 14.73 11.8908L20.457 6.16383C20.6291 5.99173 20.7656 5.78742 20.8588 5.56256C20.9519 5.33771 20.9998 5.09671 20.9998 4.85333C20.9998 4.60994 20.9519 4.36895 20.8588 4.14409C20.7656 3.91923 20.6291 3.71492 20.457 3.54283C20.2849 3.37073 20.0806 3.23421 19.8557 3.14108C19.6309 3.04794 19.3899 3 19.1465 3C18.9031 3 18.6621 3.04794 18.4373 3.14108C18.2124 3.23421 18.0081 3.37073 17.836 3.54283Z" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M19 15V18C19 18.5304 18.7893 19.0391 18.4142 19.4142C18.0391 19.7893 17.5304 20 17 20H6C5.46957 20 4.96086 19.7893 4.58579 19.4142C4.21071 19.0391 4 18.5304 4 18V7C4 6.46957 4.21071 5.96086 4.58579 5.58579C4.96086 5.21071 5.46957 5 6 5H9" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-
+            <Eye className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
+            className="h-7 w-7"
+            aria-label={`Edit ${row.name}`}
+            onClick={() =>
+              router.push(
+                `/product-listing/add-product?productId=${encodeURIComponent(row.id)}`,
+              )
+            }
+            title="Edit product"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M16.475 5.40783L18.592 7.52483M17.836 3.54283L12.109 9.26983C11.8122 9.56467 11.6102 9.94144 11.529 10.3518L11 12.9998L13.648 12.4698C14.058 12.3878 14.434 12.1868 14.73 11.8908L20.457 6.16383C20.6291 5.99173 20.7656 5.78742 20.8588 5.56256C20.9519 5.33771 20.9998 5.09671 20.9998 4.85333C20.9998 4.60994 20.9519 4.36895 20.8588 4.14409C20.7656 3.91923 20.6291 3.71492 20.457 3.54283C20.2849 3.37073 20.0806 3.23421 19.8557 3.14108C19.6309 3.04794 19.3899 3 19.1465 3C18.9031 3 18.6621 3.04794 18.4373 3.14108C18.2124 3.23421 18.0081 3.37073 17.836 3.54283Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M19 15V18C19 18.5304 18.7893 19.0391 18.4142 19.4142C18.0391 19.7893 17.5304 20 17 20H6C5.46957 20 4.96086 19.7893 4.58579 19.4142C4.21071 19.0391 4 18.5304 4 18V7C4 6.46957 4.21071 5.96086 4.58579 5.58579C4.96086 5.21071 5.46957 5 6 5H9"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:text-destructive"
             aria-label={`Delete ${row.name}`}
             onClick={() => setProductToDelete(row)}
+            title="Delete product"
           >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M1.76953 5.48953H22.2295M9.90703 17.347V10.372M14.092 17.347V10.372M14.092 1.76953H9.90703C9.53705 1.76953 9.18223 1.9165 8.92062 2.17812C8.659 2.43973 8.51203 2.79455 8.51203 3.16453V5.48953H15.487V3.16453C15.487 2.79455 15.3401 2.43973 15.0784 2.17812C14.8168 1.9165 14.462 1.76953 14.092 1.76953ZM18.3793 20.9461C18.3535 21.2956 18.1961 21.6223 17.939 21.8605C17.6819 22.0986 17.3441 22.2305 16.9936 22.2295H7.00543C6.65498 22.2305 6.31718 22.0986 6.06006 21.8605C5.80294 21.6223 5.6456 21.2956 5.61973 20.9461L4.32703 5.48953H19.672L18.3793 20.9461Z" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M1.76953 5.48953H22.2295M9.90703 17.347V10.372M14.092 17.347V10.372M14.092 1.76953H9.90703C9.53705 1.76953 9.18223 1.9165 8.92062 2.17812C8.659 2.43973 8.51203 2.79455 8.51203 3.16453V5.48953H15.487V3.16453C15.487 2.79455 15.3401 2.43973 15.0784 2.17812C14.8168 1.9165 14.462 1.76953 14.092 1.76953ZM18.3793 20.9461C18.3535 21.2956 18.1961 21.6223 17.939 21.8605C17.6819 22.0986 17.3441 22.2305 16.9936 22.2295H7.00543C6.65498 22.2305 6.31718 22.0986 6.06006 21.8605C5.80294 21.6223 5.6456 21.2956 5.61973 20.9461L4.32703 5.48953H19.672L18.3793 20.9461Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
-
           </Button>
         </div>
       ),
     },
   ];
 
+  // ── Cursor pagination props (non-search mode) ──────────────────────────────
+  const cursorTotalPages = Math.max(1, stack.length + (currentSlice?.hasNext ? 1 : 0));
+
   return (
     <div className="space-y-6">
       <div>
-        <nav className="text-sm text-muted-foreground mb-4" aria-label="Breadcrumb">
+        <nav className="mb-4 text-sm text-muted-foreground" aria-label="Breadcrumb">
           Seller Dashboard &gt; Product Listing
         </nav>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-2">
+        <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-semibold text-foreground">
             {isB2B ? "B2B Product Listing" : "B2C Product Listing"}
           </h1>
-          {isB2B ? (
-            <Button
-              type="button"
-              size="lg"
-              onClick={() => {
-                resetB2BDialog();
-                setB2BWizardInstanceKey(`new:${Date.now()}`);
-                setIsAddB2BDialogOpen(true);
-              }}
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              <span className="ml-2">Add New Product</span>
-            </Button>
-          ) : (
-            <Link
-              href="/product-listing/add-product"
-              className={cn(buttonVariants({ variant: "default", size: "lg" }))}
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              <span className="ml-2">Add New Product</span>
-            </Link>
-          )}
+          <Link
+            href={`/product-listing/add-product${isB2B ? "?defaultChannel=b2b" : ""}`}
+            className={cn(buttonVariants({ variant: "default", size: "lg" }))}
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            <span className="ml-2">Add New Product</span>
+          </Link>
         </div>
         <p className="text-gray-700">
           {isB2B
@@ -501,25 +592,35 @@ export function ProductListingClient({
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Filter bar */}
           <div className="mb-4 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:gap-3">
+            {/* Search */}
             <div className="relative min-w-0 w-full shrink-0 lg:max-w-md">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Search
+                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
               <input
                 type="search"
                 placeholder="Search Products"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#E8E9E8] rounded-md border border-input px-10 py-2 text-md focus:outline-none focus:ring-2 focus:ring-ring"
+                value={searchInput}
+                onChange={(e) => { setSearchInput(e.target.value); setSearchPage(1); }}
+                className="w-full rounded-md border border-input bg-[#E8E9E8] px-10 py-2 text-md focus:outline-none focus:ring-2 focus:ring-ring"
                 aria-label="Search products"
               />
             </div>
+
+            {/* Filters row */}
             <div className="flex min-w-0 w-full flex-nowrap items-center gap-1 overflow-hidden sm:gap-1.5 min-[1920px]:gap-3">
+              {/* Category — backend filter */}
               <MultiSelectFilter
                 placeholder="All Categories"
                 options={categoryOptions}
-                selected={selectedCategories}
-                onChange={setSelectedCategories}
+                selected={selectedCategoryIds}
+                onChange={setSelectedCategoryIds}
               />
+
+              {/* Status — backend filter */}
               <AppSelect
                 placeholder="All Status"
                 value={listingStatus}
@@ -531,37 +632,53 @@ export function ProductListingClient({
                 ]}
                 className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
               />
+
+              {/* Inventory type — client-side filter on current page */}
               <MultiSelectFilter
                 placeholder="All Inventory Types"
                 options={[
-                  { label: PRODUCT_INVENTORY_TYPE_LABELS.ready_to_ship, value: "ready_to_ship" },
-                  { label: PRODUCT_INVENTORY_TYPE_LABELS.pre_booking, value: "pre_booking" },
-                  { label: PRODUCT_INVENTORY_TYPE_LABELS.stock_clearance, value: "stock_clearance" },
-                  ...(isB2B ? [{ label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return, value: "sale_or_return" }] : []),
+                  {
+                    label: PRODUCT_INVENTORY_TYPE_LABELS.ready_to_ship,
+                    value: "ready_to_ship",
+                  },
+                  {
+                    label: PRODUCT_INVENTORY_TYPE_LABELS.pre_booking,
+                    value: "pre_booking",
+                  },
+                  {
+                    label: PRODUCT_INVENTORY_TYPE_LABELS.stock_clearance,
+                    value: "stock_clearance",
+                  },
+                  ...(isB2B
+                    ? [
+                        {
+                          label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return,
+                          value: "sale_or_return",
+                        },
+                      ]
+                    : []),
                 ]}
                 selected={selectedInventoryTypes}
                 onChange={setSelectedInventoryTypes}
               />
+
+              {/* Reset */}
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedCategories([]);
-                  setListingStatus(undefined);
-                  setSelectedInventoryTypes([]);
-                  setSearchQuery("");
-                  setPriceMinDraft("0");
-                  setPriceMaxDraft("100000");
-                  setPriceMinApplied("0");
-                  setPriceMaxApplied("100000");
-                }}
-                className="ml-1 shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors sm:text-xs min-[1920px]:text-sm"
+                onClick={handleReset}
+                className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground sm:text-xs min-[1920px]:text-sm"
                 aria-label="Reset all filters"
               >
                 <RotateCcw className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
                 Reset
               </button>
+
+              {/* Price range (B2B only, client-side on current page) */}
               {isB2B && (
-                <div className="relative ml-1 shrink-0 min-[1920px]:ml-2" ref={priceFilterRef}>
+                <div
+                  className="relative ml-1 shrink-0 min-[1920px]:ml-2"
+                  ref={priceFilterRef}
+                >
                   <Button
                     type="button"
                     variant="outline"
@@ -569,10 +686,16 @@ export function ProductListingClient({
                     onClick={() => setIsPriceFilterOpen((prev) => !prev)}
                   >
                     <span className="inline-flex min-w-0 items-center gap-1 truncate sm:gap-1.5 min-[1920px]:gap-2">
-                      <SlidersHorizontal className="size-3 shrink-0 sm:size-3.5 min-[1920px]:size-4" aria-hidden />
+                      <SlidersHorizontal
+                        className="size-3 shrink-0 sm:size-3.5 min-[1920px]:size-4"
+                        aria-hidden
+                      />
                       <span className="truncate">Price Range</span>
                     </span>
-                    <ChevronDown className="size-3 shrink-0 sm:size-3.5 min-[1920px]:size-4" aria-hidden />
+                    <ChevronDown
+                      className="size-3 shrink-0 sm:size-3.5 min-[1920px]:size-4"
+                      aria-hidden
+                    />
                   </Button>
                   {isPriceFilterOpen && (
                     <div className="absolute right-0 top-12 z-30 h-[210px] w-[315px] rounded-[5px] border border-border bg-white p-4 opacity-100 shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
@@ -595,10 +718,15 @@ export function ProductListingClient({
                           Reset
                         </button>
                       </div>
-                      <p className="mt-4 text-md font-medium text-muted-foreground">Price Range</p>
+                      <p className="mt-4 text-md font-medium text-muted-foreground">
+                        Price Range
+                      </p>
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <div>
-                          <label htmlFor="price-range-min" className="mb-1.5 block text-sm font-medium leading-none">
+                          <label
+                            htmlFor="price-range-min"
+                            className="mb-1.5 block text-sm font-medium leading-none"
+                          >
                             Min
                           </label>
                           <input
@@ -606,12 +734,17 @@ export function ProductListingClient({
                             type="text"
                             inputMode="numeric"
                             value={priceMinDraft}
-                            onChange={(e) => setPriceMinDraft(e.target.value.replaceAll(/\D/g, ""))}
+                            onChange={(e) =>
+                              setPriceMinDraft(e.target.value.replaceAll(/\D/g, ""))
+                            }
                             className="h-8 w-full rounded-md border-0 bg-[#E8E9E8] px-2 text-lg text-[#6b6b6b] outline-none"
                           />
                         </div>
                         <div>
-                          <label htmlFor="price-range-max" className="mb-1.5 block text-sm font-medium leading-none">
+                          <label
+                            htmlFor="price-range-max"
+                            className="mb-1.5 block text-sm font-medium leading-none"
+                          >
                             Max
                           </label>
                           <input
@@ -619,7 +752,9 @@ export function ProductListingClient({
                             type="text"
                             inputMode="numeric"
                             value={priceMaxDraft}
-                            onChange={(e) => setPriceMaxDraft(e.target.value.replaceAll(/\D/g, ""))}
+                            onChange={(e) =>
+                              setPriceMaxDraft(e.target.value.replaceAll(/\D/g, ""))
+                            }
                             className="h-8 w-full rounded-md border-0 bg-[#E8E9E8] px-3 text-lg text-[#6b6b6b] outline-none"
                           />
                         </div>
@@ -642,45 +777,82 @@ export function ProductListingClient({
             </div>
           </div>
 
-          {isLoadingProducts && (
-            <p className="py-8 text-center text-sm text-muted-foreground">Loading products…</p>
+          {/* Table */}
+          {isLoading && stack.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Loading products…
+            </p>
+          ) : (
+            <DataTable
+              columns={columns}
+              data={displayProducts}
+              striped
+              emptyMessage={
+                isLoading ? "Loading…" : "No products match your filters"
+              }
+              onServerSortColumn={handleServerSortColumn}
+              serverSortKey={serverSortKey}
+              serverSortDirection={serverSortDirection}
+              pagination={
+                isSearching
+                  ? {
+                      currentPage: searchEffectivePage,
+                      totalPages: searchTotalPages,
+                      onPageChange: setSearchPage,
+                      pageSize,
+                      onPageSizeChange: setPageSize,
+                      totalRowCount: filteredSearchProducts.length,
+                      pageSizeOptions: [10, 20, 50] as const,
+                    }
+                  : {
+                      currentPage: pageIndex + 1,
+                      totalPages: cursorTotalPages,
+                      onPageChange: goToPage,
+                      pageSize,
+                      onPageSizeChange: setPageSize,
+                      totalRowCount: displayProducts.length,
+                      pageSizeOptions: [10, 20, 50] as const,
+                    }
+              }
+            />
           )}
-          {!isLoadingProducts && <DataTable
-            columns={columns}
-            data={paginatedProducts}
-            striped
-            emptyMessage="No products match your filters"
-            bodyRowClassName={isB2B ? "group" : undefined}
-            pagination={{
-              currentPage: pagination.currentPage,
-              totalPages: pagination.totalPages,
-              onPageChange: pagination.setPage,
-              pageSize: pagination.pageSize,
-              onPageSizeChange: pagination.setPageSize,
-              totalRowCount: filteredProducts.length,
-            }}
-          />}
         </CardContent>
       </Card>
 
-      <Dialog open={!!productToDelete} onOpenChange={(open) => !open && setProductToDelete(null)}>
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={!!productToDelete}
+        onOpenChange={(open) => !open && setProductToDelete(null)}
+      >
         <DialogContent className="max-w-[min(100%,22rem)] border-0 bg-white p-8 shadow-lg sm:max-w-md">
           <div className="flex flex-col items-center text-center">
-            <span className="my-6"><svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <g clipPath="url(#clip0_3813_107021)">
-                <path d="M9.76922 55.0172C6.7129 52.0653 4.27507 48.5343 2.59798 44.6302C0.92089 40.726 0.0381303 36.527 0.00120822 32.2781C-0.0357139 28.0291 0.773941 23.8154 2.38293 19.8827C3.99192 15.95 6.36802 12.3771 9.37258 9.37258C12.3771 6.36802 15.95 3.99192 19.8827 2.38293C23.8154 0.773941 28.0291 -0.0357139 32.2781 0.00120822C36.527 0.0381303 40.726 0.92089 44.6302 2.59798C48.5343 4.27507 52.0653 6.7129 55.0172 9.76922C60.8463 15.8045 64.0717 23.8878 63.9988 32.2781C63.9259 40.6684 60.5605 48.6944 54.6274 54.6274C48.6944 60.5605 40.6684 63.9259 32.2781 63.9988C23.8878 64.0717 15.8045 60.8463 9.76922 55.0172ZM50.5052 50.5052C55.3088 45.7016 58.0075 39.1865 58.0075 32.3932C58.0075 25.5999 55.3088 19.0848 50.5052 14.2812C45.7016 9.47762 39.1865 6.77899 32.3932 6.77899C25.5999 6.77899 19.0848 9.47762 14.2812 14.2812C9.47762 19.0848 6.77899 25.5999 6.77899 32.3932C6.77899 39.1865 9.47762 45.7016 14.2812 50.5052C19.0848 55.3088 25.5999 58.0075 32.3932 58.0075C39.1865 58.0075 45.7016 55.3088 50.5052 50.5052ZM29.1932 16.3932H35.5932V35.5932H29.1932V16.3932ZM29.1932 41.9932H35.5932V48.3932H29.1932V41.9932Z" fill="#962C2C" />
-              </g>
-              <defs>
-                <clipPath id="clip0_3813_107021">
-                  <rect width="64" height="64" fill="white" />
-                </clipPath>
-              </defs>
-            </svg></span>
-
-            <h2 className="mb-2 text-lg font-semibold text-foreground mt-4">
+            <span className="my-6">
+              <svg
+                width="64"
+                height="64"
+                viewBox="0 0 64 64"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <g clipPath="url(#clip0_3813_107021)">
+                  <path
+                    d="M9.76922 55.0172C6.7129 52.0653 4.27507 48.5343 2.59798 44.6302C0.92089 40.726 0.0381303 36.527 0.00120822 32.2781C-0.0357139 28.0291 0.773941 23.8154 2.38293 19.8827C3.99192 15.95 6.36802 12.3771 9.37258 9.37258C12.3771 6.36802 15.95 3.99192 19.8827 2.38293C23.8154 0.773941 28.0291 -0.0357139 32.2781 0.00120822C36.527 0.0381303 40.726 0.92089 44.6302 2.59798C48.5343 4.27507 52.0653 6.7129 55.0172 9.76922C60.8463 15.8045 64.0717 23.8878 63.9988 32.2781C63.9259 40.6684 60.5605 48.6944 54.6274 54.6274C48.6944 60.5605 40.6684 63.9259 32.2781 63.9988C23.8878 64.0717 15.8045 60.8463 9.76922 55.0172ZM50.5052 50.5052C55.3088 45.7016 58.0075 39.1865 58.0075 32.3932C58.0075 25.5999 55.3088 19.0848 50.5052 14.2812C45.7016 9.47762 39.1865 6.77899 32.3932 6.77899C25.5999 6.77899 19.0848 9.47762 14.2812 14.2812C9.47762 19.0848 6.77899 25.5999 6.77899 32.3932C6.77899 39.1865 9.47762 45.7016 14.2812 50.5052C19.0848 55.3088 25.5999 58.0075 32.3932 58.0075C39.1865 58.0075 45.7016 55.3088 50.5052 50.5052ZM29.1932 16.3932H35.5932V35.5932H29.1932V16.3932ZM29.1932 41.9932H35.5932V48.3932H29.1932V41.9932Z"
+                    fill="#962C2C"
+                  />
+                </g>
+                <defs>
+                  <clipPath id="clip0_3813_107021">
+                    <rect width="64" height="64" fill="white" />
+                  </clipPath>
+                </defs>
+              </svg>
+            </span>
+            <h2 className="mb-2 mt-4 text-lg font-semibold text-foreground">
               Are you sure you want to delete this product?
             </h2>
-            <p className="mb-8 text-sm text-muted-foreground">This action cannot be undone.</p>
+            <p className="mb-8 text-sm text-muted-foreground">
+              This action cannot be undone.
+            </p>
             <div className="flex w-full gap-3">
               <Button
                 type="button"
@@ -696,66 +868,34 @@ export function ProductListingClient({
                 className="h-11 flex-1 rounded-md bg-[#122130] font-medium text-white hover:bg-[#0d1a28]"
                 onClick={handleConfirmDelete}
               >
-                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Yes! Delete"}
+                {isDeleting ? (
+                  <svg
+                    className="mr-2 h-4 w-4 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v8z"
+                    />
+                  </svg>
+                ) : null}
+                {isDeleting ? "Deleting…" : "Yes! Delete"}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-
-      <B2BBasicInfoPopup
-        open={isAddB2BDialogOpen && b2bWizardStep === "basic_information"}
-        onOpenChange={handleB2BDialogOpenChange}
-        onNext={handleB2BWizardNext}
-        onSaveDraft={handleB2BSaveAsDraft}
-        fileInputRef={b2bFileInputRef}
-        onFilesAdded={addB2BFiles}
-        uploadedImages={b2bUploadedImages}
-        onRemoveImage={removeB2BImage}
-        isDraggingImage={isDraggingImage}
-        setIsDraggingImage={setIsDraggingImage}
-        productName={b2bProductName}
-        setProductName={setB2BProductName}
-        articleNumber={b2bArticleNumber}
-        setArticleNumber={setB2BArticleNumber}
-        category={b2bCategory}
-        setCategory={setB2BCategory}
-        inventoryType={b2bInventoryType}
-        setInventoryType={setB2BInventoryType}
-        categoryOptions={b2bCategoryOptions}
-        inventoryTypeOptions={b2bInventoryTypeOptions}
-      />
-
-      <B2BOrderTypePopup
-        open={isAddB2BDialogOpen && b2bWizardStep === "order_type"}
-        onOpenChange={handleB2BDialogOpenChange}
-        orderTypeOptions={[...B2B_ORDER_TYPES]}
-        selectedOrderTypes={b2bOrderTypes}
-        onToggleOrderType={(value) => toggleB2BOrderType(value as B2BOrderTypeValue)}
-        onBackToBasic={() => setB2BWizardStep("basic_information")}
-        onNext={handleB2BWizardNext}
-        onSaveDraft={handleB2BSaveAsDraft}
-      />
-
-      <B2BPricingPopup
-        key={`${b2bWizardInstanceKey || "idle"}-pricing`}
-        open={isAddB2BDialogOpen && b2bWizardStep === "pricing"}
-        onOpenChange={handleB2BDialogOpenChange}
-        onBack={() => setB2BWizardStep("order_type")}
-        onNext={handleB2BWizardNext}
-        onSaveDraft={handleB2BSaveAsDraft}
-        pricingPrefill={b2bWizardPrefill?.pricing ?? null}
-      />
-
-      <B2BDescriptionPopup
-        key={`${b2bWizardInstanceKey || "idle"}-description`}
-        open={isAddB2BDialogOpen && b2bWizardStep === "description"}
-        onOpenChange={handleB2BDialogOpenChange}
-        onBack={() => setB2BWizardStep("pricing")}
-        onNext={handleB2BWizardNext}
-        onSaveDraft={handleB2BSaveAsDraft}
-        descriptionPrefill={b2bWizardPrefill?.description ?? null}
-      />
     </div>
   );
 }

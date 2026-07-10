@@ -25,8 +25,11 @@ import {
   getCategories,
   getProduct,
   parseProductDescription,
+  publishProduct,
   updateProduct,
+  updateProductVariant,
   uploadImagesToStorage,
+  type VariantItem,
 } from "@/lib/api/products";
 
 const SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"] as const;
@@ -43,6 +46,7 @@ const ACCEPT_IMAGES = ["image/png", "image/jpeg", "image/jpg"];
 const DESCRIPTION_MAX = 1000;
 
 type ImageItem = { id: string; url: string; file: File };
+type VariantPricingRow = { name: string; b2c_price: string; b2b_price: string; qty: string };
 
 type ProductDraftState = {
   productName: string;
@@ -53,6 +57,7 @@ type ProductDraftState = {
   deliveryTimeline: string;
   mrp: string;
   sellingPrice: string;
+  b2bSellingPrice: string;
   availableQty: string;
   minQty: number;
   maxQty: number;
@@ -60,7 +65,16 @@ type ProductDraftState = {
   selectedSizes: string[];
   tags: string[];
   description: string;
+  channels: "b2c" | "b2b" | "both";
+  variantPricing?: VariantPricingRow[];
 };
+
+function computeVariantNames(colors: string[], sizes: string[]): string[] {
+  if (colors.length === 0 && sizes.length === 0) return [];
+  if (colors.length === 0) return sizes;
+  if (sizes.length === 0) return colors;
+  return colors.flatMap((c) => sizes.map((s) => `${c} / ${s}`));
+}
 
 function QuantityStepper({
   label,
@@ -109,12 +123,17 @@ export interface AddProductClientProps {
   categoryOptions: { id: string; name: string }[];
   initialProduct?: EditableProductDraft | null;
   productId?: string;
+  defaultChannel?: "b2c" | "b2b" | "both";
 }
 
-export function AddProductClient({ categoryOptions: initialCategoryOptions, initialProduct: initialProductProp, productId }: AddProductClientProps) {
+export function AddProductClient({ categoryOptions: initialCategoryOptions, initialProduct: initialProductProp, productId, defaultChannel }: AddProductClientProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<ImageItem[]>([]);
+  const submittedRef = useRef(false);
+  // Tracks a product_id that was created but not yet published (e.g. on publish failure).
+  // Prevents duplicate products when the user retries after a partial failure.
+  const pendingProductIdRef = useRef<string | null>(null);
   const [categoryOptions, setCategoryOptions] = useState(initialCategoryOptions);
   const [initialProduct, setInitialProduct] = useState<EditableProductDraft | null>(initialProductProp ?? null);
   const isEditMode = Boolean(productId ?? initialProduct);
@@ -139,11 +158,19 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
   const [selectedColors, setSelectedColors] = useState<string[]>(initialProduct?.colors ?? []);
   const [activeColorSelection, setActiveColorSelection] = useState<string | undefined>(undefined);
   const [isColorDropdownOpen, setIsColorDropdownOpen] = useState(false);
+  const [channels, setChannels] = useState<"b2c" | "b2b" | "both">(initialProduct?.channels ?? defaultChannel ?? "both");
   const [mrp, setMrp] = useState(initialProduct?.mrp ?? "");
   const [sellingPrice, setSellingPrice] = useState(initialProduct?.sellingPrice ?? "");
+  const [b2bSellingPrice, setB2bSellingPrice] = useState(initialProduct?.b2bSellingPrice ?? "");
+  const [productVariants, setProductVariants] = useState<VariantItem[]>([]);
+  const [variantEdits, setVariantEdits] = useState<
+    Record<string, { b2c_price: string; b2b_price: string; quantity: string }>
+  >({});
+  const [savingVariantId, setSavingVariantId] = useState<string | null>(null);
   const [availableQty, setAvailableQty] = useState(
     initialProduct ? String(initialProduct.availableQty) : ""
   );
+  const [variantPricing, setVariantPricing] = useState<VariantPricingRow[]>([]);
   const [minQty, setMinQty] = useState(initialProduct?.minQty ?? 0);
   const [maxQty, setMaxQty] = useState(initialProduct?.maxQty ?? 0);
   const [tags, setTags] = useState<string[]>(initialProduct?.tags ?? []);
@@ -152,6 +179,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
   const [isDragging, setIsDragging] = useState(false);
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState<ProductDraftState | null>(null);
+  const [existingImages, setExistingImages] = useState<Array<{ id: string; url: string }>>([]);
 
   const draftKey = `mekya_seller_draft_${productId ?? "new"}`;
 
@@ -187,13 +215,17 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
             sizes: (meta.sizes ?? "").split(",").filter(Boolean),
             colors: (meta.colors ?? "").split(",").filter(Boolean),
             mrp: meta.mrp ?? "",
-            sellingPrice: firstVariant?.price != null ? String(firstVariant.price) : "",
+            sellingPrice: firstVariant?.b2c_price != null ? String(firstVariant.b2c_price) : "",
+            b2bSellingPrice: firstVariant?.b2b_price != null ? String(firstVariant.b2b_price) : "",
             availableQty: firstVariant?.quantity ?? 0,
-            minQty: 1,
-            maxQty: 0,
-            tags: [],
+            minQty: meta.min_quantity_per_set ? parseInt(meta.min_quantity_per_set, 10) : 0,
+            maxQty: meta.max_quantity_per_set ? parseInt(meta.max_quantity_per_set, 10) : 0,
+            tags: (meta.tags ?? "").split(",").filter(Boolean),
             description: parseProductDescription(prod.description),
+            images: prod.images.map((img) => ({ id: img.id, url: img.url })),
+            channels: (meta.channels as "b2c" | "b2b" | "both") ?? "both",
           });
+          setProductVariants(prod.variants);
         })
         .catch(() => toast.error("Failed to load product details. Please go back and try again."))
         .finally(() => setIsFetchingProduct(false));
@@ -216,16 +248,47 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       )
     );
     setSelectedColors(initialProduct.colors);
+    setChannels(initialProduct.channels ?? "both");
     setMrp(initialProduct.mrp);
     setSellingPrice(initialProduct.sellingPrice);
+    setB2bSellingPrice(initialProduct.b2bSellingPrice ?? "");
     setAvailableQty(String(initialProduct.availableQty));
     setMinQty(initialProduct.minQty);
     setMaxQty(initialProduct.maxQty);
     setTags(initialProduct.tags);
     setDescription(initialProduct.description);
+    setExistingImages(initialProduct.images ?? []);
   }, [initialProduct]);
 
+  useEffect(() => {
+    if (productVariants.length === 0) return;
+    const edits: Record<string, { b2c_price: string; b2b_price: string; quantity: string }> = {};
+    for (const v of productVariants) {
+      edits[v.id] = {
+        b2c_price: v.b2c_price != null ? String(v.b2c_price) : "",
+        b2b_price: v.b2b_price != null ? String(v.b2b_price) : "",
+        quantity: v.quantity != null ? String(v.quantity) : "",
+      };
+    }
+    setVariantEdits(edits);
+  }, [productVariants]);
+
+  useEffect(() => {
+    if (isEditMode) return;
+    const sortedSizes = [...selectedSizes].sort(
+      (a, b) =>
+        SIZE_OPTIONS.indexOf(a as (typeof SIZE_OPTIONS)[number]) -
+        SIZE_OPTIONS.indexOf(b as (typeof SIZE_OPTIONS)[number])
+    );
+    const names = computeVariantNames(selectedColors, sortedSizes);
+    setVariantPricing((prev) => {
+      const existingMap = new Map(prev.map((r) => [r.name, r]));
+      return names.map((name) => existingMap.get(name) ?? { name, b2c_price: "", b2b_price: "", qty: "" });
+    });
+  }, [selectedColors, selectedSizes, isEditMode]);
+
   const saveDraftToStorage = useCallback(() => {
+    if (submittedRef.current) return;
     try {
       const data: ProductDraftState = {
         productName,
@@ -236,6 +299,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
         deliveryTimeline,
         mrp,
         sellingPrice,
+        b2bSellingPrice,
         availableQty,
         minQty,
         maxQty,
@@ -243,12 +307,14 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
         selectedSizes: [...selectedSizes],
         tags,
         description,
+        channels,
+        variantPricing: isEditMode ? undefined : variantPricing,
       };
       localStorage.setItem(draftKey, JSON.stringify(data));
     } catch {
       // localStorage unavailable — silent fail
     }
-  }, [productName, articleNumber, category, inventoryType, gender, deliveryTimeline, mrp, sellingPrice, availableQty, minQty, maxQty, selectedColors, selectedSizes, tags, description, draftKey]);
+  }, [productName, articleNumber, category, inventoryType, gender, deliveryTimeline, mrp, sellingPrice, b2bSellingPrice, availableQty, minQty, maxQty, selectedColors, selectedSizes, tags, description, channels, isEditMode, variantPricing, draftKey]);
 
   const saveDraftRef = useRef(saveDraftToStorage);
   useEffect(() => {
@@ -287,8 +353,10 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     setInventoryType(restoredDraft.inventoryType);
     setGender(restoredDraft.gender);
     setDeliveryTimeline(restoredDraft.deliveryTimeline);
+    setChannels(restoredDraft.channels ?? "both");
     setMrp(restoredDraft.mrp);
     setSellingPrice(restoredDraft.sellingPrice);
+    setB2bSellingPrice(restoredDraft.b2bSellingPrice ?? "");
     setAvailableQty(restoredDraft.availableQty);
     setMinQty(restoredDraft.minQty);
     setMaxQty(restoredDraft.maxQty);
@@ -296,6 +364,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     setSelectedSizes(new Set(restoredDraft.selectedSizes));
     setTags(restoredDraft.tags);
     setDescription(restoredDraft.description);
+    if (restoredDraft.variantPricing) setVariantPricing(restoredDraft.variantPricing);
     setShowRestorePrompt(false);
     setRestoredDraft(null);
   };
@@ -379,8 +448,35 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     setTagInput("");
   };
 
+  const handleVariantSave = async (variantId: string) => {
+    if (!initialProduct) return;
+    setSavingVariantId(variantId);
+    const edit = variantEdits[variantId];
+    try {
+      await updateProductVariant(initialProduct.id, variantId, {
+        b2c_price: edit.b2c_price ? parseFloat(edit.b2c_price) : undefined,
+        b2b_price: edit.b2b_price ? parseFloat(edit.b2b_price) : undefined,
+        available_qty: edit.quantity ? parseInt(edit.quantity, 10) : undefined,
+      });
+      toast.success("Variant updated.");
+    } catch {
+      toast.error("Failed to update variant.");
+    } finally {
+      setSavingVariantId(null);
+    }
+  };
+
   const hasQtyRangeInput = minQty > 0 || maxQty > 0;
   const qtyRangeInvalid = hasQtyRangeInput && maxQty <= minQty;
+
+  const variantPricingValid = useMemo(() => {
+    if (isEditMode || variantPricing.length === 0) return true;
+    return variantPricing.every((row) => {
+      const b2cOk = channels === "b2b" || (row.b2c_price.trim() !== "" && !isNaN(parseFloat(row.b2c_price)));
+      const b2bOk = channels === "b2c" || (row.b2b_price.trim() !== "" && !isNaN(parseFloat(row.b2b_price)));
+      return b2cOk && b2bOk;
+    });
+  }, [isEditMode, variantPricing, channels]);
 
   const isFormValid = useMemo(
     () =>
@@ -390,17 +486,26 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       Boolean(inventoryType) &&
       Boolean(gender) &&
       Boolean(mrp) &&
-      Boolean(sellingPrice) &&
+      (isEditMode ? (channels === "b2b" || Boolean(sellingPrice)) : variantPricingValid) &&
+      (isEditMode ? (channels === "b2c" || Boolean(b2bSellingPrice)) : true) &&
       selectedColors.length > 0 &&
       selectedSizes.size > 0 &&
-      images.length > 0 &&
+      (images.length > 0 || (isEditMode && existingImages.length > 0)) &&
       description.trim().length > 0 &&
       !qtyRangeInvalid,
-    [productName, articleNumber, category, inventoryType, gender, mrp, sellingPrice, selectedColors, selectedSizes, images, description, qtyRangeInvalid]
+    [productName, articleNumber, category, inventoryType, gender, mrp, sellingPrice, channels, b2bSellingPrice, selectedColors, selectedSizes, images, existingImages, isEditMode, description, qtyRangeInvalid, variantPricingValid]
   );
 
   const handleSaveDraft = async () => {
     if (isSubmitting) return;
+    if (productId && !initialProduct) {
+      toast.error(
+        isFetchingProduct
+          ? "Product is still loading, please wait a moment."
+          : "Failed to load product. Please refresh the page."
+      );
+      return;
+    }
     if (!productName.trim()) {
       toast.error("Product name is required to save a draft.");
       return;
@@ -413,6 +518,26 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       toast.error("Inventory type is required to save a draft.");
       return;
     }
+    if (mrp) {
+      const mrpNum = parseFloat(mrp);
+      if (!isNaN(mrpNum) && mrpNum > 0) {
+        if (channels !== "b2b" && sellingPrice) {
+          const spNum = parseFloat(sellingPrice);
+          if (!isNaN(spNum) && spNum > mrpNum) {
+            toast.error("Selling Price cannot exceed MRP");
+            return;
+          }
+        }
+        if (channels !== "b2c" && b2bSellingPrice) {
+          const b2bNum = parseFloat(b2bSellingPrice);
+          if (!isNaN(b2bNum) && b2bNum > mrpNum) {
+            toast.error("B2B Selling Price cannot exceed MRP");
+            return;
+          }
+        }
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const imageUrls = images.length > 0
@@ -431,31 +556,49 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
           colors: selectedColors.length > 0 ? selectedColors : undefined,
           sizes: selectedSizes.size > 0 ? [...selectedSizes] : undefined,
           mrp: mrp ? parseFloat(mrp) : undefined,
-          selling_price: sellingPrice ? parseFloat(sellingPrice) : undefined,
-          available_qty: availableQty ? parseInt(availableQty, 10) : undefined,
+          selling_price: channels !== "b2b" && sellingPrice ? parseFloat(sellingPrice) : undefined,
+          b2b_selling_price: channels !== "b2c" && b2bSellingPrice ? parseFloat(b2bSellingPrice) : undefined,
+          available_qty: parseInt(availableQty, 10) > 0 ? parseInt(availableQty, 10) : undefined,
+          min_quantity_per_set: minQty > 0 ? minQty : undefined,
+          max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
+          channels,
           tags: tags.length > 0 ? tags : undefined,
           images: imageUrls.length > 0 ? imageUrls : undefined,
         });
         toast.success("Draft updated successfully.");
       } else {
-        await createProduct({
-          name: productName.trim(),
-          description: draftDescription,
-          category_id: category,
-          inventory_type: inventoryType,
-          article_number: articleNumber.trim() || undefined,
-          gender: gender || undefined,
-          shipping_days: deliveryTimeline.trim() || undefined,
-          colors: selectedColors,
-          sizes: [...selectedSizes],
-          tags,
-          mrp: mrp ? parseFloat(mrp) : undefined,
-          selling_price: sellingPrice ? parseFloat(sellingPrice) : undefined,
-          available_qty: availableQty ? parseInt(availableQty, 10) : undefined,
-          images: imageUrls,
-        });
+        if (!pendingProductIdRef.current) {
+          const created = await createProduct({
+            name: productName.trim(),
+            description: draftDescription,
+            category_id: category,
+            inventory_type: inventoryType,
+            article_number: articleNumber.trim() || undefined,
+            gender: gender || undefined,
+            shipping_days: deliveryTimeline.trim() || undefined,
+            colors: selectedColors,
+            sizes: [...selectedSizes],
+            tags,
+            mrp: mrp ? parseFloat(mrp) : undefined,
+            min_quantity_per_set: minQty > 0 ? minQty : undefined,
+            max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
+            channels,
+            images: imageUrls,
+            variant_pricing: variantPricing.map((r) => ({
+              name: r.name,
+              b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
+              b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
+              available_qty: r.qty ? parseInt(r.qty, 10) : undefined,
+            })),
+          });
+          pendingProductIdRef.current = created.product_id;
+          if (created.images_failed) {
+            toast.warning(`${created.images_failed} image(s) failed to attach. You can re-upload them after editing.`);
+          }
+        }
         toast.success("Draft saved successfully.");
       }
+      submittedRef.current = true;
       try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
       router.push("/product-listing");
     } catch (err) {
@@ -468,7 +611,11 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (productId && !initialProduct) {
-      toast.error("Product is still loading, please wait a moment.");
+      toast.error(
+        isFetchingProduct
+          ? "Product is still loading, please wait a moment."
+          : "Failed to load product. Please refresh the page."
+      );
       return;
     }
     if (!productName.trim()) {
@@ -491,7 +638,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       toast.error("Gender is required");
       return;
     }
-    if (images.length === 0) {
+    if (images.length === 0 && !(isEditMode && existingImages.length > 0)) {
       toast.error("At least one image is required");
       return;
     }
@@ -511,23 +658,67 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       toast.error("MRP is required");
       return;
     }
-    if (!sellingPrice.trim()) {
-      toast.error("Selling Price is required");
-      return;
-    }
     const mrpNum = parseFloat(mrp);
-    const spNum = parseFloat(sellingPrice);
     if (isNaN(mrpNum) || mrpNum <= 0) {
       toast.error("Enter a valid MRP");
       return;
     }
-    if (isNaN(spNum) || spNum <= 0) {
-      toast.error("Enter a valid Selling Price");
-      return;
-    }
-    if (spNum > mrpNum) {
-      toast.error("Selling Price cannot exceed MRP");
-      return;
+    if (!isEditMode) {
+      for (const row of variantPricing) {
+        if (channels !== "b2b") {
+          const b2c = parseFloat(row.b2c_price);
+          if (!row.b2c_price.trim() || isNaN(b2c) || b2c <= 0) {
+            toast.error(`Enter a valid B2C price for "${row.name}"`);
+            return;
+          }
+          if (b2c > mrpNum) {
+            toast.error(`B2C price for "${row.name}" cannot exceed MRP`);
+            return;
+          }
+        }
+        if (channels !== "b2c") {
+          const b2b = parseFloat(row.b2b_price);
+          if (!row.b2b_price.trim() || isNaN(b2b) || b2b <= 0) {
+            toast.error(`Enter a valid B2B price for "${row.name}"`);
+            return;
+          }
+          if (b2b > mrpNum) {
+            toast.error(`B2B price for "${row.name}" cannot exceed MRP`);
+            return;
+          }
+        }
+      }
+    } else {
+      if (channels !== "b2b") {
+        if (!sellingPrice.trim()) {
+          toast.error("Selling Price is required");
+          return;
+        }
+        const spNum = parseFloat(sellingPrice);
+        if (isNaN(spNum) || spNum <= 0) {
+          toast.error("Enter a valid Selling Price");
+          return;
+        }
+        if (spNum > mrpNum) {
+          toast.error("Selling Price cannot exceed MRP");
+          return;
+        }
+      }
+      if (channels !== "b2c") {
+        if (!b2bSellingPrice.trim()) {
+          toast.error("B2B Selling Price is required");
+          return;
+        }
+        const b2bNum = parseFloat(b2bSellingPrice);
+        if (isNaN(b2bNum) || b2bNum <= 0) {
+          toast.error("Enter a valid B2B Selling Price");
+          return;
+        }
+        if (b2bNum > mrpNum) {
+          toast.error("B2B Selling Price cannot exceed MRP");
+          return;
+        }
+      }
     }
 
     setIsSubmitting(true);
@@ -548,33 +739,54 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
           colors: selectedColors.length > 0 ? selectedColors : undefined,
           sizes: selectedSizes.size > 0 ? [...selectedSizes] : undefined,
           mrp: mrp ? parseFloat(mrp) : undefined,
-          selling_price: sellingPrice ? parseFloat(sellingPrice) : undefined,
-          available_qty: availableQty ? parseInt(availableQty, 10) : undefined,
+          selling_price: channels !== "b2b" && sellingPrice ? parseFloat(sellingPrice) : undefined,
+          b2b_selling_price: channels !== "b2c" && b2bSellingPrice ? parseFloat(b2bSellingPrice) : undefined,
+          available_qty: parseInt(availableQty, 10) > 0 ? parseInt(availableQty, 10) : undefined,
+          min_quantity_per_set: minQty > 0 ? minQty : undefined,
+          max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
+          channels,
           tags: tags.length > 0 ? tags : undefined,
           images: imageUrls.length > 0 ? imageUrls : undefined,
         });
         toast.success("Product updated successfully.");
       } else {
-        await createProduct({
-          name: productName.trim(),
-          description: description.trim() || productName.trim(),
-          category_id: category,
-          inventory_type: inventoryType,
-          article_number: articleNumber.trim() || undefined,
-          gender: gender || undefined,
-          shipping_days: deliveryTimeline.trim() || undefined,
-          colors: selectedColors,
-          sizes: [...selectedSizes],
-          tags,
-          mrp: mrpNum,
-          selling_price: spNum,
-          available_qty: availableQty ? parseInt(availableQty, 10) : undefined,
-          min_quantity_per_set: minQty > 0 ? minQty : undefined,
-          max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
-          images: imageUrls,
-        });
+        // If a previous attempt created the product but publish failed,
+        // reuse the existing product_id instead of creating a duplicate.
+        let productIdToPublish = pendingProductIdRef.current;
+        if (!productIdToPublish) {
+          const created = await createProduct({
+            name: productName.trim(),
+            description: description.trim() || productName.trim(),
+            category_id: category,
+            inventory_type: inventoryType,
+            article_number: articleNumber.trim() || undefined,
+            gender: gender || undefined,
+            shipping_days: deliveryTimeline.trim() || undefined,
+            colors: selectedColors,
+            sizes: [...selectedSizes],
+            tags,
+            mrp: mrpNum,
+            min_quantity_per_set: minQty > 0 ? minQty : undefined,
+            max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
+            channels,
+            images: imageUrls,
+            variant_pricing: variantPricing.map((r) => ({
+              name: r.name,
+              b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
+              b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
+              available_qty: r.qty ? parseInt(r.qty, 10) : undefined,
+            })),
+          });
+          pendingProductIdRef.current = created.product_id;
+          productIdToPublish = created.product_id;
+          if (created.images_failed) {
+            toast.warning(`${created.images_failed} image(s) failed to attach. You can re-upload them after editing.`);
+          }
+        }
+        await publishProduct(productIdToPublish);
         toast.success("Product published successfully.");
       }
+      submittedRef.current = true;
       try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
       router.push("/product-listing");
     } catch (err) {
@@ -639,16 +851,36 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       )}
       <form id="add-product-form" onSubmit={handleSubmit} className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-2">
-          <ProductImageUploadCard
-            fileInputRef={fileInputRef}
-            onFilesAdded={addFiles}
-            uploadedImages={images}
-            onRemoveImage={removeImage}
-            onReorder={(newOrder) => setImages((prev) => newOrder.map(({ id }) => prev.find((img) => img.id === id)!).filter(Boolean))}
-            isDragging={isDragging}
-            setIsDragging={setIsDragging}
-            maxFileSizeLabel="2 MB."
-          />
+          <div className="flex flex-col gap-4">
+            {isEditMode && existingImages.length > 0 && (
+              <div className="rounded-lg border bg-white p-4 shadow-sm space-y-3">
+                <p className="text-sm font-medium">Saved Images ({existingImages.length})</p>
+                <ul className="flex flex-wrap gap-3">
+                  {existingImages.map((img, index) => (
+                    <li key={img.id} className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md border">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.url} alt="" className="h-full w-full object-cover" />
+                      {index === 0 && (
+                        <span className="absolute bottom-0 left-0 right-0 bg-black/60 py-0.5 text-center text-[9px] font-medium leading-none text-white">
+                          Primary
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <ProductImageUploadCard
+              fileInputRef={fileInputRef}
+              onFilesAdded={addFiles}
+              uploadedImages={images}
+              onRemoveImage={removeImage}
+              onReorder={(newOrder) => setImages((prev) => newOrder.map(({ id }) => prev.find((img) => img.id === id)!).filter(Boolean))}
+              isDragging={isDragging}
+              setIsDragging={setIsDragging}
+              maxFileSizeLabel="2 MB."
+            />
+          </div>
 
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
@@ -868,6 +1100,32 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
+              <div className="space-y-3 sm:col-span-2">
+                <span className="text-sm font-medium">List on <RequiredMark /></span>
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      { value: "both", label: "B2C & B2B" },
+                      { value: "b2c", label: "B2C only" },
+                      { value: "b2b", label: "B2B only" },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setChannels(opt.value)}
+                      className={cn(
+                        "rounded-md border px-4 py-2 text-sm font-medium transition-colors",
+                        channels === opt.value
+                          ? "border-[#122130] bg-[#122130] text-white"
+                          : "border-border bg-white text-foreground hover:bg-muted"
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="space-y-3">
                 <label htmlFor="mrp" className="text-sm font-medium">
                   MRP (₹) <RequiredMark />
@@ -881,37 +1139,135 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
                   className="bg-white"
                 />
               </div>
-              <div className="space-y-3">
-                <label htmlFor="selling-price" className="text-sm font-medium">
-                  Selling Price (₹) <RequiredMark />
-                </label>
-                <Input
-                  id="selling-price"
-                  inputMode="decimal"
-                  placeholder="Enter selling price."
-                  value={sellingPrice}
-                  onChange={(e) => setSellingPrice(e.target.value)}
-                  className="bg-white"
-                />
-                {mrp && sellingPrice && parseFloat(sellingPrice) > parseFloat(mrp) && (
-                  <p className="text-xs text-destructive" role="alert">
-                    Selling Price cannot exceed MRP.
+              {isEditMode ? (
+                <>
+                  {channels !== "b2b" && (
+                    <div className="space-y-3">
+                      <label htmlFor="selling-price" className="text-sm font-medium">
+                        B2C Selling Price (₹) <RequiredMark />
+                      </label>
+                      <Input
+                        id="selling-price"
+                        inputMode="decimal"
+                        placeholder="Enter selling price."
+                        value={sellingPrice}
+                        onChange={(e) => setSellingPrice(e.target.value)}
+                        className="bg-white"
+                      />
+                      {mrp && sellingPrice && parseFloat(sellingPrice) > parseFloat(mrp) && (
+                        <p className="text-xs text-destructive" role="alert">
+                          Selling Price cannot exceed MRP.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {channels !== "b2c" && (
+                    <div className="space-y-3">
+                      <label htmlFor="b2b-selling-price" className="text-sm font-medium">
+                        B2B Selling Price (₹) <RequiredMark />
+                      </label>
+                      <Input
+                        id="b2b-selling-price"
+                        inputMode="decimal"
+                        placeholder="Enter B2B selling price."
+                        value={b2bSellingPrice}
+                        onChange={(e) => setB2bSellingPrice(e.target.value)}
+                        className="bg-white"
+                      />
+                      {mrp && b2bSellingPrice && parseFloat(b2bSellingPrice) > parseFloat(mrp) && (
+                        <p className="text-xs text-destructive" role="alert">
+                          B2B Selling Price cannot exceed MRP.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <div className="space-y-3 sm:col-span-2">
+                    <label htmlFor="qty" className="text-sm font-medium">
+                      Quantity Per Variant
+                    </label>
+                    <Input
+                      id="qty"
+                      inputMode="numeric"
+                      placeholder="Enter available quantity."
+                      value={availableQty}
+                      onChange={(e) => setAvailableQty(e.target.value.replace(/\D/g, ""))}
+                      className="bg-white"
+                    />
+                  </div>
+                </>
+              ) : variantPricing.length > 0 ? (
+                <div className="space-y-3 sm:col-span-2">
+                  <p className="text-sm font-medium">
+                    Variant Pricing <RequiredMark />
                   </p>
-                )}
-              </div>
-              <div className="space-y-3 sm:col-span-2">
-                <label htmlFor="qty" className="text-sm font-medium">
-                  Available Quantity
-                </label>
-                <Input
-                  id="qty"
-                  inputMode="numeric"
-                  placeholder="Enter available quantity."
-                  value={availableQty}
-                  onChange={(e) => setAvailableQty(e.target.value.replace(/\D/g, ""))}
-                  className="bg-white"
-                />
-              </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-muted-foreground">
+                          <th className="pb-2 pr-3 font-medium">Variant</th>
+                          {channels !== "b2b" && <th className="pb-2 pr-3 font-medium">B2C Price (₹)</th>}
+                          {channels !== "b2c" && <th className="pb-2 pr-3 font-medium">B2B Price (₹)</th>}
+                          <th className="pb-2 font-medium">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {variantPricing.map((row, idx) => (
+                          <tr key={row.name} className="border-b last:border-0">
+                            <td className="py-2 pr-3 text-xs font-medium">{row.name}</td>
+                            {channels !== "b2b" && (
+                              <td className="py-2 pr-3">
+                                <Input
+                                  inputMode="decimal"
+                                  placeholder="0.00"
+                                  value={row.b2c_price}
+                                  onChange={(e) =>
+                                    setVariantPricing((prev) =>
+                                      prev.map((r, i) => i === idx ? { ...r, b2c_price: e.target.value } : r)
+                                    )
+                                  }
+                                  className="h-8 w-24 bg-white"
+                                />
+                              </td>
+                            )}
+                            {channels !== "b2c" && (
+                              <td className="py-2 pr-3">
+                                <Input
+                                  inputMode="decimal"
+                                  placeholder="0.00"
+                                  value={row.b2b_price}
+                                  onChange={(e) =>
+                                    setVariantPricing((prev) =>
+                                      prev.map((r, i) => i === idx ? { ...r, b2b_price: e.target.value } : r)
+                                    )
+                                  }
+                                  className="h-8 w-24 bg-white"
+                                />
+                              </td>
+                            )}
+                            <td className="py-2">
+                              <Input
+                                inputMode="numeric"
+                                placeholder="0"
+                                value={row.qty}
+                                onChange={(e) =>
+                                  setVariantPricing((prev) =>
+                                    prev.map((r, i) => i === idx ? { ...r, qty: e.target.value.replace(/\D/g, "") } : r)
+                                  )
+                                }
+                                className="h-8 w-20 bg-white"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  Select colors and sizes above to configure per-variant pricing.
+                </p>
+              )}
               <div className="flex flex-col gap-2">
                 <QuantityStepper label="Minimum Quantity" value={minQty} onChange={setMinQty} />
                 <QuantityStepper label="Maximum Quantity" value={maxQty} onChange={setMaxQty} />
@@ -982,6 +1338,89 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
             </CardContent>
           </Card>
         </div>
+
+        {isEditMode && productVariants.length > 0 && (
+          <Card className="border bg-white shadow-sm">
+            <CardHeader className="border-b pb-4">
+              <CardTitle className="text-base font-normal">Variant Pricing &amp; Stock</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-5">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 pr-4 font-medium">Variant</th>
+                      <th className="pb-2 pr-4 font-medium">B2C Price (₹)</th>
+                      <th className="pb-2 pr-4 font-medium">B2B Price (₹)</th>
+                      <th className="pb-2 pr-4 font-medium">Stock</th>
+                      <th className="pb-2 font-medium" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productVariants.map((variant) => {
+                      const edit = variantEdits[variant.id] ?? { b2c_price: "", b2b_price: "", quantity: "" };
+                      return (
+                        <tr key={variant.id} className="border-b last:border-0">
+                          <td className="py-2 pr-4 font-medium">{variant.name ?? variant.sku}</td>
+                          <td className="py-2 pr-4">
+                            <Input
+                              inputMode="decimal"
+                              value={edit.b2c_price}
+                              onChange={(e) =>
+                                setVariantEdits((prev) => ({
+                                  ...prev,
+                                  [variant.id]: { ...edit, b2c_price: e.target.value },
+                                }))
+                              }
+                              className="h-8 w-24 bg-white"
+                            />
+                          </td>
+                          <td className="py-2 pr-4">
+                            <Input
+                              inputMode="decimal"
+                              value={edit.b2b_price}
+                              onChange={(e) =>
+                                setVariantEdits((prev) => ({
+                                  ...prev,
+                                  [variant.id]: { ...edit, b2b_price: e.target.value },
+                                }))
+                              }
+                              className="h-8 w-24 bg-white"
+                            />
+                          </td>
+                          <td className="py-2 pr-4">
+                            <Input
+                              inputMode="numeric"
+                              value={edit.quantity}
+                              onChange={(e) =>
+                                setVariantEdits((prev) => ({
+                                  ...prev,
+                                  [variant.id]: { ...edit, quantity: e.target.value.replace(/\D/g, "") },
+                                }))
+                              }
+                              className="h-8 w-20 bg-white"
+                            />
+                          </td>
+                          <td className="py-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 bg-[#122130] text-xs hover:bg-[#0d1a28]"
+                              disabled={savingVariantId === variant.id}
+                              onClick={() => handleVariantSave(variant.id)}
+                            >
+                              {savingVariantId === variant.id ? "Saving…" : "Save"}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="border bg-white shadow-sm">
           <CardHeader className="border-b pb-4">

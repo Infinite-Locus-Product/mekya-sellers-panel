@@ -8,5 +8,18 @@ export default async function AddProductPage({
   const resolvedSearchParams = await searchParams;
   const productIdParam = resolvedSearchParams?.productId;
   const productId = Array.isArray(productIdParam) ? productIdParam[0] : productIdParam;
-  return <AddProductClient categoryOptions={[]} initialProduct={null} productId={productId} />;
+  const defaultChannelParam = resolvedSearchParams?.defaultChannel;
+  const rawChannel = Array.isArray(defaultChannelParam) ? defaultChannelParam[0] : defaultChannelParam;
+  const validChannels = ["b2c", "b2b", "both"] as const;
+  const defaultChannel = validChannels.includes(rawChannel as (typeof validChannels)[number])
+    ? (rawChannel as (typeof validChannels)[number])
+    : undefined;
+  return (
+    <AddProductClient
+      categoryOptions={[]}
+      initialProduct={null}
+      productId={productId}
+      defaultChannel={defaultChannel}
+    />
+  );
 }

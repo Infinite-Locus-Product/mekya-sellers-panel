@@ -48,6 +48,9 @@ interface DataTableProps<T> {
   bodyRowClassName?: string
   striped?: boolean
   pagination?: DataTablePaginationProps
+  onServerSortColumn?: (columnKey: string | keyof T) => void
+  serverSortKey?: string | keyof T | null
+  serverSortDirection?: "asc" | "desc" | null
 }
 
 function isStandaloneCheckboxColumn<T>(col: TableColumn<T>): boolean {
@@ -66,6 +69,9 @@ export function DataTable<T>({
   bodyRowClassName,
   striped = false,
   pagination,
+  onServerSortColumn,
+  serverSortKey = null,
+  serverSortDirection = null,
 }: DataTableProps<T>) {
   const [sortConfig, setSortConfig] = useState<{
     key: string | keyof T
@@ -89,6 +95,10 @@ export function DataTable<T>({
   }
 
   const handleSort = (key: string | keyof T) => {
+    if (onServerSortColumn) {
+      onServerSortColumn(key)
+      return
+    }
     let direction: "asc" | "desc" = "asc"
     if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
       direction = "desc"
@@ -97,7 +107,7 @@ export function DataTable<T>({
   }
 
   const sortedData = [...data]
-  if (sortConfig) {
+  if (!onServerSortColumn && sortConfig) {
     const key = sortConfig.key as keyof T
     sortedData.sort((a, b) => {
       const aValue: T[keyof T] = a[key]
@@ -130,8 +140,12 @@ export function DataTable<T>({
     data.some((row) => selectedRows.has(row))
 
   const renderSortableHeaderButton = (col: TableColumn<T>) => {
-    const isSorted = sortConfig?.key === col.key
-    const sortDirection = isSorted ? sortConfig.direction : null
+    const isSorted = onServerSortColumn
+      ? serverSortKey === col.key
+      : sortConfig?.key === col.key
+    const sortDirection = onServerSortColumn
+      ? (isSorted ? serverSortDirection : null)
+      : (isSorted ? (sortConfig?.direction ?? null) : null)
     const sortState = sortDirection === "asc" ? "asc" : sortDirection === "desc" ? "desc" : "none"
 
     return (

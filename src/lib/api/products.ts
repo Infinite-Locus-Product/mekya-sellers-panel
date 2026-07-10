@@ -22,6 +22,7 @@ export interface ProductListItem {
   inventory_type: string;
   price: string;
   quantity: number;
+  channels?: "b2c" | "b2b" | "both";
 }
 
 export interface ProductListResponse {
@@ -31,6 +32,15 @@ export interface ProductListResponse {
   total: number;
 }
 
+export interface VariantItem {
+  id: string;
+  name: string | null;
+  sku: string | null;
+  b2c_price: number | null;
+  b2b_price: number | null;
+  quantity: number | null;
+}
+
 export interface ProductDetail {
   id: string;
   name: string;
@@ -38,13 +48,7 @@ export interface ProductDetail {
   category: { id: string; name: string; slug: string } | null;
   thumbnail_url: string | null;
   images: Array<{ id: string; url: string; alt: string | null }>;
-  variants: Array<{
-    id: string;
-    name?: string | null;
-    sku?: string | null;
-    price?: number | null;
-    quantity?: number | null;
-  }>;
+  variants: VariantItem[];
   status: "published" | "draft";
   metadata: Record<string, string>;
 }
@@ -62,12 +66,20 @@ export interface CreateProductPayload {
   tags: string[];
   mrp?: number;
   selling_price?: number;
+  b2b_selling_price?: number;
   available_qty?: number;
   moq_sets?: number;
   moq_units?: number;
   min_quantity_per_set?: number;
   max_quantity_per_set?: number;
+  channels?: "b2c" | "b2b" | "both";
   images: string[];
+  variant_pricing?: Array<{
+    name: string;
+    b2c_price?: number;
+    b2b_price?: number;
+    available_qty?: number;
+  }>;
 }
 
 export interface UpdateProductPayload {
@@ -82,7 +94,11 @@ export interface UpdateProductPayload {
   sizes?: string[];
   mrp?: number;
   selling_price?: number;
+  b2b_selling_price?: number;
   available_qty?: number;
+  min_quantity_per_set?: number;
+  max_quantity_per_set?: number;
+  channels?: "b2c" | "b2b" | "both";
   tags?: string[];
   images?: string[];
 }
@@ -108,6 +124,7 @@ export function toProductRow(item: ProductListItem): ProductRow {
     price: item.price,
     quantity: item.quantity,
     status: item.status === "published" ? "active" : "inactive",
+    channels: item.channels,
   };
 }
 
@@ -127,11 +144,25 @@ export async function listProducts(params?: {
   status?: string;
   cursor?: string;
   limit?: number;
+  channel?: "b2c" | "b2b" | "both";
+  search?: string;
+  sort_by?: string;
+  sort_order?: string;
+  category_ids?: string[];
 }): Promise<ProductListResponse> {
   const qs = new URLSearchParams();
   if (params?.status) qs.set("status", params.status);
   if (params?.cursor) qs.set("cursor", params.cursor);
   if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.channel) qs.set("channel", params.channel);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.sort_by) qs.set("sort_by", params.sort_by);
+  if (params?.sort_order) qs.set("sort_order", params.sort_order);
+  if (params?.category_ids?.length) {
+    for (const id of params.category_ids) {
+      qs.append("category_id", id);
+    }
+  }
   const query = qs.toString() ? `?${qs.toString()}` : "";
   const res = await authService.api.get<ProductListResponse>(`/seller/products${query}`);
   return res.data;
@@ -144,11 +175,13 @@ export async function getProduct(productId: string): Promise<ProductDetail> {
 
 export async function createProduct(
   payload: CreateProductPayload,
-): Promise<{ product_id: string; status: string; name: string }> {
-  const res = await authService.api.post<{ product_id: string; status: string; name: string }>(
-    "/seller/products",
-    payload,
-  );
+): Promise<{ product_id: string; status: string; name: string; images_failed?: number }> {
+  const res = await authService.api.post<{
+    product_id: string;
+    status: string;
+    name: string;
+    images_failed?: number;
+  }>("/seller/products", payload);
   return res.data;
 }
 
@@ -222,4 +255,23 @@ export async function uploadImagesToStorage(files: File[]): Promise<string[]> {
       return image_url;
     })
   );
+}
+
+export async function getProductVariants(productId: string): Promise<VariantItem[]> {
+  const res = await authService.api.get<{ variants: VariantItem[] }>(
+    `/seller/products/${productId}/variants`,
+  );
+  return res.data.variants;
+}
+
+export async function updateProductVariant(
+  productId: string,
+  variantId: string,
+  payload: { b2c_price?: number; b2b_price?: number; available_qty?: number },
+): Promise<{ variant_id: string; updated: boolean }> {
+  const res = await authService.api.patch<{ variant_id: string; updated: boolean }>(
+    `/seller/products/${productId}/variants/${variantId}`,
+    payload,
+  );
+  return res.data;
 }

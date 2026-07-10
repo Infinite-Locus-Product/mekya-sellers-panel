@@ -4,3 +4,5 @@
  */
 
 export { usePagination } from "./usePagination";
+export { useServerTableSort } from "./useServerTableSort";
+export type { SortColumnBinding, ServerSortState } from "./useServerTableSort";
