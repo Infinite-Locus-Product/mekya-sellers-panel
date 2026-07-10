@@ -180,12 +180,17 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState<ProductDraftState | null>(null);
   const [existingImages, setExistingImages] = useState<Array<{ id: string; url: string }>>([]);
+  const existingImagesRef = useRef<Array<{ id: string; url: string }>>([]);
 
   const draftKey = `mekya_seller_draft_${productId ?? "new"}`;
 
   useEffect(() => {
     imagesRef.current = images;
   }, [images]);
+
+  useEffect(() => {
+    existingImagesRef.current = existingImages;
+  }, [existingImages]);
 
   useEffect(() => {
     return () => {
@@ -382,7 +387,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const list = Array.from(files);
-    const currentCount = imagesRef.current.length;
+    const currentCount = imagesRef.current.length + existingImagesRef.current.length;
     const remaining = MAX_IMAGES - currentCount;
     if (remaining <= 0) {
       toast.error("Maximum 5 images allowed.");
