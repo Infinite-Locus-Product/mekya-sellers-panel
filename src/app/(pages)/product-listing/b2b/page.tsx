@@ -1,7 +1,5 @@
-import { getB2BProducts } from "@/lib/data";
 import { ProductListingClient } from "../ProductListingClient";
 
-export default async function ProductListingB2BPage() {
-  const products = await getB2BProducts();
-  return <ProductListingClient initialProducts={products} listingVariant="b2b" />;
+export default function ProductListingB2BPage() {
+  return <ProductListingClient listingVariant="b2b" />;
 }

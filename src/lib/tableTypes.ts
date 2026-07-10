@@ -135,4 +135,5 @@ export interface ProductRow {
   price: string;
   quantity: number;
   status: ProductListingActiveStatus;
+  channels?: "b2c" | "b2b" | "both";
 }
