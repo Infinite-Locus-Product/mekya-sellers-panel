@@ -1,7 +1,7 @@
 import { getPublicApiUrl } from "@/lib/env"
 import { ApiClient, ApiError } from "./apiClient"
 import { secureStorage } from "./secureStorage"
-import type { AdminUser, AuthTokens, LoginCredentials, RegisterPayload } from "./types"
+import type { AdminUser, AuthTokens, LoginCredentials } from "./types"
 
 const STORAGE_KEY = "auth_tokens"
 const USER_PROFILE_KEY = "auth_user_profile"
@@ -15,6 +15,17 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   } catch {
     return null
   }
+}
+
+/** Real expiry from the JWT's `exp` claim (seconds since epoch), not a guessed constant —
+ * the backend's actual access-token TTL can change independently of the frontend. */
+function expiresAtFromToken(token: string, fallbackMinutes = 14): number {
+  const claims = decodeJwtPayload(token)
+  const exp = claims?.exp
+  if (typeof exp === "number" && Number.isFinite(exp)) {
+    return exp * 1000
+  }
+  return Date.now() + fallbackMinutes * 60 * 1000
 }
 
 export class AuthService {
@@ -105,8 +116,7 @@ export class AuthService {
     const tokens: AuthTokens = {
       accessToken: access_token,
       refreshToken: refresh_token,
-      // Access token expires in 15 min — refresh slightly before that
-      expiresAt: Date.now() + 14 * 60 * 1000,
+      expiresAt: expiresAtFromToken(access_token),
     }
     const user: AdminUser = {
       id: String(claims?.sub ?? credentials.email),
@@ -130,16 +140,8 @@ export class AuthService {
     this.saveTokens({
       ...this.tokens,
       accessToken: response.data.access_token,
-      expiresAt: Date.now() + 14 * 60 * 1000,
+      expiresAt: expiresAtFromToken(response.data.access_token),
     })
-  }
-
-  async register(
-    payload: RegisterPayload
-  ): Promise<{ user: AdminUser; tokens: AuthTokens }> {
-    // No register API specified — seller accounts are created by admin
-    void payload
-    throw new Error("New accounts are created by the Mekya admin team. Please contact support.")
   }
 
   async logout(): Promise<void> {
@@ -178,46 +180,28 @@ export class AuthService {
     throw new Error("Not authenticated")
   }
 
-  /** Step 1 — request reset email / code (same contract as b2b AuthService). */
+  /** Request a password-reset email. Saleor emails a link to `/reset-password?email=...&token=...`. */
   async requestPasswordReset(email: string): Promise<void> {
-    const response = await this.api.post<unknown>("/auth/reset-password", { email })
+    const redirectUrl = typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined
+    const response = await this.api.post<unknown>("/B2B/auth/forgot-password", {
+      email,
+      ...(redirectUrl ? { redirect_url: redirectUrl } : {}),
+    })
     if (!response.success) {
       throw new Error("Password reset request failed")
     }
   }
 
-  /** Step 2 — verify OTP / code from email (extend backend to match). */
-  async verifyPasswordResetCode(email: string, code: string): Promise<void> {
-    const response = await this.api.post<unknown>("/auth/reset-password/verify", {
-      email,
-      code,
-    })
-    if (!response.success) {
-      throw new Error("Invalid or expired code")
-    }
-  }
-
-  /** Step 3 — set new password after OTP (extend backend to match). */
-  async completePasswordResetWithCode(
+  /** Complete the reset using the `email` + `token` query params from the emailed link. */
+  async completePasswordResetWithToken(
     email: string,
-    code: string,
+    token: string,
     newPassword: string
   ): Promise<void> {
-    const response = await this.api.post<unknown>("/auth/reset-password/complete", {
+    const response = await this.api.post<unknown>("/B2B/auth/reset-password", {
       email,
-      code,
-      newPassword,
-    })
-    if (!response.success) {
-      throw new Error("Could not reset password")
-    }
-  }
-
-  /** Deep-link from email with single-use token (alternative to OTP flow). */
-  async completePasswordResetWithToken(token: string, newPassword: string): Promise<void> {
-    const response = await this.api.post<unknown>("/auth/reset-password/confirm", {
       token,
-      newPassword,
+      new_password: newPassword,
     })
     if (!response.success) {
       throw new Error("Could not reset password")

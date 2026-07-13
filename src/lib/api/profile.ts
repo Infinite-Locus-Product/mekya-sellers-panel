@@ -36,7 +36,6 @@ export async function updateUserProfile(payload: {
   phone?: string | null
   company_name?: string | null
   company_address?: string | null
-  gstin?: string | null
   profile_image_url?: string | null
 }): Promise<UserProfileApiResponse> {
   const res = await authService.api.patch<UserProfileApiResponse>("/B2B/user/profile", payload)

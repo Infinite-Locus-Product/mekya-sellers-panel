@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react"
 import { authService } from "@/lib/auth/authService"
-import type { AdminUser, LoginCredentials, RegisterPayload } from "@/lib/auth/types"
+import type { AdminUser, LoginCredentials } from "@/lib/auth/types"
 
 type AuthStatus = "idle" | "loading" | "ready"
 
@@ -19,7 +19,6 @@ interface AuthContextValue {
   status: AuthStatus
   isAuthenticated: boolean
   login: (credentials: LoginCredentials) => Promise<void>
-  register: (payload: RegisterPayload) => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -65,11 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u)
   }, [])
 
-  const register = useCallback(async (payload: RegisterPayload) => {
-    const { user: u } = await authService.register(payload)
-    setUser(u)
-  }, [])
-
   const logout = useCallback(async () => {
     await authService.logout()
     setUser(null)
@@ -86,11 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       isAuthenticated: Boolean(user),
       login,
-      register,
       logout,
       refreshUser,
     }),
-    [user, status, login, register, logout, refreshUser]
+    [user, status, login, logout, refreshUser]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
