@@ -15,7 +15,8 @@ import type {
   CmsViewsOverTimePoint,
 } from "@/lib/data/cms";
 import { getReelAnalyticsSummary, type AnalyticsDateRange } from "@/lib/api/reels";
-import { formatNumber } from "@/lib/utils";
+import { LoadingSpinner } from "@/components/shared";
+import { cn, formatNumber } from "@/lib/utils";
 import { EngagementRateOverview } from "./components/EngagementRateOverview";
 
 export interface CmsAnalyticsData {
@@ -110,13 +111,25 @@ export function CmsAnalyticsClient({ initialData }: Readonly<CmsAnalyticsClientP
               className="w-[min(100%,11rem)] min-[1920px]:w-[200px]"
             />
           </div>
+          {isLoading && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <LoadingSpinner size="sm" />
+              Updating…
+            </span>
+          )}
         </div>
       </div>
 
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         All-time totals — not affected by the date range below
       </p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5 min-[1920px]:gap-4">
+      {/* Dimmed while a refetch is in flight so stale numbers read as stale, not final. */}
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5 min-[1920px]:gap-4 transition-opacity duration-200",
+          isLoading && "opacity-50"
+        )}
+      >
         <KPICard
           title="Total Views"
           value={formatNumber(kpis.totalViews)}
@@ -154,7 +167,12 @@ export function CmsAnalyticsClient({ initialData }: Readonly<CmsAnalyticsClientP
         />
       </div>
 
-      <div className="grid min-h-0 grid-cols-1 items-stretch gap-0 lg:grid-cols-3 bg-[#F9FAF9]">
+      <div
+        className={cn(
+          "grid min-h-0 grid-cols-1 items-stretch gap-0 lg:grid-cols-3 bg-[#F9FAF9] transition-opacity duration-200",
+          isLoading && "opacity-50"
+        )}
+      >
         <div className="flex min-h-0 flex-col lg:h-full lg:min-h-0">
           <Card className="m-4 flex min-h-0 flex-1 flex-col overflow-hidden border-0 bg-white shadow-none lg:min-h-0">
             <CardContent className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0">
@@ -215,7 +233,12 @@ export function CmsAnalyticsClient({ initialData }: Readonly<CmsAnalyticsClientP
         </div>
       </div>
 
-      <Card className="border-0 bg-[#F9FAF9] shadow-none">
+      <Card
+        className={cn(
+          "border-0 bg-[#F9FAF9] shadow-none transition-opacity duration-200",
+          isLoading && "opacity-50"
+        )}
+      >
         <CardContent className="flex flex-col gap-4 p-4 min-[1920px]:p-6">
           <div className="flex items-center gap-2 border-b border-border pb-4">
             <Trophy className="h-4 w-4 shrink-0 text-[#004C5E]" aria-hidden />
