@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/auth-context"
@@ -26,11 +26,6 @@ import {
   Upload,
   LogOut,
   X,
-  MapPin,
-  AlertTriangle,
-  Info,
-  Check,
-  ChevronDown,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -48,10 +43,6 @@ import { TabList } from "@/components/shared/TabList"
 import type { ProfilePageData } from "@/lib/data"
 
 type PersonalFormState = ProfilePageData["personal"]
-type LocationRestrictionState = {
-  isEnabled: boolean
-  restrictedStates: string[]
-}
 
 const MAX_IMAGE_SIZE_MB = 5
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/jpg"])
@@ -64,38 +55,7 @@ const PASSWORD_REQUIREMENTS = [
   { id: "special", label: "special character (!@#$%^&*)", test: (s: string) => /[!@#$%^&*]/.test(s) },
 ] as const
 
-type TabId = "profile" | "security" | "locationRestriction"
-
-const INDIAN_STATES = [
-  "Andhra Pradesh",
-  "Arunachal Pradesh",
-  "Assam",
-  "Bihar",
-  "Chhattisgarh",
-  "Goa",
-  "Gujarat",
-  "Haryana",
-  "Himachal Pradesh",
-  "Jharkhand",
-  "Karnataka",
-  "Kerala",
-  "Madhya Pradesh",
-  "Maharashtra",
-  "Manipur",
-  "Meghalaya",
-  "Mizoram",
-  "Nagaland",
-  "Odisha",
-  "Punjab",
-  "Rajasthan",
-  "Sikkim",
-  "Tamil Nadu",
-  "Telangana",
-  "Tripura",
-  "Uttar Pradesh",
-  "Uttarakhand",
-  "West Bengal",
-] as const
+type TabId = "profile" | "security"
 
 export interface ProfileClientProps {
   initialData: ProfilePageData
@@ -108,7 +68,6 @@ function isPersonalDirty(form: PersonalFormState, saved: PersonalFormState): boo
     form.phoneCode !== saved.phoneCode ||
     form.phone !== saved.phone ||
     form.company !== saved.company ||
-    form.gstin !== saved.gstin ||
     form.address !== saved.address
   )
 }
@@ -140,12 +99,6 @@ function mapApiToState(data: UserProfileApiResponse): {
   }
 }
 
-function isLocationRestrictionDirty(current: LocationRestrictionState, saved: LocationRestrictionState): boolean {
-  if (current.isEnabled !== saved.isEnabled) return true
-  if (current.restrictedStates.length !== saved.restrictedStates.length) return true
-  return current.restrictedStates.some((state, index) => state !== saved.restrictedStates[index])
-}
-
 export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
   const router = useRouter()
   const { logout } = useAuth()
@@ -164,7 +117,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
   const [successModalOpen, setSuccessModalOpen] = useState(false)
   const [logoutModalOpen, setLogoutModalOpen] = useState(false)
   const [discardModalOpen, setDiscardModalOpen] = useState(false)
-  const [highRestrictionWarningOpen, setHighRestrictionWarningOpen] = useState(false)
   const [pendingTab, setPendingTab] = useState<TabId | null>(null)
 
   const personalIsDirty = useMemo(() => isPersonalDirty(personalForm, savedPersonal), [personalForm, savedPersonal])
@@ -178,22 +130,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isPasswordFormEnabled, setIsPasswordFormEnabled] = useState(false)
-  const [isLocationRestrictionEnabled, setIsLocationRestrictionEnabled] = useState(false)
-  const [restrictedStates, setRestrictedStates] = useState<string[]>([])
-  const [savedLocationRestrictions, setSavedLocationRestrictions] = useState<LocationRestrictionState>({
-    isEnabled: false,
-    restrictedStates: [],
-  })
-  const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false)
-  const stateDropdownRef = useRef<HTMLDivElement | null>(null)
-  const locationRestrictionIsDirty = useMemo(
-    () =>
-      isLocationRestrictionDirty(
-        { isEnabled: isLocationRestrictionEnabled, restrictedStates },
-        savedLocationRestrictions
-      ),
-    [isLocationRestrictionEnabled, restrictedStates, savedLocationRestrictions]
-  )
 
   const resetPasswordSection = useCallback(() => {
     setIsPasswordFormEnabled(false)
@@ -291,17 +227,12 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
         setDiscardModalOpen(true)
         return
       }
-      if (activeTab === "locationRestriction" && locationRestrictionIsDirty) {
-        setPendingTab(next)
-        setDiscardModalOpen(true)
-        return
-      }
       if (activeTab === "security" && next !== "security") {
         resetPasswordSection()
       }
       setActiveTab(next)
     },
-    [activeTab, isPersonalEditing, locationRestrictionIsDirty, personalIsDirty, resetPasswordSection]
+    [activeTab, isPersonalEditing, personalIsDirty, resetPasswordSection]
   )
 
   const handleStartEditPersonal = useCallback(() => {
@@ -317,7 +248,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
         phone: personalForm.phone || null,
         company_name: personalForm.company || null,
         company_address: personalForm.address || null,
-        gstin: personalForm.gstin || null,
       })
       const { profileData: pd, personalInfo: pi } = mapApiToState(updated)
       setProfileData(pd)
@@ -352,17 +282,12 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
       setPersonalForm({ ...savedPersonal })
       setIsPersonalEditing(false)
     }
-    if (activeTab === "locationRestriction") {
-      setIsLocationRestrictionEnabled(savedLocationRestrictions.isEnabled)
-      setRestrictedStates([...savedLocationRestrictions.restrictedStates])
-      setIsStateDropdownOpen(false)
-    }
     setDiscardModalOpen(false)
     if (pendingTab !== null) {
       setActiveTab(pendingTab)
       setPendingTab(null)
     }
-  }, [activeTab, pendingTab, savedLocationRestrictions, savedPersonal])
+  }, [activeTab, pendingTab, savedPersonal])
 
   const cancelDiscardPersonal = useCallback(() => {
     setDiscardModalOpen(false)
@@ -387,81 +312,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     }
   }, [passwordFormLocked, isPasswordValid, currentPassword, newPassword, resetPasswordSection])
 
-  const selectedStatesSummary = useMemo(() => {
-    if (restrictedStates.length === 0) return "Select states to restrict visibility"
-    if (restrictedStates.length === 1) return restrictedStates[0]
-    return `${restrictedStates.length} states selected`
-  }, [restrictedStates])
-  const isHighRestrictionSelection = useMemo(
-    () => isLocationRestrictionEnabled && restrictedStates.length / INDIAN_STATES.length > 0.8,
-    [isLocationRestrictionEnabled, restrictedStates]
-  )
-  const handleAddRestrictedState = useCallback(
-    (state: string) => {
-      if (!state || restrictedStates.includes(state)) return
-      if (restrictedStates.length >= INDIAN_STATES.length - 1) {
-        toast.error("At least one state must remain unrestricted.")
-        return
-      }
-      setRestrictedStates((prev) => [...prev, state])
-    },
-    [restrictedStates]
-  )
-
-  const handleRemoveRestrictedState = useCallback((state: string) => {
-    setRestrictedStates((prev) => prev.filter((item) => item !== state))
-  }, [])
-
-  const handleToggleRestrictedState = useCallback(
-    (state: string) => {
-      if (restrictedStates.includes(state)) {
-        handleRemoveRestrictedState(state)
-        return
-      }
-      handleAddRestrictedState(state)
-    },
-    [handleAddRestrictedState, handleRemoveRestrictedState, restrictedStates]
-  )
-
-  const persistLocationRestrictions = useCallback(() => {
-    setSavedLocationRestrictions({
-      isEnabled: isLocationRestrictionEnabled,
-      restrictedStates: [...restrictedStates],
-    })
-    toast.success("Location restrictions saved successfully.", { icon: "🎉" })
-  }, [isLocationRestrictionEnabled, restrictedStates])
-
-  const handleSaveLocationRestrictions = useCallback(() => {
-    if (isHighRestrictionSelection) {
-      setHighRestrictionWarningOpen(true)
-      return
-    }
-    persistLocationRestrictions()
-  }, [isHighRestrictionSelection, persistLocationRestrictions])
-
-  const handleProceedWithHighRestrictionSave = useCallback(() => {
-    setHighRestrictionWarningOpen(false)
-    persistLocationRestrictions()
-  }, [persistLocationRestrictions])
-
-  const handleEditHighRestrictionSelection = useCallback(() => {
-    setHighRestrictionWarningOpen(false)
-  }, [])
-
-  useEffect(() => {
-    const handleDocumentClick = (event: MouseEvent) => {
-      if (!stateDropdownRef.current) return
-      if (!stateDropdownRef.current.contains(event.target as Node)) {
-        setIsStateDropdownOpen(false)
-      }
-    }
-
-    document.addEventListener("mousedown", handleDocumentClick)
-    return () => {
-      document.removeEventListener("mousedown", handleDocumentClick)
-    }
-  }, [])
-
   useEffect(() => {
     let cancelled = false
     fetchUserProfile()
@@ -483,7 +333,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
 
   const breadcrumbSuffix = useMemo(() => {
     if (activeTab === "security") return "Security"
-    if (activeTab === "locationRestriction") return "Location Restriction"
     return "Profile"
   }, [activeTab])
   const isSellerProfile = useMemo(() => /seller/i.test(profileData.role), [profileData.role])
@@ -520,7 +369,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
             tabs={[
               { id: "profile", label: "Profile" },
               { id: "security", label: "Security" },
-              { id: "locationRestriction", label: "Location Restriction" },
             ]}
             value={activeTab}
             onValueChange={(id) => handleTabChange(id as TabId)}
@@ -774,11 +622,10 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                     </label>
                     <Input
                       id="gstin"
-                      value={personalForm.gstin}
-                      onChange={(e) => updatePersonalField("gstin", e.target.value.toUpperCase())}
-                      placeholder="e.g. 22AAAAA0000A1Z5"
-                      maxLength={15}
-                      disabled={!isPersonalEditing}
+                      value={personalForm.gstin || "Not verified yet"}
+                      readOnly
+                      disabled
+                      title="GSTIN is verified during onboarding and can't be edited here. Contact admin to update it."
                     />
                   </div>
                   <div className="flex flex-col gap-2 md:col-span-2">
@@ -971,166 +818,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
           </Card>
         )}
 
-        {activeTab === "locationRestriction" && (
-          <Card className="w-full rounded-lg bg-[#F9FAF9]">
-            <CardContent className="p-0">
-              <div className="flex flex-col gap-2 border-b border-[#E5E7EB] px-6 py-5">
-                <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground sm:text-xl">
-                  <MapPin className="h-4 w-4 shrink-0" aria-hidden />
-                  Location Restrictions
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Configure geographic restrictions for your product and content visibility
-                </p>
-              </div>
-
-              <div className="space-y-4 px-6 py-5">
-                <div className="flex items-center justify-between rounded-md border border-[#E5E7EB] px-4 py-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground">Restrict product and content visibility by region</p>
-                      <div className="group relative inline-flex">
-                        <button
-                          type="button"
-                          aria-label="Buyers in selected states will not see your products or content."
-                          className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full text-muted-foreground outline-none"
-                        >
-                          <Info className="h-3.5 w-3.5" aria-hidden />
-                        </button>
-                        <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 hidden w-max max-w-[360px] -translate-x-1/2 rounded-md bg-black px-3 py-2 text-md text-white shadow-sm group-hover:block group-focus-within:block">
-                          <span className="block leading-snug whitespace-pre-wrap">Buyers in selected states will not see your products or content.</span>
-                          <span
-                            aria-hidden
-                            className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-black"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      When enabled, buyers in selected states will not see your products or content
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={isLocationRestrictionEnabled}
-                    onClick={() =>
-                      setIsLocationRestrictionEnabled((prev) => {
-                        const next = !prev
-                        if (!next) {
-                          setIsStateDropdownOpen(false)
-                        }
-                        return next
-                      })
-                    }
-                    className={cn(
-                      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                      isLocationRestrictionEnabled ? "bg-[#121F2C]" : "bg-gray-300"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "pointer-events-none block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
-                        isLocationRestrictionEnabled ? "translate-x-5" : "translate-x-0"
-                      )}
-                    />
-                  </button>
-                </div>
-
-                <div
-                  className={cn("space-y-3", isLocationRestrictionEnabled ? "" : "pointer-events-none opacity-60")}
-                >
-                  <div className="space-y-2">
-                    <label htmlFor="restricted-state" className="text-xs font-medium text-foreground">
-                      Select states to restrict visibility
-                    </label>
-                    <div ref={stateDropdownRef} className="relative">
-                      <button
-                        id="restricted-state"
-                        type="button"
-                        disabled={!isLocationRestrictionEnabled}
-                        aria-haspopup="listbox"
-                        aria-expanded={isStateDropdownOpen}
-                        onClick={() => setIsStateDropdownOpen((prev) => !prev)}
-                        className="flex h-10 w-full items-center justify-between rounded-md border border-[#E5E7EB] bg-[#EFEFEF] px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span className={cn("truncate", restrictedStates.length === 0 ? "text-muted-foreground" : "")}>
-                          {selectedStatesSummary}
-                        </span>
-                        <ChevronDown
-                          className={cn(
-                            "h-4 w-4 text-muted-foreground transition-transform",
-                            isStateDropdownOpen ? "rotate-180" : ""
-                          )}
-                          aria-hidden
-                        />
-                      </button>
-
-                      {isStateDropdownOpen && (
-                        <div className="absolute left-0 top-full z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-[#E5E7EB] bg-white py-1 shadow-md">
-                          {INDIAN_STATES.map((state) => {
-                            const isSelected = restrictedStates.includes(state)
-                            return (
-                              <button
-                                key={state}
-                                type="button"
-                                aria-pressed={isSelected}
-                                onClick={() => handleToggleRestrictedState(state)}
-                                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-foreground hover:bg-[#F3F4F6]"
-                              >
-                                <span>{state}</span>
-                                <Check
-                                  className={cn("h-4 w-4", isSelected ? "text-foreground" : "invisible")}
-                                  aria-hidden
-                                />
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-foreground">Restricted States ({restrictedStates.length})</p>
-                    <div className="flex min-h-10 flex-wrap gap-2 rounded-md border border-[#E5E7EB] bg-white px-2 py-2">
-                      {restrictedStates.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">No states selected</span>
-                      ) : (
-                        restrictedStates.map((state) => (
-                          <span
-                            key={state}
-                            className="inline-flex items-center gap-1 rounded bg-[#EFEFEF] px-2 py-1 text-xs text-foreground"
-                          >
-                            {state}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveRestrictedState(state)}
-                              className="text-muted-foreground hover:text-foreground"
-                              aria-label={`Remove ${state}`}
-                            >
-                              <X className="h-3 w-3" aria-hidden />
-                            </button>
-                          </span>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  <Button
-                    type="button"
-                    className="h-10 w-full rounded-md bg-[#121F2C] text-sm font-medium text-white shadow-none hover:bg-[#121F2C]/90"
-                    onClick={handleSaveLocationRestrictions}
-                  >
-                    <Save className="mr-2 h-4 w-4" aria-hidden />
-                    Save Restrictions
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         <Dialog
           open={successModalOpen}
           onOpenChange={(open) => {
@@ -1207,55 +894,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                   onClick={() => void handleConfirmLogout()}
                 >
                   Logout
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={highRestrictionWarningOpen}
-          onOpenChange={(open) => {
-            if (!open) handleEditHighRestrictionSelection()
-          }}
-        >
-          <DialogContent
-            hideDefaultClose
-            className="max-w-md gap-0 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white p-0 shadow-lg sm:max-w-md"
-          >
-            <div className="flex justify-end border-b border-transparent p-2 sm:p-3">
-              <button
-                type="button"
-                onClick={handleEditHighRestrictionSelection}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div className="flex flex-col items-center px-6 pb-8 pt-0 sm:px-8">
-              <AlertTriangle className="h-16 w-16 shrink-0 text-[#F2C200]" strokeWidth={1.8} aria-hidden />
-              <p className="mt-6 text-center text-base font-medium text-foreground">
-                You are restricting visibility in over 80% of India.
-              </p>
-              <p className="mt-2 text-center text-sm text-muted-foreground sm:text-base">
-                This may significantly reduce your product&apos;s reach.
-              </p>
-              <div className="mt-8 flex w-full gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 flex-1 rounded-md border border-black bg-white text-sm font-medium text-black shadow-none hover:bg-neutral-50 hover:text-black"
-                  onClick={handleProceedWithHighRestrictionSave}
-                >
-                  Proceed Anyway
-                </Button>
-                <Button
-                  type="button"
-                  className="h-11 flex-1 rounded-md bg-[#121F2C] text-sm font-medium text-white shadow-none hover:bg-[#121F2C]/90"
-                  onClick={handleEditHighRestrictionSelection}
-                >
-                  Edit Selection
                 </Button>
               </div>
             </div>

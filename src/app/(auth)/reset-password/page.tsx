@@ -11,11 +11,12 @@ import { Input } from "@/components/ui/input"
 import { useAuth } from "@/contexts/auth-context"
 import { authService } from "@/lib/auth/authService"
 
-/** Email link flow: `/reset-password?token=...` sets a new password in one step. */
+/** Email link flow: `/reset-password?email=...&token=...` sets a new password in one step. */
 function ResetPasswordForm() {
   const router = useRouter()
   const params = useSearchParams()
   const token = params.get("token")?.trim() ?? ""
+  const email = params.get("email")?.trim() ?? ""
   const { user, status } = useAuth()
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
@@ -29,8 +30,8 @@ function ResetPasswordForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!token) {
-      toast.error("Missing reset token. Open the link from your email.")
+    if (!token || !email) {
+      toast.error("Missing reset link details. Open the link from your email.")
       return
     }
     if (password !== confirm) {
@@ -39,7 +40,7 @@ function ResetPasswordForm() {
     }
     setSubmitting(true)
     try {
-      await authService.completePasswordResetWithToken(token, password)
+      await authService.completePasswordResetWithToken(email, token, password)
       toast.success("Password updated")
       router.replace("/login")
     } catch (err) {
@@ -58,11 +59,11 @@ function ResetPasswordForm() {
     )
   }
 
-  if (!token) {
+  if (!token || !email) {
     return (
       <AuthPageShell
         title="Reset link incomplete"
-        description="This page needs a token from your reset email. You can start again below."
+        description="This page needs the link from your reset email. You can start again below."
         footer={
           <AuthFooterLink prompt="Wrong link?" href="/forgot-password" label="Start forgot-password" />
         }

@@ -9,7 +9,7 @@ import {
   PasswordFieldConcealIcon,
   PasswordFieldRevealIcon,
 } from "@/components/auth/password-visibility-icons"
-import { AuthFooterLink, AuthPageShell } from "@/components/auth/auth-page-shell"
+import { AuthPageShell } from "@/components/auth/auth-page-shell"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -57,7 +57,6 @@ export default function LoginPage() {
     <AuthPageShell
       title="Welcome back"
       description="Sign in to the Mekya seller portal."
-      footer={<AuthFooterLink prompt="Need an account?" href="/register" label="Create one" />}
     >
       <Card>
         <CardContent className="pt-6">
