@@ -6,6 +6,12 @@ import type { AdminUser, AuthTokens, LoginCredentials } from "./types"
 const STORAGE_KEY = "auth_tokens"
 const USER_PROFILE_KEY = "auth_user_profile"
 
+/** Matches the admin-frontend's equivalent constant (`EXPIRY_SKEW_MS` in
+ * apiClient.ts/authService.ts) — a small margin so `isAuthenticated()` doesn't
+ * flip to false right at the wire, with no room for clock drift between
+ * client/server or in-flight request latency. */
+const EXPIRY_SKEW_MS = 5_000
+
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split(".")
@@ -87,7 +93,7 @@ export class AuthService {
   }
 
   isAuthenticated(): boolean {
-    return this.tokens !== null && Date.now() < this.tokens.expiresAt
+    return this.tokens !== null && Date.now() < this.tokens.expiresAt - EXPIRY_SKEW_MS
   }
 
   syncApiTokens(): void {
