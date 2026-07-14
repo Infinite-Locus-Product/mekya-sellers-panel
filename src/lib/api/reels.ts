@@ -1,5 +1,5 @@
 import { authService } from "@/lib/auth/authService";
-import type { CmsReel, ReelStatus } from "@/lib/data/cms";
+import type { CmsAnalyticsSummary, CmsReel, ReelStatus } from "@/lib/data/cms";
 
 export type ReelAudience = "b2b" | "b2c" | "both";
 
@@ -255,4 +255,64 @@ export interface ReelAnalytics {
 export async function getReelAnalytics(reelId: string): Promise<ReelAnalytics> {
   const res = await authService.api.get<ReelAnalytics>(`/seller/reels/${reelId}/analytics`);
   return res.data;
+}
+
+// ─── Aggregate analytics (CMS dashboard) ─────────────────────────────────────
+
+export type AnalyticsDateRange = "7d" | "30d" | "90d" | "all";
+
+interface ApiAnalyticsSummaryKpis {
+  total_views: number;
+  total_likes: number;
+  total_comments: number;
+  total_shares: number;
+  avg_watch_time_seconds: number;
+  engagement_rate_percent: number;
+}
+
+interface ApiAnalyticsSummary {
+  kpis: ApiAnalyticsSummaryKpis;
+  views_over_time: Array<{ day: string; views: number }>;
+  audience_by_device: Array<{ device: string; views: number }>;
+  top_reels: Array<{
+    reel_id: string;
+    title: string;
+    thumbnail_url: string | null;
+    views: number;
+    likes: number;
+    shares: number;
+  }>;
+  date_range: string;
+}
+
+export async function getReelAnalyticsSummary(
+  dateRange: AnalyticsDateRange = "30d",
+): Promise<CmsAnalyticsSummary> {
+  const res = await authService.api.get<ApiAnalyticsSummary>(
+    `/seller/reels/analytics/summary?range=${dateRange}`,
+  );
+  const data = res.data;
+  return {
+    kpis: {
+      totalViews: data.kpis.total_views,
+      totalLikes: data.kpis.total_likes,
+      totalComments: data.kpis.total_comments,
+      totalShares: data.kpis.total_shares,
+      avgWatchSeconds: data.kpis.avg_watch_time_seconds,
+      engagementRatePercent: data.kpis.engagement_rate_percent,
+    },
+    viewsOverTime: data.views_over_time.map((p) => ({ day: p.day, views: p.views })),
+    audienceByDevice: data.audience_by_device.map((s) => ({
+      label: s.device,
+      value: s.views,
+    })),
+    topReels: data.top_reels.map((r) => ({
+      reelId: r.reel_id,
+      title: r.title,
+      thumbnailUrl: r.thumbnail_url,
+      views: r.views,
+      likes: r.likes,
+      shares: r.shares,
+    })),
+  };
 }
