@@ -45,3 +45,19 @@ export interface CmsAudienceByDeviceSlice {
   label: string;
   value: number;
 }
+
+export interface CmsTopReel {
+  reelId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  views: number;
+  likes: number;
+  shares: number;
+}
+
+export interface CmsAnalyticsSummary {
+  kpis: CmsAnalyticsKpis;
+  viewsOverTime: CmsViewsOverTimePoint[];
+  audienceByDevice: CmsAudienceByDeviceSlice[];
+  topReels: CmsTopReel[];
+}
