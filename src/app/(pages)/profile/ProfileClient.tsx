@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/auth-context"
+import { ApiError } from "@/lib/auth/apiClient"
 import {
   fetchUserProfile,
   updateUserProfile,
@@ -54,6 +55,69 @@ const PASSWORD_REQUIREMENTS = [
   { id: "number", label: "Includes number", test: (s: string) => /\d/.test(s) },
   { id: "special", label: "special character (!@#$%^&*)", test: (s: string) => /[!@#$%^&*]/.test(s) },
 ] as const
+
+const PHONE_DIGITS_RE = /^\d{10}$/
+const AVATAR_FORMAT_ERROR = `Invalid file. Please upload a JPG, JPEG, or PNG image under ${MAX_IMAGE_SIZE_MB} MB.`
+
+type PersonalFieldError = "firstName" | "phone" | "company"
+
+function validatePersonalForm(form: PersonalFormState): Partial<Record<PersonalFieldError, string>> {
+  const errors: Partial<Record<PersonalFieldError, string>> = {}
+  if (!form.firstName.trim()) {
+    errors.firstName = "First Name is required."
+  }
+  if (!form.phone.trim()) {
+    errors.phone = "Phone Number is required."
+  } else if (!PHONE_DIGITS_RE.test(form.phone.trim())) {
+    errors.phone = "Please enter a valid 10-digit phone number."
+  }
+  if (!form.company.trim()) {
+    errors.company = "Company Name is required."
+  }
+  return errors
+}
+
+// These translate errors using the ApiError's structured `field`/`code`/
+// `statusCode` (already sent by the backend envelope) rather than matching
+// substrings in the message text — text-matching breaks the moment Pydantic's
+// wording changes, structured fields don't. Any 422 we don't specifically
+// recognize falls back to one safe generic message per flow — raw backend
+// text is never shown, known or not.
+
+export function friendlyProfileUpdateError(err: unknown): string {
+  if (err instanceof ApiError && err.statusCode === 422) {
+    if (err.field === "phone") return "Please enter a valid 10-digit phone number."
+    return "Please check your details and try again."
+  }
+  return err instanceof Error ? err.message : "Failed to save changes."
+}
+
+export function friendlyAvatarError(err: unknown): string {
+  // Every validation-class failure in the avatar flow — bad type, bad size,
+  // presign rejecting the filename/content_type, the HTTPS/ownership check on
+  // the resulting URL — means the same thing to the user: the file was invalid.
+  if (err instanceof ApiError && err.statusCode === 422) {
+    return AVATAR_FORMAT_ERROR
+  }
+  return err instanceof Error ? err.message : "Upload failed. Please try again."
+}
+
+export function friendlyPasswordError(err: unknown): string {
+  if (err instanceof ApiError && err.statusCode === 422) {
+    // Saleor's own "wrong current password" rejection is already a clean,
+    // human-authored message — show it as-is rather than genericizing it.
+    if (err.code === "INVALID_CREDENTIALS") return err.message
+    if (err.field === "old_password") return "Please enter your current password."
+    if (err.field === "new_password") {
+      return "Please enter a new password that meets all the requirements above."
+    }
+    // A 422 with no field here is a whole-request validator failure — the
+    // only one on ChangePasswordRequest today is the same-password check.
+    // Revisit this fallback if another model-level validator is ever added.
+    return "New password cannot be the same as the current password."
+  }
+  return err instanceof Error ? err.message : "Failed to change password."
+}
 
 type TabId = "profile" | "security"
 
@@ -111,6 +175,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
   const [savedPersonal, setSavedPersonal] = useState<PersonalFormState>(() => ({ ...personal }))
   const [personalForm, setPersonalForm] = useState<PersonalFormState>(() => ({ ...personal }))
   const [isPersonalEditing, setIsPersonalEditing] = useState(false)
+  const [personalErrors, setPersonalErrors] = useState<Partial<Record<PersonalFieldError, string>>>({})
   const [isSavingPersonal, setIsSavingPersonal] = useState(false)
   const [isSavingPassword, setIsSavingPassword] = useState(false)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
@@ -147,8 +212,14 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     if (!currentPassword.trim()) return false
     if (!PASSWORD_REQUIREMENTS.every(({ test }) => test(newPassword))) return false
     if (newPassword !== confirmPassword) return false
+    if (newPassword === currentPassword) return false
     return true
   }, [currentPassword, newPassword, confirmPassword])
+
+  const isPasswordReused = useMemo(
+    () => currentPassword.length > 0 && newPassword.length > 0 && newPassword === currentPassword,
+    [currentPassword, newPassword]
+  )
 
   const handleUploadImageOpenChange = useCallback((open: boolean) => {
     setUploadImageOpen(open)
@@ -160,10 +231,10 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
 
   const validateFile = useCallback((file: File): string | null => {
     if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
-      return "Supported image formats: PNG, JPG"
+      return AVATAR_FORMAT_ERROR
     }
     if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
-      return `Max file size: ${MAX_IMAGE_SIZE_MB}MB`
+      return AVATAR_FORMAT_ERROR
     }
     return null
   }, [])
@@ -175,7 +246,11 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
         return
       }
       const error = validateFile(file)
-      if (error) return
+      if (error) {
+        toast.error(error)
+        setSelectedFile(null)
+        return
+      }
       setSelectedFile(file)
     },
     [validateFile]
@@ -213,7 +288,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
       setSelectedFile(null)
       toast.success("Profile picture updated.")
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed. Please try again.")
+      toast.error(friendlyAvatarError(err))
     } finally {
       setIsUploadingAvatar(false)
     }
@@ -239,15 +314,27 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     setIsPersonalEditing(true)
   }, [])
 
+  const handleCancelPersonal = useCallback(() => {
+    setPersonalForm({ ...savedPersonal })
+    setPersonalErrors({})
+    setIsPersonalEditing(false)
+  }, [savedPersonal])
+
   const handleSavePersonal = useCallback(async () => {
+    const errors = validatePersonalForm(personalForm)
+    if (Object.keys(errors).length > 0) {
+      setPersonalErrors(errors)
+      return
+    }
+    setPersonalErrors({})
     setIsSavingPersonal(true)
     try {
       const updated = await updateUserProfile({
-        first_name: personalForm.firstName || null,
-        last_name: personalForm.lastName || null,
-        phone: personalForm.phone || null,
-        company_name: personalForm.company || null,
-        company_address: personalForm.address || null,
+        first_name: personalForm.firstName.trim(),
+        last_name: personalForm.lastName.trim() || null,
+        phone: personalForm.phone.trim(),
+        company_name: personalForm.company.trim(),
+        company_address: personalForm.address.trim() || null,
       })
       const { profileData: pd, personalInfo: pi } = mapApiToState(updated)
       setProfileData(pd)
@@ -257,7 +344,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
       setIsPersonalEditing(false)
       setSuccessModalOpen(true)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save changes.")
+      toast.error(friendlyProfileUpdateError(err))
     } finally {
       setIsSavingPersonal(false)
     }
@@ -279,15 +366,14 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
 
   const confirmDiscardPersonal = useCallback(() => {
     if (activeTab === "profile") {
-      setPersonalForm({ ...savedPersonal })
-      setIsPersonalEditing(false)
+      handleCancelPersonal()
     }
     setDiscardModalOpen(false)
     if (pendingTab !== null) {
       setActiveTab(pendingTab)
       setPendingTab(null)
     }
-  }, [activeTab, pendingTab, savedPersonal])
+  }, [activeTab, pendingTab, handleCancelPersonal])
 
   const cancelDiscardPersonal = useCallback(() => {
     setDiscardModalOpen(false)
@@ -296,7 +382,20 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
 
   const updatePersonalField = useCallback((key: keyof PersonalFormState, value: string) => {
     setPersonalForm((prev) => ({ ...prev, [key]: value }))
+    setPersonalErrors((prev) => {
+      if (!(key in prev)) return prev
+      const next = { ...prev }
+      delete next[key as PersonalFieldError]
+      return next
+    })
   }, [])
+
+  const handlePhoneChange = useCallback(
+    (raw: string) => {
+      updatePersonalField("phone", raw.replace(/\D/g, "").slice(0, 10))
+    },
+    [updatePersonalField]
+  )
 
   const handleUpdatePassword = useCallback(async () => {
     if (passwordFormLocked || !isPasswordValid) return
@@ -306,7 +405,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
       toast.success("Your password has been changed successfully.", { icon: "🎉" })
       resetPasswordSection()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to change password.")
+      toast.error(friendlyPasswordError(err))
     } finally {
       setIsSavingPassword(false)
     }
@@ -495,7 +594,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                     <div className="flex flex-col gap-2 text-center">
                       <span className="text-sm font-medium text-[#000000]">{"Choose an image or drag & drop it here"}</span>
                       <span className="text-xs leading-relaxed text-[#71717A] sm:text-sm">
-                        Supported image formats: PNG, JPG
+                        Supported formats: JPG, JPEG, PNG
                       </span>
                       <span className="text-xs leading-relaxed text-[#71717A] sm:text-sm">
                         Max file size: {MAX_IMAGE_SIZE_MB}MB.
@@ -552,14 +651,21 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                 <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
                   <div className="flex flex-col gap-2">
                     <label htmlFor="first-name" className="text-sm font-medium text-foreground">
-                      First Name
+                      First Name <span className="text-destructive">*</span>
                     </label>
                     <Input
                       id="first-name"
                       value={personalForm.firstName}
                       onChange={(e) => updatePersonalField("firstName", e.target.value)}
                       disabled={!isPersonalEditing}
+                      aria-invalid={Boolean(personalErrors.firstName)}
+                      aria-describedby={personalErrors.firstName ? "first-name-error" : undefined}
                     />
+                    {personalErrors.firstName && (
+                      <p id="first-name-error" className="text-xs text-destructive">
+                        {personalErrors.firstName}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <label htmlFor="last-name" className="text-sm font-medium text-foreground">
@@ -585,7 +691,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                   </div>
                   <div className="flex flex-col gap-2">
                     <label htmlFor="phone" className="text-sm font-medium text-foreground">
-                      Phone Number
+                      Phone Number <span className="text-destructive">*</span>
                     </label>
                     <div className="flex overflow-hidden rounded-md border border-[#E8E9E8]">
                       <Input
@@ -598,23 +704,39 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                       <Input
                         id="phone"
                         value={personalForm.phone}
-                        onChange={(e) => updatePersonalField("phone", e.target.value)}
+                        onChange={(e) => handlePhoneChange(e.target.value)}
                         className="min-w-0 flex-1 rounded-none"
                         aria-label="Phone number"
+                        inputMode="numeric"
+                        maxLength={10}
                         disabled={!isPersonalEditing}
+                        aria-invalid={Boolean(personalErrors.phone)}
+                        aria-describedby={personalErrors.phone ? "phone-error" : undefined}
                       />
                     </div>
+                    {personalErrors.phone && (
+                      <p id="phone-error" className="text-xs text-destructive">
+                        {personalErrors.phone}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <label htmlFor="company" className="text-sm font-medium text-foreground">
-                      Company
+                      Company <span className="text-destructive">*</span>
                     </label>
                     <Input
                       id="company"
                       value={personalForm.company}
                       onChange={(e) => updatePersonalField("company", e.target.value)}
                       disabled={!isPersonalEditing}
+                      aria-invalid={Boolean(personalErrors.company)}
+                      aria-describedby={personalErrors.company ? "company-error" : undefined}
                     />
+                    {personalErrors.company && (
+                      <p id="company-error" className="text-xs text-destructive">
+                        {personalErrors.company}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <label htmlFor="gstin" className="text-sm font-medium text-foreground">
@@ -641,16 +763,30 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                   </div>
                 </div>
 
-                <Button
-                  type="button"
-                  className="w-full sm:w-auto sm:min-w-[180px]"
-                  size="lg"
-                  disabled={!isPersonalEditing || !personalIsDirty || isSavingPersonal}
-                  onClick={handleSavePersonal}
-                >
-                  <Save className="mr-2 h-4 w-4" aria-hidden />
-                  {isSavingPersonal ? "Saving…" : "Save Changes"}
-                </Button>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  {isPersonalEditing && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full sm:w-auto sm:min-w-[140px]"
+                      size="lg"
+                      disabled={isSavingPersonal}
+                      onClick={handleCancelPersonal}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    className="w-full sm:w-auto sm:min-w-[180px]"
+                    size="lg"
+                    disabled={!isPersonalEditing || !personalIsDirty || isSavingPersonal}
+                    onClick={handleSavePersonal}
+                  >
+                    <Save className="mr-2 h-4 w-4" aria-hidden />
+                    {isSavingPersonal ? "Saving…" : "Save Changes"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -757,6 +893,11 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                       )
                     })}
                   </ul>
+                  {isPasswordReused && (
+                    <p className="flex items-center gap-2 pt-1 text-xs text-destructive">
+                      New password cannot be the same as the current password.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-2">
@@ -804,16 +945,30 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                 </div>
               </div>
 
-              <Button
-                type="button"
-                className="w-full sm:w-auto sm:min-w-[200px]"
-                size="lg"
-                disabled={passwordFormLocked || !isPasswordValid || isSavingPassword}
-                onClick={handleUpdatePassword}
-              >
-                <Lock className="mr-2 h-4 w-4" aria-hidden />
-                {isSavingPassword ? "Updating…" : "Update Password"}
-              </Button>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                {isPasswordFormEnabled && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full sm:w-auto sm:min-w-[140px]"
+                    size="lg"
+                    disabled={isSavingPassword}
+                    onClick={resetPasswordSection}
+                  >
+                    Cancel
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  className="w-full sm:w-auto sm:min-w-[200px]"
+                  size="lg"
+                  disabled={passwordFormLocked || !isPasswordValid || isSavingPassword}
+                  onClick={handleUpdatePassword}
+                >
+                  <Lock className="mr-2 h-4 w-4" aria-hidden />
+                  {isSavingPassword ? "Updating…" : "Update Password"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
