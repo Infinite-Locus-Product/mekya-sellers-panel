@@ -61,17 +61,28 @@ const AVATAR_FORMAT_ERROR = `Invalid file. Please upload a JPG, JPEG, or PNG ima
 
 type PersonalFieldError = "firstName" | "phone" | "company"
 
-function validatePersonalForm(form: PersonalFormState): Partial<Record<PersonalFieldError, string>> {
+// `saved` is the last-persisted state. A required field is only flagged when
+// clearing it would actually destroy existing data — an account onboarded
+// before these fields were required (legitimately blank first name/phone/
+// company) isn't blocked from saving an unrelated edit (e.g. address) just
+// because it hasn't been backfilled yet. Actively clearing a field that
+// currently holds a value is still caught, same as typing an invalid phone.
+export function validatePersonalForm(
+  form: PersonalFormState,
+  saved: PersonalFormState
+): Partial<Record<PersonalFieldError, string>> {
   const errors: Partial<Record<PersonalFieldError, string>> = {}
-  if (!form.firstName.trim()) {
+  if (!form.firstName.trim() && saved.firstName.trim()) {
     errors.firstName = "First Name is required."
   }
-  if (!form.phone.trim()) {
+  if (form.phone.trim()) {
+    if (!PHONE_DIGITS_RE.test(form.phone.trim())) {
+      errors.phone = "Please enter a valid 10-digit phone number."
+    }
+  } else if (saved.phone.trim()) {
     errors.phone = "Phone Number is required."
-  } else if (!PHONE_DIGITS_RE.test(form.phone.trim())) {
-    errors.phone = "Please enter a valid 10-digit phone number."
   }
-  if (!form.company.trim()) {
+  if (!form.company.trim() && saved.company.trim()) {
     errors.company = "Company Name is required."
   }
   return errors
@@ -230,11 +241,15 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
   }, [])
 
   const validateFile = useCallback((file: File): string | null => {
+    // Unlike friendlyAvatarError's backend-422 fallback (which genuinely can't
+    // always tell which rule failed), these two checks are deterministic and
+    // already know exactly which condition tripped — keep that precision
+    // instead of collapsing both into the generic message.
     if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
-      return AVATAR_FORMAT_ERROR
+      return "Please upload a JPG, JPEG, or PNG image."
     }
     if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
-      return AVATAR_FORMAT_ERROR
+      return `Image must be under ${MAX_IMAGE_SIZE_MB} MB.`
     }
     return null
   }, [])
@@ -321,7 +336,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
   }, [savedPersonal])
 
   const handleSavePersonal = useCallback(async () => {
-    const errors = validatePersonalForm(personalForm)
+    const errors = validatePersonalForm(personalForm, savedPersonal)
     if (Object.keys(errors).length > 0) {
       setPersonalErrors(errors)
       return
@@ -329,11 +344,14 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     setPersonalErrors({})
     setIsSavingPersonal(true)
     try {
+      // A required field can still legitimately be blank here (pre-existing,
+      // untouched — see validatePersonalForm) — send null, not "", so the
+      // backend leaves it alone rather than rejecting/clearing it.
       const updated = await updateUserProfile({
-        first_name: personalForm.firstName.trim(),
+        first_name: personalForm.firstName.trim() || null,
         last_name: personalForm.lastName.trim() || null,
-        phone: personalForm.phone.trim(),
-        company_name: personalForm.company.trim(),
+        phone: personalForm.phone.trim() || null,
+        company_name: personalForm.company.trim() || null,
         company_address: personalForm.address.trim() || null,
       })
       const { profileData: pd, personalInfo: pi } = mapApiToState(updated)
@@ -348,7 +366,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     } finally {
       setIsSavingPersonal(false)
     }
-  }, [personalForm])
+  }, [personalForm, savedPersonal])
 
   const closeSuccessModal = useCallback(() => {
     setSuccessModalOpen(false)
