@@ -1,10 +1,15 @@
 import type { ApiResponse, AuthTokens } from "./types"
 
 // Preserved: ApiError is seller-specific — authService.ts catches it by statusCode.
+// field/code mirror the backend's { success:false, error:{code,message,field} }
+// envelope — callers can branch on these instead of matching message text, which
+// is the only way to translate an error reliably regardless of its exact wording.
 export class ApiError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number,
+    public readonly field?: string,
+    public readonly code?: string,
   ) {
     super(message)
     this.name = "ApiError"
@@ -62,6 +67,32 @@ export function extractApiErrorMessage(
   }
 
   return fallback
+}
+
+// Pulls `field`/`code` from our own { error: { field, code } } envelope shape
+// (top-level or one level under `error`) — deliberately not recursive/lenient
+// like extractApiErrorMessage, since these are only meaningful on our own
+// well-known envelope, not arbitrary third-party error shapes.
+function extractApiErrorField(payload: unknown): string | undefined {
+  if (payload == null || typeof payload !== "object" || Array.isArray(payload)) return undefined
+  const o = payload as Record<string, unknown>
+  if (typeof o.field === "string" && o.field.trim()) return o.field.trim()
+  if (o.error && typeof o.error === "object" && !Array.isArray(o.error)) {
+    const nested = (o.error as Record<string, unknown>).field
+    if (typeof nested === "string" && nested.trim()) return nested.trim()
+  }
+  return undefined
+}
+
+function extractApiErrorCode(payload: unknown): string | undefined {
+  if (payload == null || typeof payload !== "object" || Array.isArray(payload)) return undefined
+  const o = payload as Record<string, unknown>
+  if (typeof o.code === "string" && o.code.trim()) return o.code.trim()
+  if (o.error && typeof o.error === "object" && !Array.isArray(o.error)) {
+    const nested = (o.error as Record<string, unknown>).code
+    if (typeof nested === "string" && nested.trim()) return nested.trim()
+  }
+  return undefined
 }
 
 export class ApiClient {
@@ -209,7 +240,14 @@ export class ApiClient {
         if ("error" in obj || "errors" in obj) {
           const msg = extractApiErrorMessage(rawPayload, "")
           // Preserved: throw ApiError so authService.ts statusCode checks still work.
-          if (msg) throw new ApiError(msg, res.status)
+          if (msg) {
+            throw new ApiError(
+              msg,
+              res.status,
+              extractApiErrorField(rawPayload),
+              extractApiErrorCode(rawPayload)
+            )
+          }
         }
         return { success: true, data: rawPayload as T }
       }
@@ -219,7 +257,7 @@ export class ApiClient {
       if (!res.ok) {
         const msg = extractApiErrorMessage(payload, `Request failed (${res.status})`)
         // Preserved: throw ApiError (not plain Error) — authService.ts instanceof checks.
-        throw new ApiError(msg, res.status)
+        throw new ApiError(msg, res.status, extractApiErrorField(payload), extractApiErrorCode(payload))
       }
 
       if (
@@ -228,7 +266,12 @@ export class ApiClient {
         "success" in payload &&
         (payload as ApiResponse<T>).success === false
       ) {
-        throw new Error(extractApiErrorMessage(payload, "Request failed"))
+        throw new ApiError(
+          extractApiErrorMessage(payload, "Request failed"),
+          res.status,
+          extractApiErrorField(payload),
+          extractApiErrorCode(payload)
+        )
       }
 
       return payload as ApiResponse<T>
