@@ -5,14 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  Minus,
+  Lock,
   Plus,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppSelect } from "@/components/shared/AppSelect";
-import { COLOR_PALETTE, ColorSelect } from "@/components/shared/ColorSelect";
+import { MultiSelectFilter } from "@/components/shared/MultiSelectFilter";
+import { ColorSelect } from "@/components/shared/ColorSelect";
 import { ProductImageUploadCard } from "@/components/shared/ProductImageUploadCard";
 import { cn } from "@/lib/utils";
 import type { EditableProductDraft } from "@/lib/data";
@@ -22,22 +23,31 @@ import {
 } from "@/lib/tableTypes";
 import {
   createProduct,
-  getCategories,
   getProduct,
   parseProductDescription,
   publishProduct,
   updateProduct,
   updateProductVariant,
   uploadImagesToStorage,
-  type VariantItem,
+  type FlatVariant,
+  type SetPurchaseMode,
 } from "@/lib/api/products";
+import {
+  getTaxonomyManifest,
+  getSizeSystem,
+  categoriesForGender,
+  subcategoriesFor,
+  templateFor,
+  colorAttributeValues,
+  tagsByGroup,
+  attributeBySlug,
+  type TaxonomyManifest,
+} from "@/lib/api/taxonomy";
 
-const SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"] as const;
-const GENDER_OPTIONS = [
-  { label: "Men", value: "men" },
-  { label: "Women", value: "women" },
-  { label: "Kids", value: "kids" },
-  { label: "Unisex", value: "unisex" },
+const SET_PURCHASE_MODE_OPTIONS: { label: string; value: SetPurchaseMode }[] = [
+  { label: "Any size, any color (custom mix & match)", value: "custom_mix_match" },
+  { label: "One size, multiple colors per set", value: "single_size_multi_color" },
+  { label: "Multiple sizes, one color per set", value: "multi_size_single_color" },
 ];
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -46,14 +56,18 @@ const ACCEPT_IMAGES = ["image/png", "image/jpeg", "image/jpg"];
 const DESCRIPTION_MAX = 1000;
 
 type ImageItem = { id: string; url: string; file: File };
-type VariantPricingRow = { name: string; b2c_price: string; b2b_price: string; qty: string };
+/** One (color, size) cell of the create-time pricing/stock matrix — replaces
+ * the old "name"-string keyed row so overrides can be built directly by
+ * (color, size), matching PriceOverride/StockOverride exactly. */
+type VariantPricingRow = { color: string; size: string; b2c_price: string; b2b_price: string; qty: string };
 
 type ProductDraftState = {
   productName: string;
   articleNumber: string;
-  categoryId: string | undefined;
-  inventoryType: string | undefined;
   gender: string | undefined;
+  categorySlug: string | undefined;
+  subcategorySlug: string | undefined;
+  inventoryType: string | undefined;
   deliveryTimeline: string;
   mrp: string;
   sellingPrice: string;
@@ -63,70 +77,60 @@ type ProductDraftState = {
   maxQty: number;
   selectedColors: string[];
   selectedSizes: string[];
-  tags: string[];
+  attributeSelections: Record<string, string[]>;
+  tagSlugs: string[];
   description: string;
   channels: "b2c" | "b2b" | "both";
+  isCustomisable: boolean;
+  moqSets: string;
+  moqUnits: string;
+  shipsFrom: string;
+  setPurchaseMode: SetPurchaseMode;
   variantPricing?: VariantPricingRow[];
+  excludedCells: string[];
+  b2bMinOrderQty: string;
+  b2bMaxOrderQty: string;
+  b2cMinOrderQty: string;
+  b2cMaxOrderQty: string;
 };
 
-function computeVariantNames(colors: string[], sizes: string[]): string[] {
-  if (colors.length === 0 && sizes.length === 0) return [];
-  if (colors.length === 0) return sizes;
-  if (sizes.length === 0) return colors;
-  return colors.flatMap((c) => sizes.map((s) => `${c} / ${s}`));
-}
-
-function QuantityStepper({
-  label,
-  value,
-  onChange,
-  min = 0,
-}: {
-  label: string;
-  value: number;
-  onChange: (n: number) => void;
-  min?: number;
-}) {
-  return (
-    <div className="space-y-3">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <div className="flex h-10 max-w-[140px] items-stretch overflow-hidden rounded-md">
-        <button
-          type="button"
-          className="flex w-10 items-center justify-center text-lg leading-none"
-          aria-label={`Decrease ${label}`}
-          onClick={() => onChange(Math.max(min, value - 1))}
-        >
-          <Minus className="h-4 w-4" />
-        </button>
-        <span className="flex flex-1 items-center justify-center text-sm font-medium tabular-nums bg-[#F9FAF9] rounded-md">
-          {value}
-        </span>
-        <button
-          type="button"
-          className="flex w-10 items-center justify-center text-lg leading-none"
-          aria-label={`Increase ${label}`}
-          onClick={() => onChange(value + 1)}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
+function computeVariantRows(colors: string[], sizes: string[]): { color: string; size: string }[] {
+  if (colors.length === 0) return [];
+  if (sizes.length === 0) return colors.map((c) => ({ color: c, size: "Default" }));
+  return colors.flatMap((c) => sizes.map((s) => ({ color: c, size: s })));
 }
 
 function RequiredMark() {
   return <span className="text-destructive">*</span>;
 }
 
+/** Category/subcategory/gender/inventory type/set purchase mode can never be
+ * changed once a product exists — reassigning them requires resubmitting the
+ * full attribute + variant matrix together, a flow this form doesn't offer.
+ * Shown as visibly locked (not a plain editable-looking select) so editing
+ * never reads as broken. */
+function LockedField({ value }: { value: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-dashed border-input bg-muted/40 px-3 py-2 text-sm text-foreground">
+      <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="flex-1">{value || "—"}</span>
+      <span
+        className="shrink-0 text-xs text-muted-foreground"
+        title="This can't be changed after the product is created — it would require reassigning every attribute and variant at once, which this form doesn't support."
+      >
+        Locked
+      </span>
+    </div>
+  );
+}
+
 export interface AddProductClientProps {
-  categoryOptions: { id: string; name: string }[];
   initialProduct?: EditableProductDraft | null;
   productId?: string;
   defaultChannel?: "b2c" | "b2b" | "both";
 }
 
-export function AddProductClient({ categoryOptions: initialCategoryOptions, initialProduct: initialProductProp, productId, defaultChannel }: AddProductClientProps) {
+export function AddProductClient({ initialProduct: initialProductProp, productId, defaultChannel }: AddProductClientProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<ImageItem[]>([]);
@@ -134,7 +138,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
   // Tracks a product_id that was created but not yet published (e.g. on publish failure).
   // Prevents duplicate products when the user retries after a partial failure.
   const pendingProductIdRef = useRef<string | null>(null);
-  const [categoryOptions, setCategoryOptions] = useState(initialCategoryOptions);
+  const [manifest, setManifest] = useState<TaxonomyManifest | null>(null);
   const [initialProduct, setInitialProduct] = useState<EditableProductDraft | null>(initialProductProp ?? null);
   const isEditMode = Boolean(productId ?? initialProduct);
   const [isFetchingProduct, setIsFetchingProduct] = useState(() => Boolean(productId));
@@ -143,17 +147,17 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
   const [images, setImages] = useState<ImageItem[]>([]);
   const [productName, setProductName] = useState(initialProduct?.name ?? "");
   const [articleNumber, setArticleNumber] = useState(initialProduct?.articleNumber ?? "");
-  const [category, setCategory] = useState<string | undefined>(initialProduct?.categoryId);
   const [inventoryType, setInventoryType] = useState<string | undefined>(initialProduct?.inventoryType);
   const [gender, setGender] = useState<string | undefined>(initialProduct?.gender);
+  const [categorySlug, setCategorySlug] = useState<string | undefined>(initialProduct?.categorySlug);
+  const [subcategorySlug, setSubcategorySlug] = useState<string | undefined>(initialProduct?.subcategorySlug);
+  const [setPurchaseMode, setSetPurchaseMode] = useState<SetPurchaseMode>(
+    (initialProduct?.setPurchaseMode as SetPurchaseMode) ?? "custom_mix_match"
+  );
   const [deliveryTimeline, setDeliveryTimeline] = useState(initialProduct?.deliveryTimeline ?? "");
+  const [sizeOptions, setSizeOptions] = useState<string[]>([]);
   const [selectedSizes, setSelectedSizes] = useState<Set<string>>(
-    () =>
-      new Set(
-        (initialProduct?.sizes ?? []).filter((size) =>
-          SIZE_OPTIONS.includes(size as (typeof SIZE_OPTIONS)[number])
-        )
-      )
+    () => new Set(initialProduct?.sizes ?? [])
   );
   const [selectedColors, setSelectedColors] = useState<string[]>(initialProduct?.colors ?? []);
   const [activeColorSelection, setActiveColorSelection] = useState<string | undefined>(undefined);
@@ -162,7 +166,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
   const [mrp, setMrp] = useState(initialProduct?.mrp ?? "");
   const [sellingPrice, setSellingPrice] = useState(initialProduct?.sellingPrice ?? "");
   const [b2bSellingPrice, setB2bSellingPrice] = useState(initialProduct?.b2bSellingPrice ?? "");
-  const [productVariants, setProductVariants] = useState<VariantItem[]>([]);
+  const [productVariants, setProductVariants] = useState<FlatVariant[]>([]);
   const [variantEdits, setVariantEdits] = useState<
     Record<string, { b2c_price: string; b2b_price: string; quantity: string }>
   >({});
@@ -171,16 +175,42 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     initialProduct ? String(initialProduct.availableQty) : ""
   );
   const [variantPricing, setVariantPricing] = useState<VariantPricingRow[]>([]);
+  /** Color × size cells the seller has explicitly excluded from the create-time
+   * variant matrix (keyed `${color} ${size}`) — create mode only, per the
+   * existing per-row exclusion feature; never touches edit-mode reconciliation. */
+  const [excludedCells, setExcludedCells] = useState<Set<string>>(new Set());
   const [minQty, setMinQty] = useState(initialProduct?.minQty ?? 0);
   const [maxQty, setMaxQty] = useState(initialProduct?.maxQty ?? 0);
-  const [tags, setTags] = useState<string[]>(initialProduct?.tags ?? []);
-  const [tagInput, setTagInput] = useState("");
+  const [attributeSelections, setAttributeSelections] = useState<Record<string, string[]>>(
+    initialProduct?.attributeSelections ?? {}
+  );
+  const [tagSlugs, setTagSlugs] = useState<string[]>(initialProduct?.tagSlugs ?? []);
   const [description, setDescription] = useState(initialProduct?.description ?? "");
+  const [isCustomisable, setIsCustomisable] = useState(initialProduct?.isCustomisable ?? false);
+  const [moqSets, setMoqSets] = useState(initialProduct?.moqSets ? String(initialProduct.moqSets) : "");
+  const [moqUnits, setMoqUnits] = useState(initialProduct?.moqUnits ? String(initialProduct.moqUnits) : "");
+  const [shipsFrom, setShipsFrom] = useState(initialProduct?.shipsFrom ?? "");
+  // Channel order limits — business ordering policy, not a stock split; one
+  // physical inventory pool stays untouched (see products.ts's ProductDefinitionDto doc).
+  const [b2bMinOrderQty, setB2bMinOrderQty] = useState(
+    initialProduct?.b2bMinOrderQty ? String(initialProduct.b2bMinOrderQty) : ""
+  );
+  const [b2bMaxOrderQty, setB2bMaxOrderQty] = useState(
+    initialProduct?.b2bMaxOrderQty ? String(initialProduct.b2bMaxOrderQty) : ""
+  );
+  const [b2cMinOrderQty, setB2cMinOrderQty] = useState(
+    initialProduct?.b2cMinOrderQty ? String(initialProduct.b2cMinOrderQty) : ""
+  );
+  const [b2cMaxOrderQty, setB2cMaxOrderQty] = useState(
+    initialProduct?.b2cMaxOrderQty ? String(initialProduct.b2cMaxOrderQty) : ""
+  );
+  const [legacySizeInput, setLegacySizeInput] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState<ProductDraftState | null>(null);
   const [existingImages, setExistingImages] = useState<Array<{ id: string; url: string }>>([]);
   const existingImagesRef = useRef<Array<{ id: string; url: string }>>([]);
+  const isLegacy = initialProduct?.isLegacy ?? false;
 
   const draftKey = `mekya_seller_draft_${productId ?? "new"}`;
 
@@ -198,39 +228,79 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     };
   }, []);
 
+  // ── Taxonomy manifest — fetched once, drives gender/category/subcategory/
+  // attribute/tag/color options. Sizes come from the dedicated size-system
+  // endpoint below since they depend on gender+category together.
   useEffect(() => {
-    getCategories()
-      .then(setCategoryOptions)
-      .catch(() => toast.error("Failed to load categories. Please refresh the page."));
+    getTaxonomyManifest()
+      .catch(() => {
+        toast.error("Failed to load product taxonomy. Please refresh the page.");
+        return null;
+      })
+      .then((m) => { if (m) setManifest(m); });
+  }, []);
 
+  // ── Size system — depends on gender + category, refetched whenever either changes.
+  useEffect(() => {
+    if (isLegacy) return; // legacy products use free-form legacy_sizes instead
+    if (!gender || !categorySlug) {
+      setSizeOptions([]);
+      return;
+    }
+    let cancelled = false;
+    getSizeSystem(gender, categorySlug)
+      .then((values) => { if (!cancelled) setSizeOptions(values); })
+      .catch(() => { if (!cancelled) setSizeOptions([]); });
+    return () => { cancelled = true; };
+  }, [gender, categorySlug, isLegacy]);
+
+  useEffect(() => {
     if (productId) {
       getProduct(productId)
         .then((prod) => {
-          const meta = prod.metadata;
-          const firstVariant = prod.variants[0];
+          const legacy = prod.is_legacy;
+          const firstVariant = prod.variant_list[0];
+          const colors = legacy
+            ? (prod.legacy?.colors ?? [])
+            : (prod.variants?.colors.map((c) => c.color) ?? []);
+          const sizes = legacy
+            ? (prod.legacy?.sizes ?? [])
+            : Array.from(new Set(prod.variants?.colors.flatMap((c) => c.sizes.map((s) => s.size)) ?? []));
           setInitialProduct({
             id: prod.id,
             name: prod.name,
-            articleNumber: meta.article_number ?? "",
-            category: prod.category?.name ?? "",
-            categoryId: prod.category?.id ?? "",
-            inventoryType: (meta.inventory_type as ProductInventoryType) ?? "ready_to_ship",
-            gender: meta.gender ?? undefined,
-            deliveryTimeline: meta.shipping_days ?? "",
-            sizes: (meta.sizes ?? "").split(",").filter(Boolean),
-            colors: (meta.colors ?? "").split(",").filter(Boolean),
-            mrp: meta.mrp ?? "",
+            articleNumber: prod.product.article_number ?? "",
+            isLegacy: legacy,
+            categoryName: prod.category?.name ?? "",
+            categorySlug: legacy ? undefined : prod.taxonomy?.category_slug,
+            subcategorySlug: legacy ? undefined : prod.taxonomy?.subcategory_slug,
+            inventoryType: (prod.product.inventory_type as ProductInventoryType) ?? "ready_to_ship",
+            gender: legacy ? (prod.legacy?.gender ?? undefined) : prod.taxonomy?.gender,
+            deliveryTimeline: prod.product.shipping_days ?? "",
+            setPurchaseMode: prod.product.set_purchase_mode ?? undefined,
+            sizes,
+            colors,
+            attributeSelections: legacy ? {} : (prod.taxonomy?.attributes ?? {}),
+            tagSlugs: legacy ? [] : (prod.taxonomy?.tags ?? []),
+            mrp: prod.metadata.mrp ?? "",
             sellingPrice: firstVariant?.b2c_price != null ? String(firstVariant.b2c_price) : "",
             b2bSellingPrice: firstVariant?.b2b_price != null ? String(firstVariant.b2b_price) : "",
             availableQty: firstVariant?.quantity ?? 0,
-            minQty: meta.min_quantity_per_set ? parseInt(meta.min_quantity_per_set, 10) : 0,
-            maxQty: meta.max_quantity_per_set ? parseInt(meta.max_quantity_per_set, 10) : 0,
-            tags: (meta.tags ?? "").split(",").filter(Boolean),
+            minQty: prod.product.min_quantity_per_set ?? 0,
+            maxQty: prod.product.max_quantity_per_set ?? 0,
+            isCustomisable: prod.product.is_customisable,
+            moqSets: prod.product.moq_sets ?? undefined,
+            moqUnits: prod.product.moq_units ?? undefined,
+            shipsFrom: prod.product.ships_from ?? "",
+            b2bMinOrderQty: prod.product.b2b_min_order_qty ?? undefined,
+            b2bMaxOrderQty: prod.product.b2b_max_order_qty ?? undefined,
+            b2cMinOrderQty: prod.product.b2c_min_order_qty ?? undefined,
+            b2cMaxOrderQty: prod.product.b2c_max_order_qty ?? undefined,
             description: parseProductDescription(prod.description),
             images: prod.images.map((img) => ({ id: img.id, url: img.url })),
-            channels: (meta.channels as "b2c" | "b2b" | "both") ?? "both",
+            channels: (prod.metadata.channels as "b2c" | "b2b" | "both") ?? "both",
           });
-          setProductVariants(prod.variants);
+          setProductVariants(prod.variant_list);
         })
         .catch(() => toast.error("Failed to load product details. Please go back and try again."))
         .finally(() => setIsFetchingProduct(false));
@@ -241,17 +311,13 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     if (!initialProduct) return;
     setProductName(initialProduct.name);
     setArticleNumber(initialProduct.articleNumber);
-    setCategory(initialProduct.categoryId);
     setInventoryType(initialProduct.inventoryType);
     setGender(initialProduct.gender);
+    setCategorySlug(initialProduct.categorySlug);
+    setSubcategorySlug(initialProduct.subcategorySlug);
+    setSetPurchaseMode((initialProduct.setPurchaseMode as SetPurchaseMode) ?? "custom_mix_match");
     setDeliveryTimeline(initialProduct.deliveryTimeline ?? "");
-    setSelectedSizes(
-      new Set(
-        (initialProduct.sizes).filter((s) =>
-          SIZE_OPTIONS.includes(s as (typeof SIZE_OPTIONS)[number])
-        )
-      )
-    );
+    setSelectedSizes(new Set(initialProduct.sizes));
     setSelectedColors(initialProduct.colors);
     setChannels(initialProduct.channels ?? "both");
     setMrp(initialProduct.mrp);
@@ -260,8 +326,17 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     setAvailableQty(String(initialProduct.availableQty));
     setMinQty(initialProduct.minQty);
     setMaxQty(initialProduct.maxQty);
-    setTags(initialProduct.tags);
+    setAttributeSelections(initialProduct.attributeSelections);
+    setTagSlugs(initialProduct.tagSlugs);
     setDescription(initialProduct.description);
+    setIsCustomisable(initialProduct.isCustomisable);
+    setMoqSets(initialProduct.moqSets ? String(initialProduct.moqSets) : "");
+    setMoqUnits(initialProduct.moqUnits ? String(initialProduct.moqUnits) : "");
+    setShipsFrom(initialProduct.shipsFrom ?? "");
+    setB2bMinOrderQty(initialProduct.b2bMinOrderQty ? String(initialProduct.b2bMinOrderQty) : "");
+    setB2bMaxOrderQty(initialProduct.b2bMaxOrderQty ? String(initialProduct.b2bMaxOrderQty) : "");
+    setB2cMinOrderQty(initialProduct.b2cMinOrderQty ? String(initialProduct.b2cMinOrderQty) : "");
+    setB2cMaxOrderQty(initialProduct.b2cMaxOrderQty ? String(initialProduct.b2cMaxOrderQty) : "");
     setExistingImages(initialProduct.images ?? []);
   }, [initialProduct]);
 
@@ -280,17 +355,18 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
 
   useEffect(() => {
     if (isEditMode) return;
-    const sortedSizes = [...selectedSizes].sort(
-      (a, b) =>
-        SIZE_OPTIONS.indexOf(a as (typeof SIZE_OPTIONS)[number]) -
-        SIZE_OPTIONS.indexOf(b as (typeof SIZE_OPTIONS)[number])
+    const sortedSizes = [...selectedSizes].sort((a, b) =>
+      sizeOptions.indexOf(a) - sizeOptions.indexOf(b)
     );
-    const names = computeVariantNames(selectedColors, sortedSizes);
+    const rows = computeVariantRows(selectedColors, sortedSizes);
     setVariantPricing((prev) => {
-      const existingMap = new Map(prev.map((r) => [r.name, r]));
-      return names.map((name) => existingMap.get(name) ?? { name, b2c_price: "", b2b_price: "", qty: "" });
+      const existingMap = new Map(prev.map((r) => [`${r.color} ${r.size}`, r]));
+      return rows.map(
+        ({ color, size }) =>
+          existingMap.get(`${color} ${size}`) ?? { color, size, b2c_price: "", b2b_price: "", qty: "" }
+      );
     });
-  }, [selectedColors, selectedSizes, isEditMode]);
+  }, [selectedColors, selectedSizes, sizeOptions, isEditMode]);
 
   const saveDraftToStorage = useCallback(() => {
     if (submittedRef.current) return;
@@ -298,9 +374,10 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       const data: ProductDraftState = {
         productName,
         articleNumber,
-        categoryId: category,
-        inventoryType,
         gender,
+        categorySlug,
+        subcategorySlug,
+        inventoryType,
         deliveryTimeline,
         mrp,
         sellingPrice,
@@ -310,16 +387,27 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
         maxQty,
         selectedColors,
         selectedSizes: [...selectedSizes],
-        tags,
+        attributeSelections,
+        tagSlugs,
         description,
         channels,
+        isCustomisable,
+        moqSets,
+        moqUnits,
+        shipsFrom,
+        setPurchaseMode,
         variantPricing: isEditMode ? undefined : variantPricing,
+        excludedCells: [...excludedCells],
+        b2bMinOrderQty,
+        b2bMaxOrderQty,
+        b2cMinOrderQty,
+        b2cMaxOrderQty,
       };
       localStorage.setItem(draftKey, JSON.stringify(data));
     } catch {
       // localStorage unavailable — silent fail
     }
-  }, [productName, articleNumber, category, inventoryType, gender, deliveryTimeline, mrp, sellingPrice, b2bSellingPrice, availableQty, minQty, maxQty, selectedColors, selectedSizes, tags, description, channels, isEditMode, variantPricing, draftKey]);
+  }, [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, deliveryTimeline, mrp, sellingPrice, b2bSellingPrice, availableQty, minQty, maxQty, selectedColors, selectedSizes, attributeSelections, tagSlugs, description, channels, isCustomisable, moqSets, moqUnits, shipsFrom, setPurchaseMode, isEditMode, variantPricing, excludedCells, b2bMinOrderQty, b2bMaxOrderQty, b2cMinOrderQty, b2cMaxOrderQty, draftKey]);
 
   const saveDraftRef = useRef(saveDraftToStorage);
   useEffect(() => {
@@ -354,9 +442,10 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     if (!restoredDraft) return;
     setProductName(restoredDraft.productName);
     setArticleNumber(restoredDraft.articleNumber);
-    setCategory(restoredDraft.categoryId);
-    setInventoryType(restoredDraft.inventoryType);
     setGender(restoredDraft.gender);
+    setCategorySlug(restoredDraft.categorySlug);
+    setSubcategorySlug(restoredDraft.subcategorySlug);
+    setInventoryType(restoredDraft.inventoryType);
     setDeliveryTimeline(restoredDraft.deliveryTimeline);
     setChannels(restoredDraft.channels ?? "both");
     setMrp(restoredDraft.mrp);
@@ -367,9 +456,20 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     setMaxQty(restoredDraft.maxQty);
     setSelectedColors(restoredDraft.selectedColors);
     setSelectedSizes(new Set(restoredDraft.selectedSizes));
-    setTags(restoredDraft.tags);
+    setAttributeSelections(restoredDraft.attributeSelections ?? {});
+    setTagSlugs(restoredDraft.tagSlugs ?? []);
     setDescription(restoredDraft.description);
+    setIsCustomisable(restoredDraft.isCustomisable ?? false);
+    setMoqSets(restoredDraft.moqSets ?? "");
+    setMoqUnits(restoredDraft.moqUnits ?? "");
+    setShipsFrom(restoredDraft.shipsFrom ?? "");
+    setSetPurchaseMode(restoredDraft.setPurchaseMode ?? "custom_mix_match");
     if (restoredDraft.variantPricing) setVariantPricing(restoredDraft.variantPricing);
+    setExcludedCells(new Set(restoredDraft.excludedCells ?? []));
+    setB2bMinOrderQty(restoredDraft.b2bMinOrderQty ?? "");
+    setB2bMaxOrderQty(restoredDraft.b2bMaxOrderQty ?? "");
+    setB2cMinOrderQty(restoredDraft.b2cMinOrderQty ?? "");
+    setB2cMaxOrderQty(restoredDraft.b2cMaxOrderQty ?? "");
     setShowRestorePrompt(false);
     setRestoredDraft(null);
   };
@@ -380,7 +480,27 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     setRestoredDraft(null);
   };
 
-  const categorySelectOptions = categoryOptions.map((c) => ({ label: c.name, value: c.id }));
+  // "Kids" is deliberately excluded from the Seller Portal's gender picker —
+  // sellers targeting kids' products already select it via Category, and
+  // Unisex covers the common-gender case. This is a Seller Portal UI-only
+  // exclusion; the taxonomy manifest itself is untouched (Admin/Buyer
+  // surfaces, if any, keep seeing the full gender list).
+  const genderOptions = (manifest?.genders ?? [])
+    .filter((g) => g.code !== "kids")
+    .map((g) => ({ label: g.label, value: g.code }));
+  const categoryOptions = manifest ? categoriesForGender(manifest, gender) : [];
+  const categorySelectOptions = categoryOptions.map((c) => ({ label: c.name, value: c.slug }));
+  const subcategoryOptions = manifest ? subcategoriesFor(manifest, categorySlug, gender) : [];
+  const subcategorySelectOptions = subcategoryOptions.map((s) => ({ label: s.name, value: s.slug }));
+  const template = manifest ? templateFor(manifest, subcategorySlug) : { required: [], optional: [] };
+  const attributeSlugs = useMemo(
+    () => Array.from(new Set([...template.required, ...template.optional])),
+    [template.required, template.optional]
+  );
+  const colorSelectOptions = manifest
+    ? colorAttributeValues(manifest).map((v) => ({ label: v.name, value: v.name }))
+    : [];
+  const tagGroups = manifest ? tagsByGroup(manifest) : {};
   const inventorySelectOptions = (
     Object.entries(PRODUCT_INVENTORY_TYPE_LABELS) as [ProductInventoryType, string][]
   ).map(([value, label]) => ({ label, value }));
@@ -429,6 +549,23 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     });
   };
 
+  /** Legacy products have no size-chart/manifest validation — any non-empty,
+   * comma-free label is accepted (see legacy_sizes on ProductUpdate). */
+  const addLegacySize = () => {
+    const size = legacySizeInput.trim();
+    if (!size) return;
+    if (size.includes(",")) {
+      toast.error("Size names can't contain commas.");
+      return;
+    }
+    if (selectedSizes.has(size)) {
+      toast.info("Size already added");
+      return;
+    }
+    setSelectedSizes((prev) => new Set(prev).add(size));
+    setLegacySizeInput("");
+  };
+
   const selectColor = (value: string) => {
     setActiveColorSelection(value);
     setSelectedColors((prev) => {
@@ -442,15 +579,19 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     setActiveColorSelection(undefined);
   };
 
-  const addTag = () => {
-    const t = tagInput.trim();
-    if (!t) return;
-    if (tags.includes(t)) {
-      toast.info("Tag already added");
-      return;
-    }
-    setTags((prev) => [...prev, t]);
-    setTagInput("");
+  /** Removing a color drops every variant row for it immediately — the
+   * variant-matrix effect below already rebuilds `variantPricing` from
+   * `selectedColors` × `selectedSizes`, so this just needs to update the
+   * source-of-truth color list and prune any now-orphaned exclusions. */
+  const removeColor = (color: string) => {
+    setSelectedColors((prev) => prev.filter((c) => c !== color));
+    setExcludedCells((prev) => {
+      const next = new Set(prev);
+      for (const key of next) {
+        if (key.startsWith(`${color} `)) next.delete(key);
+      }
+      return next;
+    });
   };
 
   const handleVariantSave = async (variantId: string) => {
@@ -474,32 +615,158 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
   const hasQtyRangeInput = minQty > 0 || maxQty > 0;
   const qtyRangeInvalid = hasQtyRangeInput && maxQty <= minQty;
 
+  const b2bOrderQtyRangeInvalid =
+    b2bMinOrderQty !== "" && b2bMaxOrderQty !== "" &&
+    parseInt(b2bMaxOrderQty, 10) < parseInt(b2bMinOrderQty, 10);
+  const b2cOrderQtyRangeInvalid =
+    b2cMinOrderQty !== "" && b2cMaxOrderQty !== "" &&
+    parseInt(b2cMaxOrderQty, 10) < parseInt(b2cMinOrderQty, 10);
+
+  const isCellExcluded = useCallback(
+    (color: string, size: string) => excludedCells.has(`${color} ${size}`),
+    [excludedCells]
+  );
+  const toggleCellExclusion = (color: string, size: string) => {
+    setExcludedCells((prev) => {
+      const key = `${color} ${size}`;
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const includedVariantRows = useMemo(
+    () => variantPricing.filter((row) => !isCellExcluded(row.color, row.size)),
+    [variantPricing, isCellExcluded]
+  );
+
   const variantPricingValid = useMemo(() => {
-    if (isEditMode || variantPricing.length === 0) return true;
-    return variantPricing.every((row) => {
+    if (isEditMode || includedVariantRows.length === 0) return true;
+    return includedVariantRows.every((row) => {
       const b2cOk = channels === "b2b" || (row.b2c_price.trim() !== "" && !isNaN(parseFloat(row.b2c_price)));
       const b2bOk = channels === "b2c" || (row.b2b_price.trim() !== "" && !isNaN(parseFloat(row.b2b_price)));
       return b2cOk && b2bOk;
     });
-  }, [isEditMode, variantPricing, channels]);
+  }, [isEditMode, includedVariantRows, channels]);
+
+  const requiredAttributesFilled = useMemo(() => {
+    if (isEditMode || isLegacy) return true;
+    return template.required.every((slug) => (attributeSelections[slug]?.length ?? 0) > 0);
+  }, [isEditMode, isLegacy, template.required, attributeSelections]);
 
   const isFormValid = useMemo(
     () =>
       productName.trim().length > 0 &&
       articleNumber.trim().length > 0 &&
-      Boolean(category) &&
+      (isEditMode || Boolean(gender)) &&
+      (isEditMode || Boolean(categorySlug)) &&
+      (isEditMode || Boolean(subcategorySlug)) &&
       Boolean(inventoryType) &&
-      Boolean(gender) &&
       Boolean(mrp) &&
       (isEditMode ? (channels === "b2b" || Boolean(sellingPrice)) : variantPricingValid) &&
       (isEditMode ? (channels === "b2c" || Boolean(b2bSellingPrice)) : true) &&
       selectedColors.length > 0 &&
-      selectedSizes.size > 0 &&
+      (isEditMode || selectedSizes.size > 0) &&
+      (isEditMode || includedVariantRows.length > 0) &&
       (images.length > 0 || (isEditMode && existingImages.length > 0)) &&
       description.trim().length > 0 &&
-      !qtyRangeInvalid,
-    [productName, articleNumber, category, inventoryType, gender, mrp, sellingPrice, channels, b2bSellingPrice, selectedColors, selectedSizes, images, existingImages, isEditMode, description, qtyRangeInvalid, variantPricingValid]
+      requiredAttributesFilled &&
+      !qtyRangeInvalid &&
+      !b2bOrderQtyRangeInvalid &&
+      !b2cOrderQtyRangeInvalid,
+    [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, sellingPrice, channels, b2bSellingPrice, selectedColors, selectedSizes, includedVariantRows, images, existingImages, isEditMode, description, qtyRangeInvalid, b2bOrderQtyRangeInvalid, b2cOrderQtyRangeInvalid, variantPricingValid, requiredAttributesFilled]
   );
+
+  /** Builds the ProductDefinitionUpdate section — never includes
+   * category_slug/subcategory_slug/gender/inventory_type/set_purchase_mode
+   * (immutable after publish, and reassigning them requires the full
+   * attributes+variants resubmission this form doesn't support). Attributes
+   * and tags are only sent for non-legacy products — legacy products have no
+   * Saleor attributes to edit (backend rejects it outright). */
+  function buildProductUpdateSection() {
+    return {
+      name: productName.trim(),
+      description: description.trim() || undefined,
+      article_number: articleNumber.trim() || undefined,
+      is_customisable: isCustomisable,
+      ships_from: shipsFrom.trim() || undefined,
+      shipping_days: deliveryTimeline.trim() || undefined,
+      moq_sets: moqSets ? parseInt(moqSets, 10) : undefined,
+      moq_units: moqUnits ? parseInt(moqUnits, 10) : undefined,
+      min_quantity_per_set: minQty > 0 ? minQty : undefined,
+      max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
+      b2b_min_order_qty: b2bMinOrderQty ? parseInt(b2bMinOrderQty, 10) : undefined,
+      b2b_max_order_qty: b2bMaxOrderQty ? parseInt(b2bMaxOrderQty, 10) : undefined,
+      b2c_min_order_qty: b2cMinOrderQty ? parseInt(b2cMinOrderQty, 10) : undefined,
+      b2c_max_order_qty: b2cMaxOrderQty ? parseInt(b2cMaxOrderQty, 10) : undefined,
+      ...(isLegacy ? {} : { attributes: attributeSelections, tags: tagSlugs }),
+    };
+  }
+
+  /** Shared pricing/inventory broadcast sections for edit-mode updates —
+   * identical between Save Draft and Publish/Update, so both call sites
+   * build from here rather than duplicating the same object literal. */
+  function buildPricingUpdateSection() {
+    return {
+      mrp: mrp ? parseFloat(mrp) : undefined,
+      channels,
+      selling_price: channels !== "b2b" && sellingPrice ? parseFloat(sellingPrice) : undefined,
+      b2b_selling_price: channels !== "b2c" && b2bSellingPrice ? parseFloat(b2bSellingPrice) : undefined,
+    };
+  }
+
+  function buildInventoryUpdateSection() {
+    return {
+      available_qty: parseInt(availableQty, 10) > 0 ? parseInt(availableQty, 10) : undefined,
+    };
+  }
+
+  /** Create-time ProductDefinition — shared between Save Draft and Publish,
+   * which submit the exact same taxonomy/attribute/tag fields. */
+  function buildCreateProductDefinition(description: string) {
+    return {
+      name: productName.trim(),
+      description,
+      category_slug: categorySlug!,
+      subcategory_slug: subcategorySlug!,
+      gender: gender!,
+      inventory_type: inventoryType!,
+      is_customisable: isCustomisable,
+      article_number: articleNumber.trim() || undefined,
+      moq_sets: moqSets ? parseInt(moqSets, 10) : undefined,
+      moq_units: moqUnits ? parseInt(moqUnits, 10) : undefined,
+      ships_from: shipsFrom.trim() || undefined,
+      shipping_days: deliveryTimeline.trim() || undefined,
+      attributes: attributeSelections,
+      tags: tagSlugs,
+      set_purchase_mode: setPurchaseMode,
+      min_quantity_per_set: minQty > 0 ? minQty : undefined,
+      max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
+      b2b_min_order_qty: b2bMinOrderQty ? parseInt(b2bMinOrderQty, 10) : undefined,
+      b2b_max_order_qty: b2bMaxOrderQty ? parseInt(b2bMaxOrderQty, 10) : undefined,
+      b2c_min_order_qty: b2cMinOrderQty ? parseInt(b2cMinOrderQty, 10) : undefined,
+      b2c_max_order_qty: b2cMaxOrderQty ? parseInt(b2cMaxOrderQty, 10) : undefined,
+    };
+  }
+
+  /** Create-time VariantConfiguration — every selected color gets the same
+   * shared image pool and size list (see AddProductClient's color/size
+   * sections: this form doesn't offer per-color sizes/images). */
+  /** Excludes any Color × Size cell the seller unchecked in the variant
+   * matrix — only valid variants are ever submitted. A color left with zero
+   * included sizes after exclusion is dropped entirely (sellers should use
+   * "remove color" for that anyway, but this stays defensive). */
+  function buildCreateVariantConfiguration(imageUrls: string[]) {
+    return {
+      colors: selectedColors
+        .map((color) => ({
+          color,
+          images: imageUrls,
+          sizes: [...selectedSizes].filter((size) => !isCellExcluded(color, size)),
+        }))
+        .filter((c) => c.sizes.length > 0),
+    };
+  }
 
   const handleSaveDraft = async () => {
     if (isSubmitting) return;
@@ -515,8 +782,8 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       toast.error("Product name is required to save a draft.");
       return;
     }
-    if (!category) {
-      toast.error("Category is required to save a draft.");
+    if (!isEditMode && (!categorySlug || !subcategorySlug || !gender)) {
+      toast.error("Gender, category, and subcategory are required to save a draft.");
       return;
     }
     if (!inventoryType) {
@@ -551,50 +818,35 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       const draftDescription = description.trim() || productName.trim();
       if (isEditMode && initialProduct) {
         await updateProduct(initialProduct.id, {
-          name: productName.trim(),
-          description: draftDescription,
-          category_id: category,
-          inventory_type: inventoryType,
-          article_number: articleNumber.trim() || undefined,
-          gender: gender || undefined,
-          shipping_days: deliveryTimeline.trim() || undefined,
-          colors: selectedColors.length > 0 ? selectedColors : undefined,
-          sizes: selectedSizes.size > 0 ? [...selectedSizes] : undefined,
-          mrp: mrp ? parseFloat(mrp) : undefined,
-          selling_price: channels !== "b2b" && sellingPrice ? parseFloat(sellingPrice) : undefined,
-          b2b_selling_price: channels !== "b2c" && b2bSellingPrice ? parseFloat(b2bSellingPrice) : undefined,
-          available_qty: parseInt(availableQty, 10) > 0 ? parseInt(availableQty, 10) : undefined,
-          min_quantity_per_set: minQty > 0 ? minQty : undefined,
-          max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
-          channels,
-          tags: tags.length > 0 ? tags : undefined,
+          product: { ...buildProductUpdateSection(), description: draftDescription },
+          pricing: buildPricingUpdateSection(),
+          inventory: buildInventoryUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
+          legacy_sizes: isLegacy ? [...selectedSizes] : undefined,
         });
         toast.success("Draft updated successfully.");
       } else {
         if (!pendingProductIdRef.current) {
           const created = await createProduct({
-            name: productName.trim(),
-            description: draftDescription,
-            category_id: category,
-            inventory_type: inventoryType,
-            article_number: articleNumber.trim() || undefined,
-            gender: gender || undefined,
-            shipping_days: deliveryTimeline.trim() || undefined,
-            colors: selectedColors,
-            sizes: [...selectedSizes],
-            tags,
-            mrp: mrp ? parseFloat(mrp) : undefined,
-            min_quantity_per_set: minQty > 0 ? minQty : undefined,
-            max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
-            channels,
-            images: imageUrls,
-            variant_pricing: variantPricing.map((r) => ({
-              name: r.name,
-              b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
-              b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
-              available_qty: r.qty ? parseInt(r.qty, 10) : undefined,
-            })),
+            product: buildCreateProductDefinition(draftDescription),
+            variants: buildCreateVariantConfiguration(imageUrls),
+            pricing: {
+              mrp: mrp ? parseFloat(mrp) : undefined,
+              channels,
+              overrides: includedVariantRows
+                .filter((r) => r.b2c_price || r.b2b_price)
+                .map((r) => ({
+                  color: r.color,
+                  size: r.size,
+                  b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
+                  b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
+                })),
+            },
+            inventory: {
+              overrides: includedVariantRows
+                .filter((r) => r.qty)
+                .map((r) => ({ color: r.color, size: r.size, available_qty: parseInt(r.qty, 10) })),
+            },
           });
           pendingProductIdRef.current = created.product_id;
           if (created.images_failed) {
@@ -631,16 +883,26 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       toast.error("Article number is required");
       return;
     }
-    if (!category) {
-      toast.error("Category is required");
-      return;
+    if (!isEditMode) {
+      if (!gender) {
+        toast.error("Gender is required");
+        return;
+      }
+      if (!categorySlug) {
+        toast.error("Category is required");
+        return;
+      }
+      if (!subcategorySlug) {
+        toast.error("Subcategory is required");
+        return;
+      }
+      if (!requiredAttributesFilled) {
+        toast.error("Please fill in all required attributes");
+        return;
+      }
     }
     if (!inventoryType) {
       toast.error("Inventory type is required");
-      return;
-    }
-    if (!gender) {
-      toast.error("Gender is required");
       return;
     }
     if (images.length === 0 && !(isEditMode && existingImages.length > 0)) {
@@ -651,12 +913,24 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       toast.error("Select at least one color");
       return;
     }
-    if (selectedSizes.size === 0) {
+    if (!isEditMode && selectedSizes.size === 0) {
       toast.error("Select at least one size");
+      return;
+    }
+    if (!isEditMode && includedVariantRows.length === 0) {
+      toast.error("At least one color/size combination must be included");
       return;
     }
     if (qtyRangeInvalid) {
       toast.error("Maximum quantity must be greater than minimum quantity");
+      return;
+    }
+    if (b2bOrderQtyRangeInvalid) {
+      toast.error("B2B max order qty must be greater than or equal to min order qty");
+      return;
+    }
+    if (b2cOrderQtyRangeInvalid) {
+      toast.error("B2C max order qty must be greater than or equal to min order qty");
       return;
     }
     if (!mrp.trim()) {
@@ -669,26 +943,27 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
       return;
     }
     if (!isEditMode) {
-      for (const row of variantPricing) {
+      for (const row of includedVariantRows) {
+        const label = `${row.color} / ${row.size}`;
         if (channels !== "b2b") {
           const b2c = parseFloat(row.b2c_price);
           if (!row.b2c_price.trim() || isNaN(b2c) || b2c <= 0) {
-            toast.error(`Enter a valid B2C price for "${row.name}"`);
+            toast.error(`Enter a valid B2C price for "${label}"`);
             return;
           }
           if (b2c > mrpNum) {
-            toast.error(`B2C price for "${row.name}" cannot exceed MRP`);
+            toast.error(`B2C price for "${label}" cannot exceed MRP`);
             return;
           }
         }
         if (channels !== "b2c") {
           const b2b = parseFloat(row.b2b_price);
           if (!row.b2b_price.trim() || isNaN(b2b) || b2b <= 0) {
-            toast.error(`Enter a valid B2B price for "${row.name}"`);
+            toast.error(`Enter a valid B2B price for "${label}"`);
             return;
           }
           if (b2b > mrpNum) {
-            toast.error(`B2B price for "${row.name}" cannot exceed MRP`);
+            toast.error(`B2B price for "${label}" cannot exceed MRP`);
             return;
           }
         }
@@ -734,24 +1009,11 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
 
       if (isEditMode && initialProduct) {
         await updateProduct(initialProduct.id, {
-          name: productName.trim(),
-          description: description.trim() || undefined,
-          category_id: category || undefined,
-          inventory_type: inventoryType || undefined,
-          article_number: articleNumber.trim() || undefined,
-          gender: gender || undefined,
-          shipping_days: deliveryTimeline.trim() || undefined,
-          colors: selectedColors.length > 0 ? selectedColors : undefined,
-          sizes: selectedSizes.size > 0 ? [...selectedSizes] : undefined,
-          mrp: mrp ? parseFloat(mrp) : undefined,
-          selling_price: channels !== "b2b" && sellingPrice ? parseFloat(sellingPrice) : undefined,
-          b2b_selling_price: channels !== "b2c" && b2bSellingPrice ? parseFloat(b2bSellingPrice) : undefined,
-          available_qty: parseInt(availableQty, 10) > 0 ? parseInt(availableQty, 10) : undefined,
-          min_quantity_per_set: minQty > 0 ? minQty : undefined,
-          max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
-          channels,
-          tags: tags.length > 0 ? tags : undefined,
+          product: buildProductUpdateSection(),
+          pricing: buildPricingUpdateSection(),
+          inventory: buildInventoryUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
+          legacy_sizes: isLegacy ? [...selectedSizes] : undefined,
         });
         toast.success("Product updated successfully.");
       } else {
@@ -760,27 +1022,25 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
         let productIdToPublish = pendingProductIdRef.current;
         if (!productIdToPublish) {
           const created = await createProduct({
-            name: productName.trim(),
-            description: description.trim() || productName.trim(),
-            category_id: category,
-            inventory_type: inventoryType,
-            article_number: articleNumber.trim() || undefined,
-            gender: gender || undefined,
-            shipping_days: deliveryTimeline.trim() || undefined,
-            colors: selectedColors,
-            sizes: [...selectedSizes],
-            tags,
-            mrp: mrpNum,
-            min_quantity_per_set: minQty > 0 ? minQty : undefined,
-            max_quantity_per_set: maxQty > 0 ? maxQty : undefined,
-            channels,
-            images: imageUrls,
-            variant_pricing: variantPricing.map((r) => ({
-              name: r.name,
-              b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
-              b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
-              available_qty: r.qty ? parseInt(r.qty, 10) : undefined,
-            })),
+            product: buildCreateProductDefinition(description.trim() || productName.trim()),
+            variants: buildCreateVariantConfiguration(imageUrls),
+            pricing: {
+              mrp: mrpNum,
+              channels,
+              overrides: includedVariantRows.map((r) => ({
+                color: r.color,
+                size: r.size,
+                b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
+                b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
+              })),
+            },
+            inventory: {
+              overrides: includedVariantRows.map((r) => ({
+                color: r.color,
+                size: r.size,
+                available_qty: r.qty ? parseInt(r.qty, 10) : 0,
+              })),
+            },
           });
           pendingProductIdRef.current = created.product_id;
           productIdToPublish = created.product_id;
@@ -890,10 +1150,6 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
               <CardTitle className="flex items-center gap-2 text-base font-normal">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M8.21667 17.8583L7.5 18.3333L5 16.6667L2.5 18.3333V2.5H17.5V8.5C16.975 8.275 16.3667 8.275 15.8333 8.51667V4.16667H4.16667V15.2167L5 14.6667L7.5 16.3333L8.21667 15.8333V17.8583ZM9.88333 16.6333L15 11.525L16.6917 13.225L11.5833 18.3333H9.88333V16.6333ZM18.0917 11.825L17.275 12.6417L15.575 10.9417L16.3917 10.125L16.4 10.1167L16.4083 10.1083C16.55 9.975 16.7667 9.96667 16.925 10.075C16.95 10.0833 16.975 10.1083 16.9917 10.125L18.0917 11.225C18.2583 11.3917 18.2583 11.6667 18.0917 11.825ZM14.1667 7.5V5.83333H5.83333V7.5H14.1667ZM12.5 10.8333V9.16667H5.83333V10.8333H12.5Z" fill="black" />
-                </svg>
-
                 Basic Information
               </CardTitle>
             </CardHeader>
@@ -924,39 +1180,71 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
               </div>
               <div className="space-y-3">
                 <span className="text-sm font-medium">
-                  Category <RequiredMark />
+                  Gender {!isEditMode && <RequiredMark />}
                 </span>
-                <AppSelect
-                  className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
-                  placeholder="Select category."
-                  value={category}
-                  onChange={(v) => setCategory(v)}
-                  options={categorySelectOptions}
-                />
+                {isEditMode ? (
+                  <LockedField value={gender ?? ""} />
+                ) : (
+                  <AppSelect
+                    className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
+                    placeholder="Select gender."
+                    value={gender}
+                    onChange={(v) => { setGender(v); setCategorySlug(undefined); setSubcategorySlug(undefined); }}
+                    options={genderOptions}
+                  />
+                )}
               </div>
               <div className="space-y-3">
                 <span className="text-sm font-medium">
-                  Inventory Type <RequiredMark />
+                  Category {!isEditMode && <RequiredMark />}
                 </span>
-                <AppSelect
-                  className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
-                  placeholder="Select Inventory type."
-                  value={inventoryType}
-                  onChange={(v) => setInventoryType(v)}
-                  options={inventorySelectOptions}
-                />
+                {isEditMode ? (
+                  <LockedField value={initialProduct?.categoryName ?? ""} />
+                ) : (
+                  <AppSelect
+                    className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
+                    placeholder={gender ? "Select category." : "Select gender first."}
+                    value={categorySlug}
+                    onChange={(v) => { setCategorySlug(v); setSubcategorySlug(undefined); }}
+                    options={categorySelectOptions}
+                  />
+                )}
               </div>
+              {!isEditMode && (
+                <div className="space-y-3">
+                  <span className="text-sm font-medium">
+                    Subcategory <RequiredMark />
+                  </span>
+                  <AppSelect
+                    className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
+                    placeholder={categorySlug ? "Select subcategory." : "Select category first."}
+                    value={subcategorySlug}
+                    onChange={(v) => setSubcategorySlug(v)}
+                    options={subcategorySelectOptions}
+                  />
+                </div>
+              )}
               <div className="space-y-3">
                 <span className="text-sm font-medium">
-                  Gender <RequiredMark />
+                  Inventory Type {!isEditMode && <RequiredMark />}
                 </span>
-                <AppSelect
-                  className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
-                  placeholder="Select gender."
-                  value={gender}
-                  onChange={(v) => setGender(v)}
-                  options={GENDER_OPTIONS}
-                />
+                {isEditMode ? (
+                  <LockedField
+                    value={
+                      inventoryType
+                        ? PRODUCT_INVENTORY_TYPE_LABELS[inventoryType as ProductInventoryType]
+                        : ""
+                    }
+                  />
+                ) : (
+                  <AppSelect
+                    className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
+                    placeholder="Select Inventory type."
+                    value={inventoryType}
+                    onChange={(v) => setInventoryType(v)}
+                    options={inventorySelectOptions}
+                  />
+                )}
               </div>
               <div className="space-y-3">
                 <label htmlFor="delivery-timeline" className="text-sm font-medium">
@@ -974,64 +1262,156 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
           </Card>
         </div>
 
+        {!isEditMode && !isLegacy && subcategorySlug && attributeSlugs.length > 0 && (
+          <Card className="border bg-white shadow-sm">
+            <CardHeader className="border-b pb-4">
+              <CardTitle className="text-base font-normal">Attributes</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 pt-5 sm:grid-cols-2">
+              {attributeSlugs.map((slug) => {
+                const attr = manifest ? attributeBySlug(manifest, slug) : undefined;
+                if (!attr) return null;
+                const required = template.required.includes(slug);
+                return (
+                  <div key={slug} className="space-y-2">
+                    <span className="text-sm font-medium">
+                      {attr.name} {required && <RequiredMark />}
+                    </span>
+                    <MultiSelectFilter
+                      placeholder={`Select ${attr.name.toLowerCase()}`}
+                      options={attr.values.map((v) => ({ label: v.name, value: v.name }))}
+                      selected={attributeSelections[slug] ?? []}
+                      onChange={(vals) =>
+                        setAttributeSelections((prev) => ({ ...prev, [slug]: vals }))
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid gap-6 lg:grid-cols-2">
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
               <CardTitle className="flex items-center gap-2 text-base font-normal">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path fillRule="evenodd" clipRule="evenodd" d="M15.3331 4.06641C15.4922 4.06641 15.6448 4.12962 15.7573 4.24214C15.8699 4.35466 15.9331 4.50728 15.9331 4.66641V9.99974C15.9331 10.1589 15.8699 10.3115 15.7573 10.424C15.6448 10.5365 15.4922 10.5997 15.3331 10.5997C15.1739 10.5997 15.0213 10.5365 14.9088 10.424C14.7963 10.3115 14.7331 10.1589 14.7331 9.99974V6.11441L6.11441 14.7331H9.99974C10.1589 14.7331 10.3115 14.7963 10.424 14.9088C10.5365 15.0213 10.5997 15.1739 10.5997 15.3331C10.5997 15.4922 10.5365 15.6448 10.424 15.7573C10.3115 15.8699 10.1589 15.9331 9.99974 15.9331H4.66641C4.50728 15.9331 4.35466 15.8699 4.24214 15.7573C4.12962 15.6448 4.06641 15.4922 4.06641 15.3331V9.99974C4.06641 9.92095 4.08193 9.84293 4.11208 9.77013C4.14223 9.69733 4.18643 9.63119 4.24214 9.57547C4.29786 9.51976 4.364 9.47556 4.4368 9.44541C4.50959 9.41526 4.58761 9.39974 4.66641 9.39974C4.7452 9.39974 4.82322 9.41526 4.89602 9.44541C4.96881 9.47556 5.03496 9.51976 5.09067 9.57547C5.14639 9.63119 5.19058 9.69733 5.22073 9.77013C5.25089 9.84293 5.26641 9.92095 5.26641 9.99974V13.8851L13.8851 5.26641H9.99974C9.84061 5.26641 9.688 5.20319 9.57547 5.09067C9.46295 4.97815 9.39974 4.82554 9.39974 4.66641C9.39974 4.50728 9.46295 4.35466 9.57547 4.24214C9.688 4.12962 9.84061 4.06641 9.99974 4.06641H15.3331Z" fill="black" />
-                </svg>
-
                 Size Selection
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-5">
-              <div className="flex flex-wrap gap-2">
-                {SIZE_OPTIONS.map((size) => {
-                  const on = selectedSizes.has(size);
-                  return (
-                    <button
-                      key={size}
-                      type="button"
-                      onClick={() => toggleSize(size)}
-                      className={cn(
-                        "min-w-[2.5rem] rounded-md border px-3 py-2 text-sm font-medium transition-colors",
-                        on
-                          ? "border-black bg-black text-white"
-                          : "border-input bg-white text-foreground hover:bg-muted/40"
-                      )}
-                    >
-                      {size}
-                    </button>
-                  );
-                })}
-              </div>
-              <div>
-                <p className="mb-2 text-sm text-muted-foreground">Selected Sizes :</p>
+              {isLegacy ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    This is a legacy product — it predates the taxonomy system, so sizes
+                    aren&apos;t validated against a size chart. Add or remove sizes below.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="e.g. M"
+                      value={legacySizeInput}
+                      onChange={(e) => setLegacySizeInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addLegacySize();
+                        }
+                      }}
+                      className="max-w-[160px] bg-white"
+                    />
+                    <Button type="button" variant="secondary" onClick={addLegacySize}>
+                      Add
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[...selectedSizes].map((s) => (
+                      <span
+                        key={s}
+                        className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
+                      >
+                        {s}
+                        <button
+                          type="button"
+                          className="rounded p-0.5 hover:bg-background"
+                          aria-label={`Remove ${s}`}
+                          onClick={() => toggleSize(s)}
+                        >
+                          <span className="text-muted-foreground">×</span>
+                        </button>
+                      </span>
+                    ))}
+                    {selectedSizes.size === 0 && (
+                      <span className="text-xs text-muted-foreground">No sizes yet</span>
+                    )}
+                  </div>
+                </div>
+              ) : isEditMode ? (
                 <div className="flex flex-wrap gap-2">
-                  {[...selectedSizes].sort((a, b) => SIZE_OPTIONS.indexOf(a as (typeof SIZE_OPTIONS)[number]) - SIZE_OPTIONS.indexOf(b as (typeof SIZE_OPTIONS)[number])).map((s) => (
-                    <span
-                      key={s}
-                      className="inline-flex rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
-                    >
+                  {[...selectedSizes].map((s) => (
+                    <span key={s} className="inline-flex rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
                       {s}
                     </span>
                   ))}
                   {selectedSizes.size === 0 && (
-                    <span className="text-xs text-muted-foreground">None selected</span>
+                    <span className="text-xs text-muted-foreground">None</span>
                   )}
+                  <p className="w-full text-xs text-muted-foreground">
+                    Adding or removing sizes on an existing product isn&apos;t supported here yet —
+                    use the Variant Pricing &amp; Stock table below to adjust existing sizes.
+                  </p>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    {sizeOptions.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        {gender && categorySlug ? "Loading sizes…" : "Select gender and category to see available sizes."}
+                      </span>
+                    ) : (
+                      sizeOptions.map((size) => {
+                        const on = selectedSizes.has(size);
+                        return (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => toggleSize(size)}
+                            className={cn(
+                              "min-w-[2.5rem] rounded-md border px-3 py-2 text-sm font-medium transition-colors",
+                              on
+                                ? "border-black bg-black text-white"
+                                : "border-input bg-white text-foreground hover:bg-muted/40"
+                            )}
+                          >
+                            {size}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm text-muted-foreground">Selected Sizes :</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[...selectedSizes].sort((a, b) => sizeOptions.indexOf(a) - sizeOptions.indexOf(b)).map((s) => (
+                        <span
+                          key={s}
+                          className="inline-flex rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
+                        >
+                          {s}
+                        </span>
+                      ))}
+                      {selectedSizes.size === 0 && (
+                        <span className="text-xs text-muted-foreground">None selected</span>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
               <CardTitle className="flex items-center gap-2 text-base font-normal">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M14.6501 8.0917C13.4627 7.76736 12.1974 7.8924 11.0965 8.44286C9.99557 8.99332 9.13637 9.93053 8.68342 11.075M14.6501 8.0917C15.3774 8.29058 16.0502 8.65137 16.6184 9.14706C17.1865 9.64275 17.6352 10.2605 17.9308 10.9541C18.2265 11.6477 18.3614 12.3992 18.3256 13.1523C18.2897 13.9055 18.084 14.6407 17.7238 15.3031C17.3637 15.9655 16.8583 16.5379 16.2457 16.9774C15.633 17.4169 14.9289 17.7121 14.1861 17.841C13.4432 17.9699 12.6808 17.9291 11.9559 17.7217C11.231 17.5143 10.5624 17.1457 10.0001 16.6434M14.6501 8.0917C14.9498 7.33343 15.0595 6.51336 14.9696 5.70297C14.8798 4.89258 14.5931 4.11646 14.1346 3.44223C13.6761 2.76801 13.0597 2.21614 12.3391 1.83472C11.6184 1.4533 10.8154 1.25391 10.0001 1.25391C9.18473 1.25391 8.38175 1.4533 7.66111 1.83472C6.94047 2.21614 6.32404 2.76801 5.86554 3.44223C5.40703 4.11646 5.12037 4.89258 5.03053 5.70297C4.94069 6.51336 5.05039 7.33343 5.35008 8.0917M8.68342 11.075C8.45168 11.6614 8.33293 12.2862 8.33342 12.9167C8.33342 14.3975 8.97758 15.7284 10.0001 16.6434M8.68342 11.075C7.93459 10.8701 7.24365 10.494 6.66516 9.97621C6.08667 9.45846 5.63646 8.81331 5.35008 8.0917M10.0001 16.6434C9.4378 17.1457 8.7692 17.5143 8.0443 17.7217C7.31941 17.9291 6.55699 17.9699 5.81411 17.841C5.07123 17.7121 4.36712 17.4169 3.75447 16.9774C3.14183 16.5379 2.63651 15.9655 2.27633 15.3031C1.91615 14.6407 1.71045 13.9055 1.6746 13.1523C1.63875 12.3992 1.7737 11.6477 2.06934 10.9541C2.36497 10.2605 2.81365 9.64275 3.38178 9.14706C3.94992 8.65137 4.6228 8.29058 5.35008 8.0917" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-
                 Color Options
               </CardTitle>
             </CardHeader>
@@ -1040,44 +1420,53 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
                 <span className="text-sm font-medium">
                   Color <RequiredMark />
                 </span>
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3">
-                  <ColorSelect
-                    className="w-full min-w-0"
-                    placeholder="Select color."
-                    value={activeColorSelection}
-                    onChange={selectColor}
-                    open={isColorDropdownOpen}
-                    onOpenChange={setIsColorDropdownOpen}
-                  />
-                  <Button
-                    type="button"
-                    className="h-9 whitespace-nowrap bg-[#122130] px-3 text-xs hover:bg-[#0d1a28]"
-                    onClick={() => setIsColorDropdownOpen(true)}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add more color
-                  </Button>
-                </div>
+                {isEditMode ? (
+                  <p className="text-xs text-muted-foreground">
+                    Adding or removing colors on an existing product isn&apos;t supported here yet.
+                  </p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3">
+                    <ColorSelect
+                      className="w-full min-w-0"
+                      placeholder="Select color."
+                      value={activeColorSelection}
+                      onChange={selectColor}
+                      open={isColorDropdownOpen}
+                      onOpenChange={setIsColorDropdownOpen}
+                      options={colorSelectOptions}
+                    />
+                    <Button
+                      type="button"
+                      className="h-9 whitespace-nowrap bg-[#122130] px-3 text-xs hover:bg-[#0d1a28]"
+                      onClick={() => setIsColorDropdownOpen(true)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add more color
+                    </Button>
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   {selectedColors.length === 0 ? (
                     <span className="text-xs text-muted-foreground">No color selected</span>
                   ) : (
-                    selectedColors.map((color) => {
-                      const palette = COLOR_PALETTE.find((entry) => entry.value === color);
-                      return (
-                        <span
-                          key={color}
-                          className="inline-flex items-center gap-2 rounded-xs bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
-                        >
-                          <span
-                            className="size-3 rounded-full border border-black/10"
-                            style={{ backgroundColor: palette?.hex ?? "#9ca3af" }}
-                            aria-hidden
-                          />
-                          {color}
-                        </span>
-                      );
-                    })
+                    selectedColors.map((color) => (
+                      <span
+                        key={color}
+                        className="inline-flex items-center gap-2 rounded-xs bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
+                      >
+                        {color}
+                        {!isEditMode && (
+                          <button
+                            type="button"
+                            className="rounded p-0.5 hover:bg-background"
+                            aria-label={`Remove ${color}`}
+                            onClick={() => removeColor(color)}
+                          >
+                            <span className="text-muted-foreground">×</span>
+                          </button>
+                        )}
+                      </span>
+                    ))
                   )}
                 </div>
               </div>
@@ -1089,18 +1478,6 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
               <CardTitle className="flex items-center gap-2 text-base font-normal">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <g clipPath="url(#clip0_3813_105761)">
-                    <path d="M10.0003 18.3346C14.6027 18.3346 18.3337 14.6037 18.3337 10.0013C18.3337 5.39893 14.6027 1.66797 10.0003 1.66797C5.39795 1.66797 1.66699 5.39893 1.66699 10.0013C1.66699 14.6037 5.39795 18.3346 10.0003 18.3346Z" stroke="black" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M7.5 9.16927H12.9167M12.9167 5.83594H7.5C8.38405 5.83594 9.2319 6.18713 9.85702 6.81225C10.4821 7.43737 10.8333 8.28522 10.8333 9.16927C10.8333 10.0533 10.4821 10.9012 9.85702 11.5263C9.2319 12.1514 8.38405 12.5026 7.5 12.5026L10 15.0026" stroke="black" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                  </g>
-                  <defs>
-                    <clipPath id="clip0_3813_105761">
-                      <rect width="20" height="20" fill="white" />
-                    </clipPath>
-                  </defs>
-                </svg>
-
                 Pricing &amp; Quantity
               </CardTitle>
             </CardHeader>
@@ -1205,25 +1582,46 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
                   <p className="text-sm font-medium">
                     Variant Pricing <RequiredMark />
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    Uncheck a row to exclude that color/size combination — it won&apos;t be created.
+                  </p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-2 pr-3 font-medium">Variant</th>
+                          <th className="pb-2 pr-3 font-medium">Included</th>
+                          <th className="pb-2 pr-3 font-medium">Color</th>
+                          <th className="pb-2 pr-3 font-medium">Size</th>
                           {channels !== "b2b" && <th className="pb-2 pr-3 font-medium">B2C Price (₹)</th>}
                           {channels !== "b2c" && <th className="pb-2 pr-3 font-medium">B2B Price (₹)</th>}
                           <th className="pb-2 font-medium">Qty</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {variantPricing.map((row, idx) => (
-                          <tr key={row.name} className="border-b last:border-0">
-                            <td className="py-2 pr-3 text-xs font-medium">{row.name}</td>
+                        {variantPricing.map((row, idx) => {
+                          const excluded = isCellExcluded(row.color, row.size);
+                          return (
+                          <tr
+                            key={`${row.color} ${row.size}`}
+                            className={cn("border-b last:border-0", excluded && "opacity-40")}
+                          >
+                            <td className="py-2 pr-3">
+                              <input
+                                type="checkbox"
+                                checked={!excluded}
+                                aria-label={`Include ${row.color} ${row.size}`}
+                                onChange={() => toggleCellExclusion(row.color, row.size)}
+                                className="h-4 w-4 rounded border-input"
+                              />
+                            </td>
+                            <td className="py-2 pr-3 text-xs font-medium">{row.color}</td>
+                            <td className="py-2 pr-3 text-xs font-medium">{row.size}</td>
                             {channels !== "b2b" && (
                               <td className="py-2 pr-3">
                                 <Input
                                   inputMode="decimal"
                                   placeholder="0.00"
+                                  disabled={excluded}
                                   value={row.b2c_price}
                                   onChange={(e) =>
                                     setVariantPricing((prev) =>
@@ -1239,6 +1637,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
                                 <Input
                                   inputMode="decimal"
                                   placeholder="0.00"
+                                  disabled={excluded}
                                   value={row.b2b_price}
                                   onChange={(e) =>
                                     setVariantPricing((prev) =>
@@ -1253,6 +1652,7 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
                               <Input
                                 inputMode="numeric"
                                 placeholder="0"
+                                disabled={excluded}
                                 value={row.qty}
                                 onChange={(e) =>
                                   setVariantPricing((prev) =>
@@ -1263,7 +1663,8 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
                               />
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1273,156 +1674,199 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
                   Select colors and sizes above to configure per-variant pricing.
                 </p>
               )}
-              <div className="flex flex-col gap-2">
-                <QuantityStepper label="Minimum Quantity" value={minQty} onChange={setMinQty} />
-                <QuantityStepper label="Maximum Quantity" value={maxQty} onChange={setMaxQty} />
-                {qtyRangeInvalid && (
-                  <p className="text-xs text-destructive" role="alert">
-                    Maximum quantity must be greater than minimum quantity. Increase maximum above{" "}
-                    {minQty}.
-                  </p>
-                )}
-              </div>
             </CardContent>
           </Card>
 
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
               <CardTitle className="flex items-center gap-2 text-base font-normal">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M2.5 6.66667V10.1433C2.50009 10.5853 2.67575 11.0092 2.98833 11.3217L7.74667 16.08C8.12329 16.4566 8.63408 16.6681 9.16667 16.6681C9.69926 16.6681 10.21 16.4566 10.5867 16.08L13.58 13.0867C13.9566 12.71 14.1681 12.1993 14.1681 11.6667C14.1681 11.1341 13.9566 10.6233 13.58 10.2467L8.82167 5.48833C8.50918 5.17575 8.08532 5.00009 7.64333 5H4.16667C3.72464 5 3.30072 5.17559 2.98816 5.48816C2.67559 5.80072 2.5 6.22464 2.5 6.66667Z" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M15.0002 15.8333L16.3269 14.5067C17.08 13.7534 17.5031 12.7318 17.5031 11.6667C17.5031 10.6015 17.08 9.57992 16.3269 8.82667L12.5002 5M5.83353 8.33333H5.8252" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-
-                Product Tags
+                Set Purchase &amp; Customisation
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-5">
-              Add a Tag
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  placeholder="Example : White Shirt"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addTag();
-                    }
-                  }}
-                  className="sm:flex-1 bg-white"
-                />
-                <Button type="button" variant="secondary" className="shrink-0" onClick={addTag}>
-                  Add
-                </Button>
+              <div className="space-y-3">
+                <span className="text-sm font-medium">Set Purchase Mode</span>
+                {isEditMode ? (
+                  <LockedField
+                    value={SET_PURCHASE_MODE_OPTIONS.find((o) => o.value === setPurchaseMode)?.label ?? ""}
+                  />
+                ) : (
+                  <AppSelect
+                    className="w-full min-w-0 bg-white text-foreground data-[placeholder]:text-muted-foreground"
+                    placeholder="Select set purchase mode."
+                    value={setPurchaseMode}
+                    onChange={(v) => setSetPurchaseMode(v as SetPurchaseMode)}
+                    options={SET_PURCHASE_MODE_OPTIONS}
+                  />
+                )}
               </div>
-              <div>
-                <p className="mb-2 text-sm text-muted-foreground">Tags :</p>
-                <div className="flex flex-wrap gap-2">
-                  {tags.map((t) => (
-                    <span
-                      key={t}
-                      className="inline-flex items-center gap-1 rounded-md border bg-muted px-2 py-1 text-xs font-medium"
-                    >
-                      {t}
-                      <button
-                        type="button"
-                        className="rounded p-0.5 hover:bg-background"
-                        aria-label={`Remove ${t}`}
-                        onClick={() => setTags((prev) => prev.filter((x) => x !== t))}
-                      >
-                        <span className="text-muted-foreground">×</span>
-                      </button>
-                    </span>
-                  ))}
-                  {tags.length === 0 && (
-                    <span className="text-xs text-muted-foreground">No tags yet</span>
-                  )}
+              <div className="flex items-center gap-2">
+                <input
+                  id="is-customisable"
+                  type="checkbox"
+                  checked={isCustomisable}
+                  onChange={(e) => setIsCustomisable(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <label htmlFor="is-customisable" className="text-sm font-medium">
+                  Customisable product
+                </label>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-3">
+                  <label htmlFor="moq-sets" className="text-sm font-medium">MOQ (Sets)</label>
+                  <Input
+                    id="moq-sets"
+                    inputMode="numeric"
+                    placeholder="e.g. 10"
+                    value={moqSets}
+                    onChange={(e) => setMoqSets(e.target.value.replace(/\D/g, ""))}
+                    className="bg-white"
+                  />
                 </div>
+                <div className="space-y-3">
+                  <label htmlFor="moq-units" className="text-sm font-medium">MOQ (Units)</label>
+                  <Input
+                    id="moq-units"
+                    inputMode="numeric"
+                    placeholder="e.g. 50"
+                    value={moqUnits}
+                    onChange={(e) => setMoqUnits(e.target.value.replace(/\D/g, ""))}
+                    className="bg-white"
+                  />
+                </div>
+              </div>
+              <div className="space-y-3">
+                <label htmlFor="ships-from" className="text-sm font-medium">Ships From</label>
+                <Input
+                  id="ships-from"
+                  placeholder="e.g. Tiruppur, Tamil Nadu"
+                  value={shipsFrom}
+                  onChange={(e) => setShipsFrom(e.target.value)}
+                  className="bg-white"
+                />
+              </div>
+
+              {/* Minimum/Maximum Quantity — business ordering policy, kept
+                  separately per channel (never a stock split; one physical
+                  inventory pool). Only the section(s) matching the selected
+                  channel(s) render, so B2B and B2C limits can never be
+                  confused with each other. */}
+              <div className="space-y-4 border-t pt-4">
+                <span className="text-sm font-medium">Minimum / Maximum Quantity</span>
+                {(channels === "b2b" || channels === "both") && (
+                  <div className="space-y-3 rounded-md border border-purple-200 bg-purple-50/40 p-3">
+                    <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                      B2B
+                    </span>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <label htmlFor="b2b-min-order-qty" className="text-xs font-medium text-muted-foreground">
+                          Minimum Quantity
+                        </label>
+                        <Input
+                          id="b2b-min-order-qty"
+                          inputMode="numeric"
+                          placeholder="e.g. 10"
+                          value={b2bMinOrderQty}
+                          onChange={(e) => setB2bMinOrderQty(e.target.value.replace(/\D/g, ""))}
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label htmlFor="b2b-max-order-qty" className="text-xs font-medium text-muted-foreground">
+                          Maximum Quantity
+                        </label>
+                        <Input
+                          id="b2b-max-order-qty"
+                          inputMode="numeric"
+                          placeholder="e.g. 500"
+                          value={b2bMaxOrderQty}
+                          onChange={(e) => setB2bMaxOrderQty(e.target.value.replace(/\D/g, ""))}
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+                    {b2bOrderQtyRangeInvalid && (
+                      <p className="text-xs text-destructive" role="alert">
+                        B2B max order qty must be greater than or equal to min order qty.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {(channels === "b2c" || channels === "both") && (
+                  <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/40 p-3">
+                    <span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                      B2C
+                    </span>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <label htmlFor="b2c-min-order-qty" className="text-xs font-medium text-muted-foreground">
+                          Minimum Quantity
+                        </label>
+                        <Input
+                          id="b2c-min-order-qty"
+                          inputMode="numeric"
+                          placeholder="e.g. 1"
+                          value={b2cMinOrderQty}
+                          onChange={(e) => setB2cMinOrderQty(e.target.value.replace(/\D/g, ""))}
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label htmlFor="b2c-max-order-qty" className="text-xs font-medium text-muted-foreground">
+                          Maximum Quantity
+                        </label>
+                        <Input
+                          id="b2c-max-order-qty"
+                          inputMode="numeric"
+                          placeholder="e.g. 20"
+                          value={b2cMaxOrderQty}
+                          onChange={(e) => setB2cMaxOrderQty(e.target.value.replace(/\D/g, ""))}
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+                    {b2cOrderQtyRangeInvalid && (
+                      <p className="text-xs text-destructive" role="alert">
+                        B2C max order qty must be greater than or equal to min order qty.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {isEditMode && productVariants.length > 0 && (
+        {!isLegacy && (
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
-              <CardTitle className="text-base font-normal">Variant Pricing &amp; Stock</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base font-normal">
+                Product Tags
+              </CardTitle>
             </CardHeader>
-            <CardContent className="pt-5">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 pr-4 font-medium">Variant</th>
-                      <th className="pb-2 pr-4 font-medium">B2C Price (₹)</th>
-                      <th className="pb-2 pr-4 font-medium">B2B Price (₹)</th>
-                      <th className="pb-2 pr-4 font-medium">Stock</th>
-                      <th className="pb-2 font-medium" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {productVariants.map((variant) => {
-                      const edit = variantEdits[variant.id] ?? { b2c_price: "", b2b_price: "", quantity: "" };
-                      return (
-                        <tr key={variant.id} className="border-b last:border-0">
-                          <td className="py-2 pr-4 font-medium">{variant.name ?? variant.sku}</td>
-                          <td className="py-2 pr-4">
-                            <Input
-                              inputMode="decimal"
-                              value={edit.b2c_price}
-                              onChange={(e) =>
-                                setVariantEdits((prev) => ({
-                                  ...prev,
-                                  [variant.id]: { ...edit, b2c_price: e.target.value },
-                                }))
-                              }
-                              className="h-8 w-24 bg-white"
-                            />
-                          </td>
-                          <td className="py-2 pr-4">
-                            <Input
-                              inputMode="decimal"
-                              value={edit.b2b_price}
-                              onChange={(e) =>
-                                setVariantEdits((prev) => ({
-                                  ...prev,
-                                  [variant.id]: { ...edit, b2b_price: e.target.value },
-                                }))
-                              }
-                              className="h-8 w-24 bg-white"
-                            />
-                          </td>
-                          <td className="py-2 pr-4">
-                            <Input
-                              inputMode="numeric"
-                              value={edit.quantity}
-                              onChange={(e) =>
-                                setVariantEdits((prev) => ({
-                                  ...prev,
-                                  [variant.id]: { ...edit, quantity: e.target.value.replace(/\D/g, "") },
-                                }))
-                              }
-                              className="h-8 w-20 bg-white"
-                            />
-                          </td>
-                          <td className="py-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="h-8 bg-[#122130] text-xs hover:bg-[#0d1a28]"
-                              disabled={savingVariantId === variant.id}
-                              onClick={() => handleVariantSave(variant.id)}
-                            >
-                              {savingVariantId === variant.id ? "Saving…" : "Save"}
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            <CardContent className="space-y-4 pt-5">
+              {Object.entries(tagGroups).length === 0 ? (
+                <p className="text-xs text-muted-foreground">Loading tags…</p>
+              ) : (
+                Object.entries(tagGroups).map(([group, groupTags]) => (
+                  <div key={group} className="space-y-2">
+                    <span className="text-sm font-medium capitalize">{group}</span>
+                    <MultiSelectFilter
+                      placeholder={`Select ${group} tags`}
+                      options={groupTags.map((t) => ({ label: t.name, value: t.slug }))}
+                      selected={tagSlugs.filter((slug) => groupTags.some((t) => t.slug === slug))}
+                      onChange={(vals) =>
+                        setTagSlugs((prev) => [
+                          ...prev.filter((slug) => !groupTags.some((t) => t.slug === slug)),
+                          ...vals,
+                        ])
+                      }
+                    />
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         )}
@@ -1431,10 +1875,6 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
           <CardHeader className="border-b pb-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="flex items-center gap-2 text-base font-normal">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M1.875 3.75C1.70924 3.75 1.55027 3.81585 1.43306 3.93306C1.31585 4.05027 1.25 4.20924 1.25 4.375C1.25 4.54076 1.31585 4.69973 1.43306 4.81694C1.55027 4.93415 1.70924 5 1.875 5H18.125C18.2908 5 18.4497 4.93415 18.5669 4.81694C18.6842 4.69973 18.75 4.54076 18.75 4.375C18.75 4.20924 18.6842 4.05027 18.5669 3.93306C18.4497 3.81585 18.2908 3.75 18.125 3.75H1.875ZM1.875 7.5C1.70924 7.5 1.55027 7.56585 1.43306 7.68306C1.31585 7.80027 1.25 7.95924 1.25 8.125C1.25 8.29076 1.31585 8.44973 1.43306 8.56694C1.55027 8.68415 1.70924 8.75 1.875 8.75H18.125C18.2908 8.75 18.4497 8.68415 18.5669 8.56694C18.6842 8.44973 18.75 8.29076 18.75 8.125C18.75 7.95924 18.6842 7.80027 18.5669 7.68306C18.4497 7.56585 18.2908 7.5 18.125 7.5H1.875ZM1.25 11.875C1.25 11.7092 1.31585 11.5503 1.43306 11.4331C1.55027 11.3158 1.70924 11.25 1.875 11.25H18.125C18.2908 11.25 18.4497 11.3158 18.5669 11.4331C18.6842 11.5503 18.75 11.7092 18.75 11.875C18.75 12.0408 18.6842 12.1997 18.5669 12.3169C18.4497 12.4342 18.2908 12.5 18.125 12.5H1.875C1.70924 12.5 1.55027 12.4342 1.43306 12.3169C1.31585 12.1997 1.25 12.0408 1.25 11.875ZM1.875 15C1.70924 15 1.55027 15.0658 1.43306 15.1831C1.31585 15.3003 1.25 15.4592 1.25 15.625C1.25 15.7908 1.31585 15.9497 1.43306 16.0669C1.55027 16.1842 1.70924 16.25 1.875 16.25H13.125C13.2908 16.25 13.4497 16.1842 13.5669 16.0669C13.6842 15.9497 13.75 15.7908 13.75 15.625C13.75 15.4592 13.6842 15.3003 13.5669 15.1831C13.4497 15.0658 13.2908 15 13.125 15H1.875Z" fill="black" />
-                </svg>
-
                 Product Description
               </CardTitle>
               <span className="text-xs text-muted-foreground tabular-nums">
@@ -1461,6 +1901,92 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
           </CardContent>
         </Card>
       </form>
+
+      {isEditMode && productVariants.length > 0 && (
+        <Card className="border bg-white shadow-sm">
+          <CardHeader className="border-b pb-4">
+            <CardTitle className="text-base font-normal">Variant Pricing &amp; Stock</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-5">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="pb-2 pr-4 font-medium">Color</th>
+                    <th className="pb-2 pr-4 font-medium">Size</th>
+                    <th className="pb-2 pr-4 font-medium">B2C Price (₹)</th>
+                    <th className="pb-2 pr-4 font-medium">B2B Price (₹)</th>
+                    <th className="pb-2 pr-4 font-medium">Stock</th>
+                    <th className="pb-2 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {productVariants.map((variant) => {
+                    const edit = variantEdits[variant.id] ?? { b2c_price: "", b2b_price: "", quantity: "" };
+                    return (
+                      <tr key={variant.id} className="border-b last:border-0">
+                        <td className="py-2 pr-4 font-medium">{variant.color ?? "—"}</td>
+                        <td className="py-2 pr-4 font-medium">{variant.size ?? "Default"}</td>
+                        <td className="py-2 pr-4">
+                          <Input
+                            inputMode="decimal"
+                            value={edit.b2c_price}
+                            onChange={(e) =>
+                              setVariantEdits((prev) => ({
+                                ...prev,
+                                [variant.id]: { ...edit, b2c_price: e.target.value },
+                              }))
+                            }
+                            className="h-8 w-24 bg-white"
+                          />
+                        </td>
+                        <td className="py-2 pr-4">
+                          <Input
+                            inputMode="decimal"
+                            value={edit.b2b_price}
+                            onChange={(e) =>
+                              setVariantEdits((prev) => ({
+                                ...prev,
+                                [variant.id]: { ...edit, b2b_price: e.target.value },
+                              }))
+                            }
+                            className="h-8 w-24 bg-white"
+                          />
+                        </td>
+                        <td className="py-2 pr-4">
+                          <Input
+                            inputMode="numeric"
+                            value={edit.quantity}
+                            onChange={(e) =>
+                              setVariantEdits((prev) => ({
+                                ...prev,
+                                [variant.id]: { ...edit, quantity: e.target.value.replace(/\D/g, "") },
+                              }))
+                            }
+                            className="h-8 w-20 bg-white"
+                          />
+                        </td>
+                        <td className="py-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 bg-[#122130] text-xs hover:bg-[#0d1a28]"
+                            disabled={savingVariantId === variant.id}
+                            onClick={() => handleVariantSave(variant.id)}
+                          >
+                            {savingVariantId === variant.id ? "Saving…" : "Save"}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex flex-wrap gap-2 justify-end">
         <Button
           type="button"
@@ -1486,4 +2012,3 @@ export function AddProductClient({ categoryOptions: initialCategoryOptions, init
     </div>
   );
 }
-

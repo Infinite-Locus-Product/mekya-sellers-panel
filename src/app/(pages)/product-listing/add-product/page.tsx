@@ -16,7 +16,6 @@ export default async function AddProductPage({
     : undefined;
   return (
     <AddProductClient
-      categoryOptions={[]}
       initialProduct={null}
       productId={productId}
       defaultChannel={defaultChannel}

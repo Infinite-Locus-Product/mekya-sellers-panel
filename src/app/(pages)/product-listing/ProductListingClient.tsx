@@ -36,6 +36,7 @@ import {
   toProductRow,
   unpublishProduct,
   type Category,
+  type ProductSortField,
 } from "@/lib/api/products";
 
 type PageSlice = {
@@ -43,6 +44,46 @@ type PageSlice = {
   nextCursor: string | null;
   hasNext: boolean;
 };
+
+type FetchPageParams = {
+  channel: "b2c" | "b2b";
+  status?: string;
+  sortBy: ProductSortField;
+  sortOrder: "ASC" | "DESC";
+  pageSize: number;
+  categoryIds?: string[];
+  cursor?: string;
+};
+
+/** The backend fetches a fixed-size batch from Saleor, then filters it by
+ * channel/status in Python — a single batch can come back with fewer rows
+ * than `pageSize` even though Saleor's own cursor says more data exists.
+ * Left alone, that surfaces as a near-empty "extra page." Keep pulling
+ * subsequent cursor batches and merging until we have a full page's worth
+ * or the backend genuinely runs out — never fewer rows than are actually
+ * available just because one raw batch happened to be sparse after filtering. */
+async function fetchFullPage(params: FetchPageParams): Promise<PageSlice> {
+  const merged: ProductRow[] = [];
+  let cursor = params.cursor;
+  let hasNext = true;
+  const MAX_FETCHES = 20; // safety cap against a pathological all-filtered-out backend response
+  for (let i = 0; i < MAX_FETCHES && merged.length < params.pageSize && hasNext; i++) {
+    const res = await listProducts({
+      channel: params.channel,
+      status: params.status,
+      sort_by: params.sortBy,
+      sort_order: params.sortOrder,
+      limit: params.pageSize,
+      category_ids: params.categoryIds,
+      cursor,
+    });
+    merged.push(...res.products.map(toProductRow));
+    hasNext = res.has_next;
+    cursor = res.cursor ?? undefined;
+    if (res.products.length === 0 && !hasNext) break;
+  }
+  return { products: merged, nextCursor: hasNext ? (cursor ?? null) : null, hasNext };
+}
 
 export interface ProductListingClientProps {
   listingVariant?: "b2b" | "b2c";
@@ -88,7 +129,10 @@ export function ProductListingClient({
   // ── Server sort ────────────────────────────────────────────────────────────
   const { sortBy, sortOrder, serverSortKey, serverSortDirection, handleServerSortColumn } =
     useServerTableSort(
-      [{ columnKey: "name", sortField: "NAME", initialOrder: "ASC" }],
+      [
+        { columnKey: "name", sortField: "NAME", initialOrder: "ASC" },
+        { columnKey: "price", sortField: "PRICE", initialOrder: "ASC" },
+      ],
       { sortBy: "DATE", sortOrder: "DESC" },
     );
 
@@ -101,23 +145,17 @@ export function ProductListingClient({
   useEffect(() => {
     const gen = ++fetchGenRef.current;
     setIsLoading(true);
-    listProducts({
+    fetchFullPage({
       channel: listingVariant,
       status: listingStatus !== "all" ? listingStatus : undefined,
-      sort_by: sortBy,
-      sort_order: sortOrder,
-      limit: pageSize,
-      category_ids: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
+      sortBy: sortBy as ProductSortField,
+      sortOrder,
+      pageSize,
+      categoryIds: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
     })
-      .then((res) => {
+      .then((slice) => {
         if (gen !== fetchGenRef.current) return;
-        setStack([
-          {
-            products: res.products.map(toProductRow),
-            nextCursor: res.cursor ?? null,
-            hasNext: res.has_next,
-          },
-        ]);
+        setStack([slice]);
         setPageIndex(0);
       })
       .catch(() => toast.error("Failed to load products. Please refresh the page."))
@@ -142,21 +180,16 @@ export function ProductListingClient({
     const gen = ++fetchGenRef.current;
     setIsLoading(true);
     try {
-      const res = await listProducts({
+      const newSlice = await fetchFullPage({
         channel: listingVariant,
         status: listingStatus !== "all" ? listingStatus : undefined,
-        sort_by: sortBy,
-        sort_order: sortOrder,
-        limit: pageSize,
-        category_ids: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
+        sortBy: sortBy as ProductSortField,
+        sortOrder,
+        pageSize,
+        categoryIds: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
         cursor: slice.nextCursor,
       });
       if (gen !== fetchGenRef.current) return;
-      const newSlice: PageSlice = {
-        products: res.products.map(toProductRow),
-        nextCursor: res.cursor ?? null,
-        hasNext: res.has_next,
-      };
       setStack((prev) => [...prev, newSlice]);
       setPageIndex(stack.length);
     } catch {
@@ -175,10 +208,6 @@ export function ProductListingClient({
     pageSize,
     selectedCategoryIds,
   ]);
-
-  const goPrevPage = useCallback(() => {
-    if (pageIndex > 0) setPageIndex((p) => p - 1);
-  }, [pageIndex]);
 
   const goToPage = useCallback(
     (page: number) => {
@@ -209,8 +238,8 @@ export function ProductListingClient({
         p.name.toLowerCase().includes(q) ||
         p.articleNumber.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q) ||
-        p.sizes.toLowerCase().includes(q) ||
-        p.colors.toLowerCase().includes(q) ||
+        p.sizes.some((s) => s.toLowerCase().includes(q)) ||
+        p.colors.some((c) => c.toLowerCase().includes(q)) ||
         PRODUCT_INVENTORY_TYPE_LABELS[p.inventoryType].toLowerCase().includes(q);
       const invOk =
         selectedInventoryTypes.length === 0 ||
@@ -390,31 +419,26 @@ export function ProductListingClient({
             header: "Size",
             className: "w-[8%]",
             cell: (row: ProductRow) => (
-              <span className="break-words">
-                {row.sizes.split(",").filter(Boolean).join(", ")}
-              </span>
+              <span className="break-words">{row.sizes.join(", ")}</span>
             ),
           } as TableColumn<ProductRow>,
           {
             key: "colors",
             header: "Color",
             className: "w-[11%]",
-            cell: (row: ProductRow) => {
-              const colorList = row.colors.split(",").filter(Boolean);
-              return (
-                <div className="flex min-w-0 flex-wrap gap-0.5">
-                  {colorList.map((c) => (
-                    <span
-                      key={c}
-                      className="inline-block max-w-full truncate rounded bg-muted px-1 py-0.5 text-[9px] leading-tight sm:text-[10px]"
-                      title={c.trim()}
-                    >
-                      {c.trim()}
-                    </span>
-                  ))}
-                </div>
-              );
-            },
+            cell: (row: ProductRow) => (
+              <div className="flex min-w-0 flex-wrap gap-0.5">
+                {row.colors.map((c) => (
+                  <span
+                    key={c}
+                    className="inline-block max-w-full truncate rounded bg-muted px-1 py-0.5 text-[9px] leading-tight sm:text-[10px]"
+                    title={c}
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
+            ),
           } as TableColumn<ProductRow>,
         ]),
     {
@@ -442,7 +466,7 @@ export function ProductListingClient({
         );
       },
     },
-    { key: "price", header: isB2B ? "WSP" : "Price", className: "w-[7%]" },
+    { key: "price", header: isB2B ? "WSP" : "Price", sortable: true, className: "w-[7%]" },
     {
       key: "quantity",
       header: isB2B ? "Inventory" : "Quantity",

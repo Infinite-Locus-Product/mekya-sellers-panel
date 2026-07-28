@@ -2,6 +2,7 @@ import { authService } from "@/lib/auth/authService";
 import type { ProductInventoryType, ProductRow } from "@/lib/tableTypes";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+// Mirrors the locked backend contract exactly (mekya-be/backend/src/application/seller/schemas.py).
 
 export interface Category {
   id: string;
@@ -17,8 +18,8 @@ export interface ProductListItem {
   status: "published" | "draft";
   article_number: string;
   category: string;
-  sizes: string;
-  colors: string;
+  sizes: string[];
+  colors: string[];
   inventory_type: string;
   price: string;
   quantity: number;
@@ -32,13 +33,79 @@ export interface ProductListResponse {
   total: number;
 }
 
-export interface VariantItem {
+/** Flat, denormalized per-variant row — `variant_list` in get_product's response,
+ * and the only shape get_product_variants/update_product_variant deal in.
+ * `color`/`size` are null for legacy variants (unparseable combined name). */
+export interface FlatVariant {
   id: string;
-  name: string | null;
+  color: string | null;
+  size: string | null;
   sku: string | null;
   b2c_price: number | null;
   b2b_price: number | null;
   quantity: number | null;
+}
+
+export interface ProductImage {
+  id: string;
+  url: string;
+  alt: string | null;
+}
+
+export interface ColorVariantSize {
+  size: string;
+  variant_id: string;
+  sku: string | null;
+  b2c_price: number | null;
+  b2b_price: number | null;
+  available_qty: number | null;
+}
+
+export interface ColorVariant {
+  color: string;
+  images: ProductImage[];
+  sizes: ColorVariantSize[];
+}
+
+/** The non-taxonomy half of ProductDefinition, read back from metadata.
+ * Populated for every product, legacy or not. */
+export interface ProductDefinitionDto {
+  inventory_type: string | null;
+  article_number: string | null;
+  is_customisable: boolean;
+  moq_sets: number | null;
+  moq_units: number | null;
+  ships_from: string | null;
+  shipping_days: string | null;
+  set_purchase_mode: string | null;
+  min_quantity_per_set: number | null;
+  max_quantity_per_set: number | null;
+  /** Channel order limits — commercial ordering policy, distinct from
+   * min/max_quantity_per_set above (set_purchase_mode bundling granularity).
+   * One physical inventory pool; these are business limits only. */
+  b2b_min_order_qty: number | null;
+  b2b_max_order_qty: number | null;
+  b2c_min_order_qty: number | null;
+  b2c_max_order_qty: number | null;
+}
+
+/** Only present (non-null) for non-legacy products. */
+export interface ProductTaxonomyDto {
+  gender: string;
+  category_slug: string;
+  subcategory_slug: string;
+  attributes: Record<string, string[]>;
+  tags: string[];
+  size_chart: Record<string, Record<string, number>>;
+}
+
+/** Only present (non-null) for legacy products — the ONLY taxonomy-shaped
+ * data a pre-taxonomy-migration product has. Never mix with ProductTaxonomyDto. */
+export interface ProductLegacyDto {
+  gender: string | null;
+  colors: string[];
+  sizes: string[];
+  tags: string[];
 }
 
 export interface ProductDetail {
@@ -47,60 +114,121 @@ export interface ProductDetail {
   description: string;
   category: { id: string; name: string; slug: string } | null;
   thumbnail_url: string | null;
-  images: Array<{ id: string; url: string; alt: string | null }>;
-  variants: VariantItem[];
+  images: ProductImage[];
+  variant_list: FlatVariant[];
+  /** Color x size matrix — null for legacy products. */
+  variants: { colors: ColorVariant[] } | null;
   status: "published" | "draft";
   metadata: Record<string, string>;
+  is_legacy: boolean;
+  product: ProductDefinitionDto;
+  taxonomy: ProductTaxonomyDto | null;
+  legacy: ProductLegacyDto | null;
+}
+
+// ─── Write-side payload types (ProductCreate / ProductUpdate) ─────────────────
+
+export interface ProductColorInput {
+  color: string;
+  images: string[];
+  sizes: string[];
+}
+
+export interface VariantConfigurationInput {
+  colors: ProductColorInput[];
+}
+
+export interface PriceOverrideInput {
+  color: string;
+  size: string;
+  b2c_price?: number;
+  b2b_price?: number;
+}
+
+export interface StockOverrideInput {
+  color: string;
+  size: string;
+  available_qty: number;
+}
+
+export interface PricingInput {
+  selling_price?: number;
+  b2b_selling_price?: number;
+  mrp?: number;
+  channels?: "b2c" | "b2b" | "both";
+  overrides?: PriceOverrideInput[];
+}
+
+export interface InventoryInput {
+  available_qty?: number;
+  overrides?: StockOverrideInput[];
+}
+
+export type SetPurchaseMode = "single_size_multi_color" | "multi_size_single_color" | "custom_mix_match";
+
+export interface ProductDefinitionInput {
+  name: string;
+  description: string;
+  category_slug: string;
+  subcategory_slug: string;
+  gender: string;
+  inventory_type: string;
+  is_customisable?: boolean;
+  article_number?: string;
+  moq_sets?: number;
+  moq_units?: number;
+  ships_from?: string;
+  shipping_days?: string;
+  attributes?: Record<string, string[]>;
+  tags?: string[];
+  size_chart?: Record<string, Record<string, number>>;
+  set_purchase_mode?: SetPurchaseMode;
+  min_quantity_per_set?: number;
+  max_quantity_per_set?: number;
+  b2b_min_order_qty?: number;
+  b2b_max_order_qty?: number;
+  b2c_min_order_qty?: number;
+  b2c_max_order_qty?: number;
 }
 
 export interface CreateProductPayload {
-  name: string;
-  description: string;
-  category_id: string;
-  inventory_type: string;
+  product: ProductDefinitionInput;
+  variants: VariantConfigurationInput;
+  pricing?: PricingInput;
+  inventory?: InventoryInput;
+}
+
+export interface ProductDefinitionUpdateInput {
+  name?: string;
+  description?: string;
   article_number?: string;
-  gender?: string;
-  shipping_days?: string;
-  colors: string[];
-  sizes: string[];
-  tags: string[];
-  mrp?: number;
-  selling_price?: number;
-  b2b_selling_price?: number;
-  available_qty?: number;
+  is_customisable?: boolean;
   moq_sets?: number;
   moq_units?: number;
+  ships_from?: string;
+  shipping_days?: string;
+  attributes?: Record<string, string[]>;
+  tags?: string[];
   min_quantity_per_set?: number;
   max_quantity_per_set?: number;
-  channels?: "b2c" | "b2b" | "both";
-  images: string[];
-  variant_pricing?: Array<{
-    name: string;
-    b2c_price?: number;
-    b2b_price?: number;
-    available_qty?: number;
-  }>;
+  b2b_min_order_qty?: number;
+  b2b_max_order_qty?: number;
+  b2c_min_order_qty?: number;
+  b2c_max_order_qty?: number;
+  // category_slug / subcategory_slug / gender / inventory_type / set_purchase_mode
+  // are immutable after publish and intentionally not exposed here — see
+  // AddProductClient's edit-mode taxonomy fields (read-only once created).
 }
 
 export interface UpdateProductPayload {
-  name?: string;
-  description?: string;
-  category_id?: string;
-  inventory_type?: string;
-  article_number?: string;
-  gender?: string;
-  shipping_days?: string;
-  colors?: string[];
-  sizes?: string[];
-  mrp?: number;
-  selling_price?: number;
-  b2b_selling_price?: number;
-  available_qty?: number;
-  min_quantity_per_set?: number;
-  max_quantity_per_set?: number;
-  channels?: "b2c" | "b2b" | "both";
-  tags?: string[];
+  product?: ProductDefinitionUpdateInput;
+  variants?: VariantConfigurationInput;
+  pricing?: PricingInput;
+  inventory?: InventoryInput;
+  /** Generic/legacy image path — attaches without linking to a color. */
   images?: string[];
+  /** The only path left for legacy (pre-taxonomy) products to edit sizes. */
+  legacy_sizes?: string[];
 }
 
 export interface PresignImageResponse {
@@ -140,14 +268,16 @@ export function parseProductDescription(raw: unknown): string {
 
 // ─── API calls ────────────────────────────────────────────────────────────────
 
+export type ProductSortField = "NAME" | "DATE" | "PRICE";
+
 export async function listProducts(params?: {
   status?: string;
   cursor?: string;
   limit?: number;
   channel?: "b2c" | "b2b" | "both";
   search?: string;
-  sort_by?: string;
-  sort_order?: string;
+  sort_by?: ProductSortField;
+  sort_order?: "ASC" | "DESC";
   category_ids?: string[];
 }): Promise<ProductListResponse> {
   const qs = new URLSearchParams();
@@ -188,11 +318,12 @@ export async function createProduct(
 export async function updateProduct(
   productId: string,
   payload: UpdateProductPayload,
-): Promise<{ product_id: string; updated: boolean }> {
-  const res = await authService.api.patch<{ product_id: string; updated: boolean }>(
-    `/seller/products/${productId}`,
-    payload,
-  );
+): Promise<{ product_id: string; updated: boolean; images_failed?: number }> {
+  const res = await authService.api.patch<{
+    product_id: string;
+    updated: boolean;
+    images_failed?: number;
+  }>(`/seller/products/${productId}`, payload);
   return res.data;
 }
 
@@ -255,13 +386,6 @@ export async function uploadImagesToStorage(files: File[]): Promise<string[]> {
       return image_url;
     })
   );
-}
-
-export async function getProductVariants(productId: string): Promise<VariantItem[]> {
-  const res = await authService.api.get<{ variants: VariantItem[] }>(
-    `/seller/products/${productId}/variants`,
-  );
-  return res.data.variants;
 }
 
 export async function updateProductVariant(
