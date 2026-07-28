@@ -129,8 +129,8 @@ export interface ProductRow {
   name: string;
   articleNumber: string;
   category: string;
-  sizes: string;
-  colors: string;
+  sizes: string[];
+  colors: string[];
   inventoryType: ProductInventoryType;
   price: string;
   quantity: number;

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { COLOR_PALETTE } from "@/components/shared/ColorSelect";
 import { PRODUCT_INVENTORY_TYPE_LABELS } from "@/lib/tableTypes";
 import { getProduct, parseProductDescription } from "@/lib/api/products";
-import type { ProductDetail } from "@/lib/api/products";
+import type { ProductDetail, FlatVariant } from "@/lib/api/products";
 
 // ─── Colour lookup ────────────────────────────────────────────────────────────
 
@@ -45,6 +45,17 @@ function ChannelBadge({ channels }: { channels?: string }) {
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-medium ${cfg[ch].cls}`}>
       {cfg[ch].label}
+    </span>
+  );
+}
+
+function LegacyBadge() {
+  return (
+    <span
+      className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800"
+      title="Created before the taxonomy system — category, attributes, and variants can't be edited here."
+    >
+      Legacy product
     </span>
   );
 }
@@ -96,6 +107,20 @@ function LoadingSkeleton() {
   );
 }
 
+// ─── Pricing helpers ──────────────────────────────────────────────────────────
+
+/** get_product has no single aggregated price field (unlike list_products) —
+ * derive a min/max range across variant_list, same "aggregate across every
+ * variant" principle the backend applies for the listing price. */
+function priceRange(variants: FlatVariant[], key: "b2c_price" | "b2b_price"): string {
+  const amounts = variants.map((v) => v[key]).filter((a): a is number => a != null);
+  if (amounts.length === 0) return "—";
+  const min = Math.min(...amounts);
+  const max = Math.max(...amounts);
+  if (min === max) return `₹${min.toLocaleString("en-IN")}`;
+  return `₹${min.toLocaleString("en-IN")} – ₹${max.toLocaleString("en-IN")}`;
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ProductViewClient({ productId }: { productId: string }) {
@@ -130,21 +155,33 @@ export function ProductViewClient({ productId }: { productId: string }) {
   }
 
   const meta = product.metadata;
-  const colors = (meta.colors ?? "").split(",").filter(Boolean);
-  const sizes = (meta.sizes ?? "").split(",").filter(Boolean);
-  const tags = (meta.tags ?? "").split(",").filter(Boolean);
+  const def = product.product;
+
+  // Colors/sizes/tags/gender: legacy products only ever have the best-effort
+  // comma-joined metadata reading; non-legacy products carry this data in the
+  // real taxonomy/variant-matrix response sections instead. Never mix the two.
+  const colors = product.is_legacy
+    ? (product.legacy?.colors ?? [])
+    : (product.variants?.colors.map((c) => c.color) ?? []);
+  const sizes = product.is_legacy
+    ? (product.legacy?.sizes ?? [])
+    : Array.from(
+        new Set(product.variants?.colors.flatMap((c) => c.sizes.map((s) => s.size)) ?? [])
+      );
+  const tags = product.is_legacy ? (product.legacy?.tags ?? []) : (product.taxonomy?.tags ?? []);
+  const gender = product.is_legacy ? product.legacy?.gender : product.taxonomy?.gender;
+
   const description = parseProductDescription(product.description);
 
   const mrp = meta.mrp ? parseFloat(meta.mrp) : null;
   const channels = meta.channels as "b2c" | "b2b" | "both" | undefined;
 
-  const b2cVariant = product.variants[0];
-  const b2cPrice = b2cVariant?.b2c_price;
-  const b2bPrice = b2cVariant?.b2b_price;
+  const b2cPriceDisplay = priceRange(product.variant_list, "b2c_price");
+  const b2bPriceDisplay = priceRange(product.variant_list, "b2b_price");
 
   const inventoryLabel =
-    PRODUCT_INVENTORY_TYPE_LABELS[meta.inventory_type as keyof typeof PRODUCT_INVENTORY_TYPE_LABELS]
-    ?? meta.inventory_type;
+    PRODUCT_INVENTORY_TYPE_LABELS[def.inventory_type as keyof typeof PRODUCT_INVENTORY_TYPE_LABELS]
+    ?? def.inventory_type;
 
   const allImages = product.images.length > 0
     ? product.images
@@ -178,6 +215,7 @@ export function ProductViewClient({ productId }: { productId: string }) {
         <h1 className="flex-1 text-xl font-semibold text-foreground">{product.name}</h1>
         <StatusBadge status={product.status} />
         <ChannelBadge channels={channels} />
+        {product.is_legacy && <LegacyBadge />}
         <Link
           href={editHref}
           className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90"
@@ -245,7 +283,7 @@ export function ProductViewClient({ productId }: { productId: string }) {
                       key={t}
                       className="rounded-full border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
                     >
-                      {t.trim()}
+                      {t}
                     </span>
                   ))}
                 </div>
@@ -263,16 +301,37 @@ export function ProductViewClient({ productId }: { productId: string }) {
               <SectionTitle icon={Info} title="Product Details" />
             </CardHeader>
             <CardContent className="space-y-2 pb-4">
-              <DetailRow label="Article Number" value={meta.article_number || "—"} />
+              <DetailRow label="Article Number" value={def.article_number || "—"} />
               <DetailRow label="Category" value={product.category?.name} />
               <DetailRow label="Inventory Type" value={inventoryLabel} />
-              <DetailRow label="Gender" value={meta.gender} />
-              <DetailRow label="Shipping Days" value={meta.shipping_days} />
-              {meta.min_quantity_per_set && (
-                <DetailRow label="Min Qty / Set" value={meta.min_quantity_per_set} />
+              <DetailRow label="Gender" value={gender} />
+              <DetailRow label="Shipping Days" value={def.shipping_days} />
+              <DetailRow label="Ships From" value={def.ships_from} />
+              <DetailRow label="Customisable" value={def.is_customisable ? "Yes" : "No"} />
+              <DetailRow label="Set Purchase Mode" value={def.set_purchase_mode} />
+              {def.moq_sets != null && (
+                <DetailRow label="MOQ (Sets)" value={String(def.moq_sets)} />
               )}
-              {meta.max_quantity_per_set && (
-                <DetailRow label="Max Qty / Set" value={meta.max_quantity_per_set} />
+              {def.moq_units != null && (
+                <DetailRow label="MOQ (Units)" value={String(def.moq_units)} />
+              )}
+              {def.min_quantity_per_set != null && (
+                <DetailRow label="Min Qty / Set" value={String(def.min_quantity_per_set)} />
+              )}
+              {def.max_quantity_per_set != null && (
+                <DetailRow label="Max Qty / Set" value={String(def.max_quantity_per_set)} />
+              )}
+              {(def.b2b_min_order_qty != null || def.b2b_max_order_qty != null) && (
+                <DetailRow
+                  label="B2B Order Qty"
+                  value={`${def.b2b_min_order_qty ?? "—"} – ${def.b2b_max_order_qty ?? "—"}`}
+                />
+              )}
+              {(def.b2c_min_order_qty != null || def.b2c_max_order_qty != null) && (
+                <DetailRow
+                  label="B2C Order Qty"
+                  value={`${def.b2c_min_order_qty ?? "—"} – ${def.b2c_max_order_qty ?? "—"}`}
+                />
               )}
             </CardContent>
           </Card>
@@ -293,17 +352,13 @@ export function ProductViewClient({ productId }: { productId: string }) {
                 {channels !== "b2b" && (
                   <div className="flex flex-col items-center gap-0.5 p-3 text-center">
                     <span className="text-[10px] text-blue-600 uppercase tracking-wide">B2C Price</span>
-                    <span className="text-base font-semibold text-blue-700">
-                      {b2cPrice != null ? `₹${b2cPrice.toLocaleString("en-IN")}` : "—"}
-                    </span>
+                    <span className="text-base font-semibold text-blue-700">{b2cPriceDisplay}</span>
                   </div>
                 )}
                 {channels !== "b2c" && (
                   <div className="flex flex-col items-center gap-0.5 p-3 text-center">
                     <span className="text-[10px] text-purple-600 uppercase tracking-wide">B2B Price</span>
-                    <span className="text-base font-semibold text-purple-700">
-                      {b2bPrice != null ? `₹${b2bPrice.toLocaleString("en-IN")}` : "—"}
-                    </span>
+                    <span className="text-base font-semibold text-purple-700">{b2bPriceDisplay}</span>
                   </div>
                 )}
               </div>
@@ -329,7 +384,7 @@ export function ProductViewClient({ productId }: { productId: string }) {
                           />
                         ) : null}
                         <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
-                          {c.trim()}
+                          {c}
                         </span>
                       </div>
                     );
@@ -352,7 +407,7 @@ export function ProductViewClient({ productId }: { productId: string }) {
                       key={s}
                       className="rounded-md border bg-background px-3 py-1 text-xs font-semibold"
                     >
-                      {s.trim()}
+                      {s}
                     </span>
                   ))}
                 </div>
@@ -376,18 +431,19 @@ export function ProductViewClient({ productId }: { productId: string }) {
         </Card>
       )}
 
-      {/* Variants table */}
-      {product.variants.length > 0 && (
+      {/* Variants table — flat per-(color,size) list, mirrors get_product_variants */}
+      {product.variant_list.length > 0 && (
         <Card>
           <CardHeader className="pb-2 pt-4">
-            <SectionTitle icon={Layers} title={`Variants (${product.variants.length})`} />
+            <SectionTitle icon={Layers} title={`Variants (${product.variant_list.length})`} />
           </CardHeader>
           <CardContent className="pb-4">
             <div className="overflow-x-auto rounded-md border">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-3 py-2.5 text-left text-xs font-medium text-muted-foreground">Variant</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-muted-foreground">Color</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-muted-foreground">Size</th>
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-muted-foreground">SKU</th>
                     {channels !== "b2b" && (
                       <th className="px-3 py-2.5 text-right text-xs font-medium text-blue-600">B2C Price</th>
@@ -399,12 +455,13 @@ export function ProductViewClient({ productId }: { productId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {product.variants.map((v, idx) => (
+                  {product.variant_list.map((v, idx) => (
                     <tr
                       key={v.id}
                       className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}
                     >
-                      <td className="px-3 py-2 font-medium">{v.name ?? "Default"}</td>
+                      <td className="px-3 py-2 font-medium">{v.color ?? "—"}</td>
+                      <td className="px-3 py-2 font-medium">{v.size ?? "Default"}</td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{v.sku ?? "—"}</td>
                       {channels !== "b2b" && (
                         <td className="px-3 py-2 text-right font-medium text-blue-700">
