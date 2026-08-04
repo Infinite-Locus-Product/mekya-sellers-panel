@@ -1,7 +1,6 @@
 import type { ComponentType, SVGProps } from "react";
 import type { ReelStatus } from "@/lib/data/cms";
 import {
-  EditReelStepIconCaptions,
   EditReelStepIconCrop,
   EditReelStepIconTagProducts,
   EditReelStepIconThumbnail,
@@ -10,7 +9,12 @@ import {
 export const PAGE_SIZE = 10;
 
 export const UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
-export const VIDEO_ACCEPT = "video/mp4,video/quicktime,video/x-msvideo,.mp4,.mov,.avi";
+
+/** Single source of truth for the upload format allow-list — keep the file picker's `accept`
+ *  and the runtime validation in ReelsLibraryClient.applyPickedVideo in sync with these. */
+export const ALLOWED_VIDEO_EXTENSIONS = ["mp4", "mov", "avi"] as const;
+export const ALLOWED_VIDEO_MIME_TYPES = ["video/mp4", "video/quicktime", "video/x-msvideo"] as const;
+export const VIDEO_ACCEPT = [...ALLOWED_VIDEO_MIME_TYPES, ...ALLOWED_VIDEO_EXTENSIONS.map((e) => `.${e}`)].join(",");
 
 export type StatusFilter = ReelStatus | "all";
 
@@ -23,8 +27,8 @@ export const REEL_FEEDBACK_TITLE: Record<ReelFeedbackVariant, string> = {
   published: "Reel Uploaded Successfully",
 };
 
-export const DEFAULT_SCHEDULE_DATE = "2025-10-21";
-export const DEFAULT_SCHEDULE_TIME = "00:00";
+/** Reels can be scheduled at most this many days out (API caps it at 1 year). */
+export const MAX_SCHEDULE_DAYS_OUT = 365;
 
 export type EditFlowStepIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -33,7 +37,6 @@ export const EDIT_FLOW_STEPS: ReadonlyArray<{
   Icon: EditFlowStepIcon;
 }> = [
   { label: "Crop", Icon: EditReelStepIconCrop },
-  { label: "Captions", Icon: EditReelStepIconCaptions },
   { label: "Tag Products", Icon: EditReelStepIconTagProducts },
   { label: "Thumbnail", Icon: EditReelStepIconThumbnail },
 ];
@@ -49,11 +52,3 @@ export const AUDIENCE_OPTIONS = [
   { label: "Both", value: "both" as const },
 ] as const;
 
-export const CAPTION_COLOR_OPTIONS = [
-  { label: "Black", value: "#000000" },
-  { label: "White", value: "#FFFFFF" },
-  { label: "Red", value: "#EF4444" },
-  { label: "Green", value: "#22C55E" },
-  { label: "Blue", value: "#3B82F6" },
-  { label: "Yellow", value: "#EAB308" },
-] as const;
