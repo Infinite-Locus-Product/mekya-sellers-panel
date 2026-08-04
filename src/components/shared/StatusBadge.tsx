@@ -14,6 +14,14 @@ export type StatusVariant =
   | "custom_in_process"
   | "custom_pending_info"
   | "custom_fulfilled"
+  /** Real /seller/orders statuses without an existing equivalent */
+  | "unfulfilled"
+  | "partially_fulfilled"
+  | "fulfilled"
+  | "partially_returned"
+  | "unconfirmed"
+  | "draft"
+  | "expired"
 
 interface StatusBadgeProps {
   children: ReactNode
@@ -35,6 +43,13 @@ const statusStyles: Record<StatusVariant, string> = {
   custom_in_process: "bg-[#DBEAFE] text-[#1D4ED8]",
   custom_pending_info: "bg-[#FEF9C2] text-[#854D0E]",
   custom_fulfilled: "bg-[#DCFCE7] text-[#15803D]",
+  unfulfilled: "bg-[#FEF9C2] text-[#686000]",
+  partially_fulfilled: "bg-[#CCFBF1] text-[#0F766E]",
+  fulfilled: "bg-[#DBEAFE] text-[#2C4FBF]",
+  partially_returned: "bg-[#FFE8CC] text-[#9A5B00]",
+  unconfirmed: "bg-[#E5E7EB] text-[#374151]",
+  draft: "bg-[#F1F5F9] text-[#475569]",
+  expired: "bg-[#F5F5F4] text-[#78716C]",
 }
 
 const BADGE_LAYOUT =

@@ -8,7 +8,7 @@ import {
 } from "@/assets/icons/order-management"
 import type { OrderType } from "@/lib/tableTypes"
 import type { FulfillmentTimelineItem } from "./types"
-import { filterFulfillmentTimeline, READY_FOR_DISPATCH } from "./utils"
+import { filterFulfillmentTimeline, READY_FOR_PICKUP } from "./utils"
 
 export function FulfillmentTimelineSection({
   timeline,
@@ -45,7 +45,7 @@ export function FulfillmentTimelineSection({
                 const isLast = index === arr.length - 1
                 const isCompleted = item.completed
                 const isCurrent = item.current
-                const showReadyForDispatchRing = isCurrent && item.stage === READY_FOR_DISPATCH
+                const showReadyForPickupRing = isCurrent && item.stage === READY_FOR_PICKUP
                 const segmentToNextIsComplete = isCompleted
 
                 return (
@@ -64,7 +64,7 @@ export function FulfillmentTimelineSection({
                           aria-hidden
                         />
                       )}
-                      {isCurrent && showReadyForDispatchRing ? (
+                      {isCurrent && showReadyForPickupRing ? (
                         <div className="relative z-10 box-border rounded-full border-2 border-green-500 bg-white p-0.5 sm:p-1 min-[1920px]:p-1.5" aria-current="step">
                           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#5BD387] sm:h-12 sm:w-12 min-[1920px]:h-[68px] min-[1920px]:w-[68px]">
                             <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center sm:h-5 sm:w-5 min-[1920px]:h-[28px] min-[1920px]:w-[28px] [&>svg]:block [&>svg]:h-3.5 [&>svg]:w-3.5 sm:[&>svg]:h-5 sm:[&>svg]:w-5 min-[1920px]:[&>svg]:h-[28px] min-[1920px]:[&>svg]:w-[28px]">

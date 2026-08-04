@@ -8,7 +8,7 @@ import type {
   OrderType,
   ProductInventoryType,
 } from "@/lib/tableTypes";
-import { READY_FOR_DISPATCH } from "@/components/shared/order-details/utils";
+import { READY_FOR_PICKUP } from "@/components/shared/order-details/utils";
 import type {
   OrderDetailsData,
   FulfillmentTimelineItem,
@@ -19,16 +19,17 @@ import type {
 } from "@/components/shared/order-details/types";
 import type { StatusVariant } from "@/components/shared/StatusBadge";
 
+/** Maps the real OrderStatus vocabulary onto this mock layer's simplified timeline stages. */
 const ORDER_STATUS_MAP: Record<string, StatusVariant> = {
-  completed: "delivered",
-  delivered: "delivered",
-  pending: "pending",
-  processing: "processing",
-  shipped: "shipped",
-  canceled: "canceled",
-  cancelled: "canceled",
+  draft: "pending",
+  unconfirmed: "pending",
+  unfulfilled: "processing",
+  "partially fulfilled": "partial",
+  fulfilled: "delivered",
+  "partially returned": "returned",
   returned: "returned",
-  "partial fulfillment": "partial",
+  cancelled: "canceled",
+  expired: "canceled",
 };
 
 function normalizeStatusKey(value: string): string {
@@ -38,7 +39,7 @@ function normalizeStatusKey(value: string): string {
 const TIMELINE_STAGES: Array<{ stage: string; status: StatusVariant }> = [
   { stage: "Order Placed", status: "pending" },
   { stage: "Order Processing", status: "processing" },
-  { stage: "Ready for Dispatch", status: "processing" },
+  { stage: "Ready for pickup", status: "processing" },
   { stage: "Shipped", status: "shipped" },
   { stage: "In Transit", status: "shipped" },
   { stage: "Delivered", status: "delivered" },
@@ -75,18 +76,18 @@ function buildTimeline(
   const fallbackIndex = status === "canceled" || status === "returned" ? 1 : 0;
   let activeIndex = currentIndex >= 0 ? currentIndex : fallbackIndex;
 
-  const readyForDispatchIndex = TIMELINE_STAGES.findIndex(
-    (entry) => entry.stage === READY_FOR_DISPATCH,
+  const readyForPickupIndex = TIMELINE_STAGES.findIndex(
+    (entry) => entry.stage === READY_FOR_PICKUP,
   );
-  /** B2B ready-to-ship stock: timeline current step is Ready for Dispatch (not Order Placed) while order status is still pending/processing. */
+  /** B2B ready-to-ship stock: timeline current step is Ready for pickup (not Order Placed) while order status is still pending/processing. */
   const useReadyToShipDispatchMilestone =
     context?.orderType === "B2B" &&
     context.inventoryType === "ready_to_ship" &&
     (status === "pending" || status === "processing") &&
-    readyForDispatchIndex >= 0;
+    readyForPickupIndex >= 0;
 
   if (useReadyToShipDispatchMilestone) {
-    activeIndex = readyForDispatchIndex;
+    activeIndex = readyForPickupIndex;
   }
 
   return TIMELINE_STAGES.map((entry, index) => ({
@@ -291,7 +292,7 @@ function b2bFulfillmentStatsFromOrder(order: AllOrder): B2BFulfillmentStats {
     };
   }
 
-  if (rawStatus === "delivered") {
+  if (rawStatus === "fulfilled") {
     return b2bPreBookingAllComplete(total);
   }
 
@@ -319,6 +320,8 @@ function b2bFulfillmentStatsFromOrder(order: AllOrder): B2BFulfillmentStats {
 function mapOrderToDetails(order: AllOrder): OrderDetailsData {
   const [placedDateRaw, placedTimeRaw] = order.date.split(",");
   const amount = parseAmount(order.amount);
+  // Internal-only, drives the mock timeline/fulfillment-progress logic below — the OUTPUT
+  // `status` field is the raw label (order.status) itself, not this simplified variant.
   const status = normalizeStatus(String(order.status));
   const placedDate = placedDateRaw?.trim() || order.date;
   const placedTime = placedTimeRaw?.trim() || "10:30 AM";
@@ -332,7 +335,7 @@ function mapOrderToDetails(order: AllOrder): OrderDetailsData {
     id: order.id,
     placedDate,
     placedTime,
-    status,
+    status: order.status,
     customer: {
       name: order.vendor,
       ...(isB2BFulfillmentProgressContext
@@ -360,7 +363,6 @@ function mapOrderToDetails(order: AllOrder): OrderDetailsData {
       orderType: order.type,
       inventoryType: order.inventoryType,
     }),
-    adminNotes: "",
     orderType: order.type,
     inventoryType: order.inventoryType,
     b2bLineItems: isB2B

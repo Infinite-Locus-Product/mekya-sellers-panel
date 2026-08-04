@@ -5,6 +5,7 @@ import { OrderDetailOrderItemsTitleIcon } from "@/assets/icons/order-management"
 import type { OrderType } from "@/lib/tableTypes"
 import type { B2BFulfillmentStats, B2BOrderLineDisplay, OrderItem } from "./types"
 import { B2BOrderLinesSection } from "./B2BOrderLinesSection"
+import { CancelLineItemAction } from "./CancelLineItemAction"
 
 export function OrderItemSection({
   orderType,
@@ -12,12 +13,17 @@ export function OrderItemSection({
   b2bLineItems,
   b2bFulfillmentStats,
   formatCurrency,
+  orderId,
+  onRefresh,
 }: Readonly<{
   orderType: OrderType
   items: OrderItem[]
   b2bLineItems?: B2BOrderLineDisplay[]
   b2bFulfillmentStats?: B2BFulfillmentStats
   formatCurrency: (amount: number) => string
+  /** Display order ID (ORD-…) — needed to cancel a line. Omit to hide cancel actions. */
+  orderId?: string
+  onRefresh?: () => void
 }>) {
   if (orderType === "B2B" && b2bLineItems?.length) {
     return (
@@ -30,6 +36,10 @@ export function OrderItemSection({
       </section>
     )
   }
+
+  // Cancel is only offered when the caller supplied an order id (and therefore a refresh
+  // path) and at least one line still has cancellable units.
+  const showActions = Boolean(orderId) && items.some((i) => (i.cancellableQuantity ?? 0) > 0)
 
   return (
     <section aria-labelledby="order-detail-items-heading" className="contents">
@@ -55,20 +65,68 @@ export function OrderItemSection({
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">Quantity</th>
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">Price</th>
                   <th className="p-3 text-right text-xs font-medium text-muted-foreground">Total</th>
+                  {showActions ? (
+                    <th className="p-3 text-right text-xs font-medium text-muted-foreground">Action</th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
-                  <tr key={item.sku} className="border-b">
-                    <td className="p-3 text-sm text-foreground">{item.product}</td>
+                {items.map((item) => {
+                  const cancelledQty = item.cancelledQuantity ?? 0
+                  const cancellableQty = item.cancellableQuantity ?? 0
+                  return (
+                  <tr key={item.orderLineId ?? item.sku} className="border-b">
+                    <td className="p-3 text-sm text-foreground">
+                      <div className="flex items-center gap-3">
+                        {item.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.imageUrl}
+                            alt=""
+                            className="size-10 shrink-0 rounded-md border border-border object-cover"
+                          />
+                        ) : (
+                          <div className="size-10 shrink-0 rounded-md border border-border bg-muted" aria-hidden />
+                        )}
+                        <span>{item.product}</span>
+                      </div>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">{item.sku}</td>
-                    <td className="p-3 text-sm text-muted-foreground">{item.quantity}</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      {item.quantity}
+                      {cancelledQty > 0 ? (
+                        <span className="ml-1.5 whitespace-nowrap rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                          {cancelledQty} cancelled
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">{formatCurrency(item.price)}</td>
                     <td className="p-3 text-sm text-foreground text-right">{formatCurrency(item.total)}</td>
+                    {showActions ? (
+                      <td className="p-3 text-right">
+                        {item.orderLineId && cancellableQty > 0 ? (
+                          <CancelLineItemAction
+                            orderId={orderId as string}
+                            orderLineId={item.orderLineId}
+                            productName={item.product}
+                            quantity={cancellableQty}
+                            onDone={onRefresh}
+                          />
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">
+                            {cancelledQty > 0 && cancelledQty >= item.quantity ? "Cancelled" : "—"}
+                          </span>
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
-                ))}
+                  )
+                })}
                 <tr className="border-t-2">
-                  <td colSpan={4} className="p-3 text-sm font-semibold text-foreground text-right bg-[#E8E9E8]">
+                  <td
+                    colSpan={showActions ? 5 : 4}
+                    className="p-3 text-sm font-semibold text-foreground text-right bg-[#E8E9E8]"
+                  >
                     TOTAL
                   </td>
                   <td className="p-3 text-sm font-semibold text-foreground text-right bg-[#E8E9E8]">

@@ -384,7 +384,7 @@ export function OrderTimelineDeliveredIcon({ className, ...props }: Readonly<SVG
 export const orderFulfillmentTimelineIcons = {
   "Order Placed": OrderTimelinePlacedIcon,
   "Order Processing": OrderTimelineProcessingIcon,
-  "Ready for Dispatch": OrderTimelineReadyForDispatchIcon,
+  "Ready for pickup": OrderTimelineReadyForDispatchIcon,
   Shipped: OrderTimelineShippedIcon,
   "In Transit": OrderTimelineInTransitIcon,
   Delivered: OrderTimelineDeliveredIcon,

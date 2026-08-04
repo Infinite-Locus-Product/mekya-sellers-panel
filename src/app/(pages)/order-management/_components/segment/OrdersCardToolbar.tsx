@@ -3,63 +3,71 @@
 import { Search } from "lucide-react";
 import { CardTitle } from "@/components/ui/card";
 import { AppSelect } from "@/components/shared/AppSelect";
+import { MultiSelectFilter } from "@/components/shared/MultiSelectFilter";
 import { Button } from "@/components/ui/button";
 import { OrderBulkActionToolbarIcon, OrderManagementTableCardIcon } from "@/assets/icons/order-management";
-import type {
-    CustomOrderStatus,
-    OrderStatus,
-    ProductInventoryType,
-    ReturnStatus,
-} from "@/lib/tableTypes";
+import type { ProductInventoryType } from "@/lib/tableTypes";
 import type { SegmentViewCopy } from "./viewCopy";
+import type { OrderManagementTabId } from "./constants";
 import {
-    B2B_CUSTOM_ORDER_STATUS_FILTER_OPTIONS,
     B2B_INVENTORY_TYPE_FILTER_OPTIONS,
-    B2B_ORDER_STATUS_FILTER_OPTIONS,
-    B2C_ORDER_STATUS_FILTER_OPTIONS,
-    B2C_RETURN_STATUS_FILTER_OPTIONS,
     DATE_FILTER_OPTIONS,
     ORDER_FILTER_SELECT_TRIGGER_CLASS,
+    PAYMENT_STATUS_FILTER_OPTIONS,
+    type PaymentStatusFilterValue,
 } from "./constants";
 
 export interface OrdersCardToolbarProps {
     readonly segment: "b2c" | "b2b";
-    readonly orderView: "all" | "returns";
+    readonly activeTab: OrderManagementTabId;
     readonly viewCopy: SegmentViewCopy;
     readonly searchQuery: string;
     readonly onSearchQueryChange: (value: string) => void;
-    readonly statusFilter: "all" | OrderStatus;
-    readonly onStatusFilterChange: (value: "all" | OrderStatus) => void;
-    readonly returnStatusFilter: "all" | ReturnStatus;
-    readonly onReturnStatusFilterChange: (value: "all" | ReturnStatus) => void;
-    readonly customOrderStatusFilter: "all" | CustomOrderStatus;
-    readonly onCustomOrderStatusFilterChange: (value: "all" | CustomOrderStatus) => void;
     readonly dateFilter: string;
     readonly onDateFilterChange: (value: string) => void;
     readonly inventoryTypeFilter: "all" | ProductInventoryType;
     readonly onInventoryTypeFilterChange: (value: "all" | ProductInventoryType) => void;
     readonly selectedRowCount: number;
     readonly onBulkActionClick: () => void;
+    /** Scoped Status multi-select — the parent computes the option list per active tab/sub-tab
+     * (pipeline stages for Orders/Exchange, ReturnStatus for Returns, custom-order status for
+     * Custom Orders). Omit to hide the control entirely (e.g. Cancellation has no Status filter). */
+    readonly statusFilterOptions?: ReadonlyArray<{ label: string; value: string }>;
+    readonly statusFilter?: string[];
+    readonly onStatusFilterChange?: (value: string[]) => void;
+    /** Type multi-select — Return/Exchange on the Returns tab, Cancelled/RTO on Cancellation.
+     * Omit to hide (e.g. Orders/Exchange/Custom Orders have no Type filter). */
+    readonly typeFilterOptions?: ReadonlyArray<{ label: string; value: string }>;
+    readonly typeFilter?: string[];
+    readonly onTypeFilterChange?: (value: string[]) => void;
+    /** Payment Status single-select (All Payments/Pending/Completed) — hidden when false, e.g. on
+     * Returns sub-tabs where no request has reached a payment outcome yet. */
+    readonly showPaymentStatusFilter?: boolean;
+    readonly paymentStatusFilter?: PaymentStatusFilterValue;
+    readonly onPaymentStatusFilterChange?: (value: PaymentStatusFilterValue) => void;
 }
 
 export function OrdersCardToolbar({
     segment,
-    orderView,
+    activeTab,
     viewCopy,
     searchQuery,
     onSearchQueryChange,
-    statusFilter,
-    onStatusFilterChange,
-    returnStatusFilter,
-    onReturnStatusFilterChange,
-    customOrderStatusFilter,
-    onCustomOrderStatusFilterChange,
     dateFilter,
     onDateFilterChange,
     inventoryTypeFilter,
     onInventoryTypeFilterChange,
     selectedRowCount,
     onBulkActionClick,
+    statusFilterOptions,
+    statusFilter,
+    onStatusFilterChange,
+    typeFilterOptions,
+    typeFilter,
+    onTypeFilterChange,
+    showPaymentStatusFilter,
+    paymentStatusFilter,
+    onPaymentStatusFilterChange,
 }: Readonly<OrdersCardToolbarProps>) {
     return (
         <div className="bg-[#F9FAF9] px-3 pt-3 sm:px-4 sm:pt-4 lg:px-5 lg:pt-5 min-[1920px]:px-6 min-[1920px]:pt-6">
@@ -93,45 +101,24 @@ export function OrdersCardToolbar({
                         />
                     </div>
                     <div className="flex min-w-0 flex-nowrap items-center gap-1 max-[480px]:flex-wrap max-[480px]:gap-x-2 max-[480px]:gap-y-2 sm:gap-1.5 md:gap-2 min-[1920px]:gap-3">
-                        {orderView === "all" ? (
-                            <AppSelect
-                                placeholder="All Status"
-                                value={statusFilter}
-                                onChange={(value: string) =>
-                                    onStatusFilterChange((value as OrderStatus) || "all")
-                                }
-                                options={
-                                    segment === "b2b"
-                                        ? Array.from(B2B_ORDER_STATUS_FILTER_OPTIONS)
-                                        : Array.from(B2C_ORDER_STATUS_FILTER_OPTIONS)
-                                }
+                        {statusFilterOptions && onStatusFilterChange ? (
+                            <MultiSelectFilter
+                                placeholder="Status"
+                                options={statusFilterOptions as { label: string; value: string }[]}
+                                selected={statusFilter ?? []}
+                                onChange={onStatusFilterChange}
                                 className={ORDER_FILTER_SELECT_TRIGGER_CLASS}
                             />
-                        ) : segment === "b2b" ? (
-                            <AppSelect
-                                placeholder="All status"
-                                value={customOrderStatusFilter}
-                                onChange={(value: string) =>
-                                    onCustomOrderStatusFilterChange(
-                                        value === "all" ? "all" : (value as CustomOrderStatus)
-                                    )
-                                }
-                                options={Array.from(B2B_CUSTOM_ORDER_STATUS_FILTER_OPTIONS)}
+                        ) : null}
+                        {typeFilterOptions && onTypeFilterChange ? (
+                            <MultiSelectFilter
+                                placeholder="Type"
+                                options={typeFilterOptions as { label: string; value: string }[]}
+                                selected={typeFilter ?? []}
+                                onChange={onTypeFilterChange}
                                 className={ORDER_FILTER_SELECT_TRIGGER_CLASS}
                             />
-                        ) : (
-                            <AppSelect
-                                placeholder="All status"
-                                value={returnStatusFilter}
-                                onChange={(value: string) =>
-                                    onReturnStatusFilterChange(
-                                        value === "all" ? "all" : (value as ReturnStatus)
-                                    )
-                                }
-                                options={Array.from(B2C_RETURN_STATUS_FILTER_OPTIONS)}
-                                className={ORDER_FILTER_SELECT_TRIGGER_CLASS}
-                            />
-                        )}
+                        ) : null}
                         <AppSelect
                             placeholder="All Dates"
                             value={dateFilter}
@@ -139,7 +126,18 @@ export function OrdersCardToolbar({
                             options={[...DATE_FILTER_OPTIONS]}
                             className={ORDER_FILTER_SELECT_TRIGGER_CLASS}
                         />
-                        {orderView === "all" && segment === "b2b" ? (
+                        {showPaymentStatusFilter && onPaymentStatusFilterChange ? (
+                            <AppSelect
+                                placeholder="All Payments"
+                                value={paymentStatusFilter ?? "all"}
+                                onChange={(value: string) =>
+                                    onPaymentStatusFilterChange(value as PaymentStatusFilterValue)
+                                }
+                                options={Array.from(PAYMENT_STATUS_FILTER_OPTIONS)}
+                                className={ORDER_FILTER_SELECT_TRIGGER_CLASS}
+                            />
+                        ) : null}
+                        {activeTab === "orders" && segment === "b2b" ? (
                             <AppSelect
                                 placeholder="Inventory Type"
                                 value={inventoryTypeFilter}
@@ -154,7 +152,7 @@ export function OrdersCardToolbar({
                         ) : null}
                     </div>
                 </div>
-                {orderView === "all" && segment === "b2b" ? (
+                {activeTab === "orders" && segment === "b2b" ? (
                     <div className="flex shrink-0 justify-end lg:pt-0">
                         <Button
                             type="button"

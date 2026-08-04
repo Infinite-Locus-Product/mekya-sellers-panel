@@ -1,18 +1,19 @@
 "use client"
 
-import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Mail } from "lucide-react"
 import { ExportPdfIcon } from "@/assets/icons"
-import type { StatusVariant } from "@/components/shared/StatusBadge"
+import { StatusBadge } from "@/components/shared/StatusBadge"
+import { InventoryTypeBadge } from "@/components/shared/InventoryTypeBadge"
+import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge"
 import { CustomerInformationSection } from "./order-details/CustomerInformationSection"
 import { FulfillmentTimelineSection } from "./order-details/FulfillmentTimelineSection"
+import { ShipmentsSection } from "./order-details/ShipmentsSection"
 import { OrderItemSection } from "./order-details/OrderItemSection"
 import { OrderStatusSection } from "./order-details/OrderStatusSection"
 import { PaymentInformationSection } from "./order-details/PaymentInformationSection"
 import type { OrderDetailsData } from "./order-details/types"
-import { getOrderStatusUpdateOptions } from "./order-details/utils"
 
 export type {
   OrderItem,
@@ -25,35 +26,27 @@ export type {
   B2BOrderLineDisplay,
   B2BFulfillmentStats,
   B2BPartialColorRow,
+  ShipmentStepperStep,
+  ShipmentDisplay,
+  OrderDetailUnfulfilledLine,
   OrderDetailsData,
 } from "./order-details/types"
 
 interface OrderDetailsProps {
   order: OrderDetailsData
-  onStatusUpdate?: (orderId: string, status: StatusVariant, notes: string) => void
   onExportPDF?: (orderId: string) => void
   onSendUpdate?: (orderId: string) => void
+  /** Called after a shipment action (ship/cancel) succeeds, so the caller can re-fetch. */
+  onRefresh?: () => void
 }
 
-function initialSelectedStatus(order: OrderDetailsData): StatusVariant {
-  /** Fulfillment-progress card defaults the status picker to Pending (ops update flow). */
-  if (order.b2bFulfillmentStats) return "pending"
-  const opts = getOrderStatusUpdateOptions({
-    orderType: order.orderType,
-    isPartialFulfillmentContext: false,
-  })
-  const allowed = new Set(opts.map((o) => o.value))
-  return allowed.has(order.status) ? order.status : "pending"
-}
-
-export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate }: Readonly<OrderDetailsProps>) {
+export function OrderDetails({
+  order,
+  onExportPDF,
+  onSendUpdate,
+  onRefresh,
+}: Readonly<OrderDetailsProps>) {
   const router = useRouter()
-  const [selectedStatus, setSelectedStatus] = useState<StatusVariant>(() => initialSelectedStatus(order))
-  const [adminNotes, setAdminNotes] = useState(order.adminNotes || "")
-
-  const handleStatusUpdate = () => {
-    onStatusUpdate?.(order.id, selectedStatus, adminNotes)
-  }
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("en-IN", {
@@ -81,8 +74,16 @@ export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate 
             </Button>
           </div>
           <div className="items-center gap-2 py-4">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex flex-wrap items-center gap-3 mb-1">
               <h1 className="text-xl font-normal text-foreground">Order {order.id}</h1>
+              <StatusBadge variant={orderStatusToBadgeVariant(order.status)} className="w-fit max-w-full">
+                {order.status}
+              </StatusBadge>
+              {order.inventoryType ? (
+                <div className="w-fit max-w-full">
+                  <InventoryTypeBadge type={order.inventoryType} />
+                </div>
+              ) : null}
             </div>
             <p className="text-sm text-muted-foreground">
               Placed on {order.placedDate}, {order.placedTime}
@@ -110,22 +111,25 @@ export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate 
         </div>
       </header>
 
-      {order.customer.tag !== "general" && !order.b2bFulfillmentStats ? (
+      {order.shipments ? (
+        // `[]` (real API data, genuinely zero shipments yet) still renders ShipmentsSection so its
+        // "Create Shipment" prompt shows — only `undefined` (legacy/mock data) falls through below.
+        <ShipmentsSection
+          shipments={order.shipments}
+          orderId={order.id}
+          unfulfilledLines={order.unfulfilledLines}
+          deliveryPincode={order.deliveryPincode}
+          onRefresh={onRefresh}
+        />
+      ) : order.customer.tag !== "general" && !order.b2bFulfillmentStats ? (
         <FulfillmentTimelineSection timeline={order.timeline} orderType={order.orderType} />
       ) : null}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 mt-6">
+      <div className={`grid grid-cols-1 gap-6 mt-6 ${order.b2bFulfillmentStats ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
         <CustomerInformationSection customer={order.customer} orderType={order.orderType} />
-        <OrderStatusSection
-          order={order}
-          orderType={order.orderType}
-          b2bFulfillmentStats={order.b2bFulfillmentStats}
-          selectedStatus={selectedStatus}
-          onSelectedStatusChange={setSelectedStatus}
-          adminNotes={adminNotes}
-          onAdminNotesChange={setAdminNotes}
-          onUpdateStatus={handleStatusUpdate}
-        />
+        {order.b2bFulfillmentStats ? (
+          <OrderStatusSection b2bFulfillmentStats={order.b2bFulfillmentStats} />
+        ) : null}
         <PaymentInformationSection payment={order.payment} formatCurrency={formatCurrency} orderType={order.orderType} />
       </div>
 
@@ -135,6 +139,8 @@ export function OrderDetails({ order, onStatusUpdate, onExportPDF, onSendUpdate 
         b2bLineItems={order.b2bLineItems}
         b2bFulfillmentStats={order.b2bFulfillmentStats}
         formatCurrency={formatCurrency}
+        orderId={order.id}
+        onRefresh={onRefresh}
       />
     </div>
   )

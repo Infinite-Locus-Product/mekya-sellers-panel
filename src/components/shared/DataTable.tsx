@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { ReactNode, useCallback, useState } from "react"
+import { Fragment, ReactNode, useCallback, useState } from "react"
 import { TableSortIcon } from "@/assets/icons/shared"
 import { Pagination } from "@/components/shared/Pagination"
 
@@ -48,9 +48,25 @@ interface DataTableProps<T> {
   bodyRowClassName?: string
   striped?: boolean
   pagination?: DataTablePaginationProps
+  /** Simple server-sort model: caller re-fetches on click, tracks key/direction itself. */
   onServerSortColumn?: (columnKey: string | keyof T) => void
   serverSortKey?: string | keyof T | null
   serverSortDirection?: "asc" | "desc" | null
+  /**
+   * Controlled-sort model — pass together with `onSortChange` when `data` is already sorted by
+   * the caller (e.g. server-side) and the table should report the requested (key, direction)
+   * back explicitly. Either this or the onServerSortColumn model disables client-side re-sort.
+   */
+  sortConfig?: { key: string; direction: "asc" | "desc" } | null
+  onSortChange?: (key: string, direction: "asc" | "desc") => void
+  /**
+   * Opt-in row expansion — a row whose id (via `getRowId`) is in `expandedRowIds` renders an
+   * extra full-width row directly beneath it via `renderExpandedRow`. All three must be provided
+   * together; omit all for a plain flat table (the default).
+   */
+  getRowId?: (row: T) => string
+  expandedRowIds?: Set<string>
+  renderExpandedRow?: (row: T) => ReactNode
 }
 
 function isStandaloneCheckboxColumn<T>(col: TableColumn<T>): boolean {
@@ -72,11 +88,18 @@ export function DataTable<T>({
   onServerSortColumn,
   serverSortKey = null,
   serverSortDirection = null,
+  sortConfig: controlledSortConfig,
+  onSortChange,
+  getRowId,
+  expandedRowIds,
+  renderExpandedRow,
 }: DataTableProps<T>) {
-  const [sortConfig, setSortConfig] = useState<{
+  const isControlledSort = onSortChange !== undefined
+  const [internalSortConfig, setInternalSortConfig] = useState<{
     key: string | keyof T
     direction: "asc" | "desc"
   } | null>(null)
+  const sortConfig = isControlledSort ? controlledSortConfig ?? null : internalSortConfig
   const [mutedRowKeys, setMutedRowKeys] = useState<Set<string | number>>(() => new Set())
 
   const toggleRowMute = useCallback((key: string | number) => {
@@ -103,11 +126,17 @@ export function DataTable<T>({
     if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
       direction = "desc"
     }
-    setSortConfig({ key, direction })
+    if (isControlledSort) {
+      onSortChange!(String(key), direction)
+    } else {
+      setInternalSortConfig({ key, direction })
+    }
   }
 
-  const sortedData = [...data]
-  if (!onServerSortColumn && sortConfig) {
+  // Neither server-sort model re-sorts client-side — the caller already returned sorted data.
+  const isServerSorted = Boolean(onServerSortColumn) || isControlledSort
+  const sortedData = isServerSorted ? data : [...data]
+  if (!isServerSorted && sortConfig) {
     const key = sortConfig.key as keyof T
     sortedData.sort((a, b) => {
       const aValue: T[keyof T] = a[key]
@@ -153,7 +182,9 @@ export function DataTable<T>({
         type="button"
         onClick={() => handleSort(col.key)}
         className={cn(
-          "inline-flex w-full min-w-0 items-center gap-1 text-[11px] text-foreground transition-colors min-[1920px]:gap-2 min-[1920px]:text-sm",
+          // No font-size classes here on purpose — inherits the <th>'s responsive
+          // scale so sortable and non-sortable headers always match.
+          "inline-flex w-full min-w-0 items-center gap-1 text-foreground transition-colors min-[1920px]:gap-2",
           "rounded-sm px-0.5 py-0.5 -my-1 min-[1920px]:py-1 hover:bg-black/[0.06] hover:text-foreground",
           col.align === "right" && "justify-end text-right",
           col.align === "center" && "justify-center text-center",
@@ -214,7 +245,7 @@ export function DataTable<T>({
               <th
                 key={String(col.key)}
                 className={cn(
-                  "bg-[#E8E9E8] p-1.5 text-[10px] font-normal leading-tight sm:p-2 sm:text-[11px] xl:p-2.5 xl:text-xs min-[1920px]:p-3 min-[1920px]:text-sm min-[1920px]:leading-normal",
+                  "bg-[#E8E9E8] px-2 py-1.5 text-[10px] font-normal leading-tight sm:px-3 sm:py-2 sm:text-[11px] xl:px-4 xl:py-2.5 xl:text-xs min-[1920px]:px-5 min-[1920px]:py-3 min-[1920px]:text-sm min-[1920px]:leading-normal",
                   cellWrapClass,
                   getAlignClass(col.align),
                   col.className
@@ -246,38 +277,31 @@ export function DataTable<T>({
                 isRowMuted,
                 toggleRowMute: () => toggleRowMute(rowKey),
               }
+              const rowId = getRowId?.(row)
+              const isExpanded = Boolean(rowId && expandedRowIds?.has(rowId))
               return (
-                <tr
-                  key={rowKey}
-                  className={cn(
-                    "border-b hover:bg-muted/50",
-                    striped && (rowIdx % 2 === 1 ? "bg-[#F5F5F5]" : "bg-white"),
-                    isSelected && "bg-muted/30",
-                    isRowMuted && "opacity-50",
-                    bodyRowClassName
-                  )}
-                >
-                  {columns.map((col) => (
-                    <td
-                      key={String(col.key)}
-                      className={cn(
-                        "p-1.5 text-[10px] leading-tight sm:p-2 sm:text-[11px] xl:p-2.5 xl:text-xs min-[1920px]:p-3 min-[1920px]:text-sm min-[1920px]:leading-normal",
-                        cellWrapClass,
-                        getAlignClass(col.align),
-                        col.className
-                      )}
-                    >
-                      {col.checkbox ? (
-                        isStandaloneCheckboxColumn(col) ? (
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => onSelectRow?.(row, e.target.checked)}
-                            className="size-3.5 shrink-0 rounded border-gray-300 accent-black min-[1920px]:size-4"
-                            aria-label="Select row"
-                          />
-                        ) : (
-                          <div className="flex min-w-0 flex-wrap items-center gap-1.5 min-[1920px]:gap-2">
+                <Fragment key={rowKey}>
+                  <tr
+                    className={cn(
+                      "border-b hover:bg-muted/50",
+                      striped && (rowIdx % 2 === 1 ? "bg-[#F5F5F5]" : "bg-white"),
+                      isSelected && "bg-muted/30",
+                      isRowMuted && "opacity-50",
+                      bodyRowClassName
+                    )}
+                  >
+                    {columns.map((col) => (
+                      <td
+                        key={String(col.key)}
+                        className={cn(
+                          "px-2 py-1.5 text-[10px] leading-tight sm:px-3 sm:py-2 sm:text-[11px] xl:px-4 xl:py-2.5 xl:text-xs min-[1920px]:px-5 min-[1920px]:py-3 min-[1920px]:text-sm min-[1920px]:leading-normal",
+                          cellWrapClass,
+                          getAlignClass(col.align),
+                          col.className
+                        )}
+                      >
+                        {col.checkbox ? (
+                          isStandaloneCheckboxColumn(col) ? (
                             <input
                               type="checkbox"
                               checked={isSelected}
@@ -285,23 +309,40 @@ export function DataTable<T>({
                               className="size-3.5 shrink-0 rounded border-gray-300 accent-black min-[1920px]:size-4"
                               aria-label="Select row"
                             />
-                            <span className="min-w-0 flex-1">
-                              {col.cell ? (
-                                col.cell(row, rowHelpers)
-                              ) : (
-                                String((row[col.key as keyof T] ?? "") as string)
-                              )}
-                            </span>
-                          </div>
-                        )
-                      ) : col.cell ? (
-                        <div className="min-w-0">{col.cell(row, rowHelpers)}</div>
-                      ) : (
-                        String((row[col.key as keyof T] ?? "") as string)
-                      )}
-                    </td>
-                  ))}
-                </tr>
+                          ) : (
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5 min-[1920px]:gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => onSelectRow?.(row, e.target.checked)}
+                                className="size-3.5 shrink-0 rounded border-gray-300 accent-black min-[1920px]:size-4"
+                                aria-label="Select row"
+                              />
+                              <span className="min-w-0 flex-1">
+                                {col.cell ? (
+                                  col.cell(row, rowHelpers)
+                                ) : (
+                                  String((row[col.key as keyof T] ?? "") as string)
+                                )}
+                              </span>
+                            </div>
+                          )
+                        ) : col.cell ? (
+                          <div className="min-w-0">{col.cell(row, rowHelpers)}</div>
+                        ) : (
+                          String((row[col.key as keyof T] ?? "") as string)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                  {isExpanded && renderExpandedRow ? (
+                    <tr className={cn("border-b bg-muted/20", bodyRowClassName)}>
+                      <td colSpan={columns.length} className="p-0">
+                        {renderExpandedRow(row)}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               )
             })
           )}
