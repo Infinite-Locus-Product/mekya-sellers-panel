@@ -3,21 +3,16 @@
 import { useState } from "react";
 import { ChevronDown, ShoppingBag } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CaptionDraftState } from "../../lib/utils";
 import type { TaggedProduct } from "./EditReelTagProductsStep";
 
 export interface EditReelPreviewAsideProps {
   durationSeconds: number;
-  showCaptionOnReelPreview: boolean;
-  captionDraft: CaptionDraftState;
   taggedProducts?: TaggedProduct[];
   videoSrc?: string | null;
 }
 
 export function EditReelPreviewAside({
   durationSeconds,
-  showCaptionOnReelPreview,
-  captionDraft,
   taggedProducts = [],
   videoSrc,
 }: Readonly<EditReelPreviewAsideProps>) {
@@ -46,28 +41,6 @@ export function EditReelPreviewAside({
             <span className="text-[10px]">No preview</span>
           </div>
         )}
-
-        {/* Caption overlay */}
-        {showCaptionOnReelPreview ? (
-          <div
-            className="pointer-events-none absolute z-10 max-w-[calc(100%-12px)] whitespace-pre-wrap break-words text-center font-medium leading-snug"
-            style={{
-              left: `${captionDraft.posX}%`,
-              top: `${captionDraft.posY}%`,
-              transform: "translate(-50%, -50%)",
-              fontSize: `${captionDraft.fontSize}px`,
-              color: captionDraft.color,
-              textShadow:
-                captionDraft.color === "#FFFFFF" || captionDraft.color === "#EAB308"
-                  ? "0 1px 3px rgba(0,0,0,0.95)"
-                  : captionDraft.color === "#000000"
-                    ? "0 1px 2px rgba(255,255,255,0.35)"
-                    : "0 1px 2px rgba(0,0,0,0.5)",
-            }}
-          >
-            {captionDraft.text}
-          </div>
-        ) : null}
 
         {/* Shopping bag toggle — only when products are tagged */}
         {taggedProducts.length > 0 && !trayOpen ? (

@@ -1,5 +1,5 @@
 import { authService } from "@/lib/auth/authService";
-import type { CmsAnalyticsSummary, CmsReel, ReelStatus } from "@/lib/data/cms";
+import type { CmsAnalyticsSummary, CmsReel, ReelStatus, Schedule } from "@/lib/data/cms";
 
 export type ReelAudience = "b2b" | "b2c" | "both";
 
@@ -94,7 +94,8 @@ export interface CreateReelRequest {
   title: string;
   description: string;
   s3_url: string;
-  thumbnail_url: string;
+  /** No longer required at creation — the backend now only requires it at submit time. */
+  thumbnail_url?: string;
   duration_seconds: number;
   audience: ReelAudience;
   product_ids: string[];
@@ -102,8 +103,8 @@ export interface CreateReelRequest {
 
 export interface CreateReelResponse {
   reel_id: string;
-  status: "pending";
-  thumbnail_url: string;
+  status: "draft";
+  thumbnail_url: string | null;
   video_url: string;
   audience: ReelAudience;
   message: string;
@@ -122,6 +123,12 @@ export async function updateReel(
     thumbnail_url?: string;
     product_ids?: string[];
     audience?: ReelAudience;
+    /**
+     * Required (true) to edit a reel in a locked status (approved/published/unpublished/
+     * scheduled) — the edit then goes through and status flips to "resubmitted". Omit/false
+     * on draft/pending/rejected/resubmitted, which aren't locked.
+     */
+    force_resubmit?: boolean;
   },
 ): Promise<void> {
   await authService.api.patch<unknown>(`/seller/reels/${reelId}`, updates);
@@ -131,6 +138,22 @@ export async function deleteReel(reelId: string): Promise<void> {
   await authService.api.delete<unknown>(`/seller/reels/${reelId}`);
 }
 
+/** POST /seller/reels/{reel_id}/submit — draft/rejected → pending. 400 REEL_THUMBNAIL_REQUIRED if no thumbnail. */
+export async function submitReel(reelId: string): Promise<void> {
+  await authService.api.post<unknown>(`/seller/reels/${reelId}/submit`);
+}
+
+/** POST /seller/reels/{reel_id}/publish — approved/unpublished → published. */
+export async function publishReel(reelId: string): Promise<void> {
+  await authService.api.post<unknown>(`/seller/reels/${reelId}/publish`);
+}
+
+/** POST /seller/reels/{reel_id}/unpublish — published → unpublished. */
+export async function unpublishReel(reelId: string): Promise<void> {
+  await authService.api.post<unknown>(`/seller/reels/${reelId}/unpublish`);
+}
+
+/** POST /seller/reels/{reel_id}/resubmit — rejected only → resubmitted. */
 export async function resubmitReel(reelId: string): Promise<void> {
   await authService.api.post<unknown>(`/seller/reels/${reelId}/resubmit`);
 }
@@ -144,27 +167,46 @@ export async function saveReelAsDraft(
   await authService.api.post<unknown>(`/seller/reels/${reelId}/draft`, opts ?? {});
 }
 
-export async function scheduleReel(reelId: string, publishAt: string): Promise<void> {
-  await authService.api.post<unknown>(`/seller/reels/${reelId}/schedule`, {
-    publish_at: publishAt,
-  });
+export interface ScheduleReelResponse {
+  reel_id: string;
+  status: "scheduled";
+  publish_at: string;
+  schedule: Schedule;
+  message: string;
 }
 
-// ─── Captions ────────────────────────────────────────────────────────────────
-
-export async function addCaptions(
+/** POST /seller/reels/{reel_id}/schedule — publishAt must be a future ISO 8601 timestamp, <= 1 year out. */
+export async function scheduleReel(
   reelId: string,
-  captions: Array<{
-    text: string;
-    start_ms: number;
-    end_ms: number;
-    font_size?: number;
-    color?: string;
-    pos_x?: number;
-    pos_y?: number;
-  }>,
-): Promise<void> {
-  await authService.api.post<unknown>(`/seller/reels/${reelId}/captions`, { captions });
+  publishAt: string,
+): Promise<ScheduleReelResponse> {
+  const res = await authService.api.post<ScheduleReelResponse>(
+    `/seller/reels/${reelId}/schedule`,
+    { publish_at: publishAt },
+  );
+  return res.data;
+}
+
+export interface CancelScheduleResponse {
+  reel_id: string;
+  cancelled: true;
+  message: string;
+}
+
+/** DELETE /seller/reels/{reel_id}/schedule — reverts the reel to "draft". */
+export async function cancelReelSchedule(reelId: string): Promise<CancelScheduleResponse> {
+  const res = await authService.api.delete<CancelScheduleResponse>(
+    `/seller/reels/${reelId}/schedule`,
+  );
+  return res.data;
+}
+
+/** GET /seller/reels/{reel_id}/schedule */
+export async function getReelSchedule(reelId: string): Promise<Schedule | null> {
+  const res = await authService.api.get<{ schedule: Schedule | null }>(
+    `/seller/reels/${reelId}/schedule`,
+  );
+  return res.data?.schedule ?? null;
 }
 
 // ─── List (maps API shape → CmsReel) ─────────────────────────────────────────
@@ -183,6 +225,8 @@ interface ApiReel {
   rejection_reason: string | null;
   created_at: string;
   published_at: string | null;
+  /** True only when status === "approved" — drives whether Schedule for Later is offered. */
+  can_schedule: boolean;
 }
 
 function mapApiReel(r: ApiReel): CmsReel {
@@ -210,13 +254,25 @@ function mapApiReel(r: ApiReel): CmsReel {
     description: r.description,
     audience: r.audience as ReelAudience,
     rejection_reason: r.rejection_reason,
+    canSchedule: r.can_schedule ?? false,
   };
 }
 
-export async function listReels(params?: { status?: ReelStatus; limit?: number }): Promise<CmsReel[]> {
+export async function listReels(params?: {
+  status?: ReelStatus;
+  search?: string;
+  limit?: number;
+  /** ISO 8601. Not yet confirmed live on the backend — sent speculatively; the caller
+   * re-applies the same range client-side so filtering is correct either way. */
+  date_from?: string;
+  date_to?: string;
+}): Promise<CmsReel[]> {
   const query = new URLSearchParams();
   if (params?.status) query.set("status", params.status);
+  if (params?.search) query.set("search", params.search);
   if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.date_from) query.set("date_from", params.date_from);
+  if (params?.date_to) query.set("date_to", params.date_to);
   const qs = query.toString();
   const res = await authService.api.get<{ reels: ApiReel[] }>(
     `/seller/reels${qs ? `?${qs}` : ""}`,

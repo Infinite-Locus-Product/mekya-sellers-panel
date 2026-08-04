@@ -48,6 +48,12 @@ export function PaymentInformationSection({
                 {payment.shippingCharges === 0 ? "Free" : formatCurrency(payment.shippingCharges)}
               </span>
             </div>
+            {payment.discount ? (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Discount applied</span>
+                <span className="text-foreground">−{formatCurrency(payment.discount)}</span>
+              </div>
+            ) : null}
             <div className="flex justify-between text-sm pt-2 border-t">
               <span className="text-muted-foreground">Total amount</span>
               <span className="text-foreground">{formatCurrency(payment.total)}</span>

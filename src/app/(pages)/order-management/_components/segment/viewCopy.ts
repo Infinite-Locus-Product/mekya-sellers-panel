@@ -1,3 +1,5 @@
+import type { OrderManagementTabId } from "./constants";
+
 export interface SegmentViewCopy {
     pageSubtitle: string;
     cardTitle: string;
@@ -6,47 +8,85 @@ export interface SegmentViewCopy {
     emptyMessage: string;
 }
 
-export function getSegmentViewCopy(
-    segment: "b2c" | "b2b",
-    orderView: "all" | "returns"
-): SegmentViewCopy {
-    if (segment === "b2c") {
-        return orderView === "all"
-            ? {
-                  pageSubtitle: "Manage all B2C orders across the platform",
-                  cardTitle: "All Orders",
-                  cardDescription: "Manage all B2C orders from a centralized location",
-                  searchPlaceholder: "Search by order ID, customer name, or product",
-                  emptyMessage: "No orders match your filters",
-              }
-            : {
-                  pageSubtitle: "Review and manage customer return requests",
-                  cardTitle: "Return Requests",
-                  cardDescription: "Manage all B2C Return Requests orders from a centralized location",
-                  searchPlaceholder: "Search by order ID, customer name, or product",
-                  emptyMessage:
-                      "No results found. Try resetting your filters or adjusting your search.",
-              };
+const RESULTS_EMPTY_MESSAGE = "No results found. Try resetting your filters or adjusting your search.";
+
+export function getSegmentViewCopy(segment: "b2c" | "b2b", tab: OrderManagementTabId): SegmentViewCopy {
+    const searchPlaceholder =
+        segment === "b2b" ? "Search by order ID, or vendor name" : "Search by order ID, customer name, or product";
+
+    switch (tab) {
+        case "orders":
+            return {
+                pageSubtitle:
+                    segment === "b2b"
+                        ? "Manage all B2B wholesale orders across the platform"
+                        : "Manage all B2C orders across the platform",
+                cardTitle: "All Orders",
+                cardDescription:
+                    segment === "b2b"
+                        ? "Manage all B2B orders from a centralized location"
+                        : "Manage all B2C orders from a centralized location",
+                searchPlaceholder,
+                emptyMessage: "No orders match your filters",
+            };
+        case "exchange":
+            return {
+                pageSubtitle: "Review and manage customer exchange requests",
+                cardTitle: "Exchange Requests",
+                cardDescription: "Manage all exchange requests from a centralized location",
+                searchPlaceholder,
+                emptyMessage: RESULTS_EMPTY_MESSAGE,
+            };
+        case "returns":
+            return {
+                pageSubtitle: "Review and manage customer return requests",
+                cardTitle: "Return Requests",
+                cardDescription: "Manage all return requests from a centralized location",
+                searchPlaceholder,
+                emptyMessage: RESULTS_EMPTY_MESSAGE,
+            };
+        case "cancellation":
+            return {
+                pageSubtitle: "Review cancelled orders and cancelled items",
+                cardTitle: "Cancellation",
+                cardDescription:
+                    "Cancelled Orders covers whole orders and RTOs; Cancelled Items covers individual line items cancelled before dispatch",
+                searchPlaceholder,
+                emptyMessage: "No cancelled orders match your filters",
+            };
+        case "custom":
+            return {
+                pageSubtitle: "Review and manage B2B custom orders",
+                cardTitle: "Custom Orders",
+                cardDescription: "Manage all B2B custom orders from a centralized location",
+                searchPlaceholder,
+                emptyMessage: RESULTS_EMPTY_MESSAGE,
+            };
     }
-    return orderView === "all"
-        ? {
-              pageSubtitle: "Manage all B2B wholesale orders across the platform",
-              cardTitle: "All Orders",
-              cardDescription: "Manage all B2B orders from a centralized location",
-              searchPlaceholder: "Search by order ID, or vendor name",
-              emptyMessage: "No orders match your filters",
-          }
-        : {
-              pageSubtitle: "Review and manage B2B custom orders",
-              cardTitle: "Custom Orders",
-              cardDescription: "Manage all B2B custom orders from a centralized location",
-              searchPlaceholder: "Search by order ID, or vendor name",
-              emptyMessage: "No results found. Try resetting your filters or adjusting your search.",
-          };
 }
 
-export function getOrderViewToggleLabels(segment: "b2c" | "b2b"): { all: string; returns: string } {
-    return segment === "b2c"
-        ? { all: "All Orders", returns: "Return Requests" }
-        : { all: "Bulk Orders", returns: "Custom Orders" };
+export interface OrderManagementTabConfig {
+    readonly id: OrderManagementTabId;
+    readonly label: string;
+}
+
+/**
+ * Sibling top-level tabs for the page. B2B has no post-shipment Exchange/Returns flow — it only
+ * gets Orders + Cancellation (+ its own "Custom Orders" tab); B2C gets the full Exchange/Returns
+ * lifecycle too.
+ */
+export function getOrderManagementTabs(segment: "b2c" | "b2b"): OrderManagementTabConfig[] {
+    if (segment === "b2b") {
+        return [
+            { id: "orders", label: "Bulk Orders" },
+            { id: "cancellation", label: "Cancellation" },
+            { id: "custom", label: "Custom Orders" },
+        ];
+    }
+    return [
+        { id: "orders", label: "All Orders" },
+        { id: "exchange", label: "Exchange" },
+        { id: "returns", label: "Returns" },
+        { id: "cancellation", label: "Cancellation" },
+    ];
 }

@@ -21,12 +21,11 @@ const BULK_ACTION_OPTIONS = [
 
 /** Statuses available when bulk-updating order status (matches order workflow UI). */
 const BULK_NEW_ORDER_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
-    { value: "Pending", label: "Pending" },
-    { value: "Processing", label: "Processing" },
-    { value: "Shipped", label: "Shipped" },
-    { value: "Delivered", label: "Delivered" },
+    { value: "Unfulfilled", label: "Unfulfilled" },
+    { value: "Partially Fulfilled", label: "Partially Fulfilled" },
+    { value: "Fulfilled", label: "Fulfilled" },
     { value: "Returned", label: "Returned" },
-    { value: "Canceled", label: "Canceled" },
+    { value: "Cancelled", label: "Cancelled" },
 ];
 
 const selectTriggerClass = cn(

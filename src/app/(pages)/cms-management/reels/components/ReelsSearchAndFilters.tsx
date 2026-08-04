@@ -196,9 +196,14 @@ export function ReelsSearchAndFilters({
               </SelectTrigger>
               <SelectContent position="popper" sideOffset={4} className="rounded-lg">
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="scheduled">Scheduled</SelectItem>
                 <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="pending">Pending Review</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="resubmitted">Resubmitted</SelectItem>
+                <SelectItem value="scheduled">Scheduled</SelectItem>
                 <SelectItem value="published">Published</SelectItem>
+                <SelectItem value="unpublished">Unpublished</SelectItem>
               </SelectContent>
             </Select>
           </div>

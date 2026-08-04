@@ -6,22 +6,28 @@ import { DataTable } from "@/components/shared/DataTable";
 import { usePagination } from "@/hooks";
 import type { ReelAudience } from "@/lib/api/reels";
 import type { TaggedProduct } from "./components/edit-reel/EditReelTagProductsStep";
+import { trimVideoFile } from "./lib/trimVideo";
 import {
-  addCaptions,
+  cancelReelSchedule,
   createReel,
   deleteReel,
   getReelById,
+  getReelSchedule,
   getSellerProducts,
   listReels,
   presignThumbnailUpload,
   presignVideoUpload,
+  publishReel,
   resubmitReel,
   saveReelAsDraft,
   scheduleReel,
+  submitReel,
+  unpublishReel,
   updateReel,
   uploadFileToS3,
 } from "@/lib/api/reels";
-import type { CmsReel } from "@/lib/data/cms";
+import { LOCKED_REEL_STATUSES, type CmsReel, type Schedule } from "@/lib/data/cms";
+import { CancelScheduleDialog } from "./components/CancelScheduleDialog";
 import { DeleteReelDialog } from "./components/DeleteReelDialog";
 import { EditReelDialog } from "./components/edit-reel/EditReelDialog";
 import { ReelFeedbackDialog } from "./components/ReelFeedbackDialog";
@@ -32,8 +38,9 @@ import { useReelsTableColumns } from "./components/reels-table-columns";
 import { ScheduleReelDialog } from "./components/ScheduleReelDialog";
 import { UploadReelDialog } from "./components/UploadReelDialog";
 import {
-  DEFAULT_SCHEDULE_DATE,
-  DEFAULT_SCHEDULE_TIME,
+  ALLOWED_VIDEO_EXTENSIONS,
+  ALLOWED_VIDEO_MIME_TYPES,
+  MAX_SCHEDULE_DAYS_OUT,
   MIN_DURATION_SECONDS,
   PAGE_SIZE,
   type ReelFeedbackVariant,
@@ -41,8 +48,9 @@ import {
   UPLOAD_MAX_BYTES,
 } from "./lib/constants";
 import {
-  defaultCaptionDraft,
+  defaultScheduleDateTime,
   isoToDdMmYyyy,
+  localDateTimeToUtcIso,
   parseDdMmYyyyToIso,
   parseDurationToSeconds,
   syntheticCmsReelFromUploadedFile,
@@ -85,7 +93,6 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
   const [editingReel, setEditingReel] = useState<CmsReel | null>(null);
   const [editStep, setEditStep] = useState(0);
   const [cropRange, setCropRange] = useState<[number, number]>([0, 15]);
-  const [captionDraft, setCaptionDraft] = useState(defaultCaptionDraft);
 
   // Tag Products step state
   const [reelTitle, setReelTitle] = useState("");
@@ -107,10 +114,16 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     useState<ReelFeedbackVariant>("uploadComplete");
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleTargetReel, setScheduleTargetReel] = useState<CmsReel | null>(null);
-  const [scheduleDateIso, setScheduleDateIso] = useState(DEFAULT_SCHEDULE_DATE);
-  const [scheduleTimeStr, setScheduleTimeStr] = useState(DEFAULT_SCHEDULE_TIME);
+  const [scheduleDateIso, setScheduleDateIso] = useState(() => defaultScheduleDateTime().date);
+  const [scheduleTimeStr, setScheduleTimeStr] = useState(() => defaultScheduleDateTime().time);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewReel, setPreviewReel] = useState<CmsReel | null>(null);
+
+  // Cancel-schedule flow
+  const [cancelScheduleOpen, setCancelScheduleOpen] = useState(false);
+  const [cancelScheduleTarget, setCancelScheduleTarget] = useState<CmsReel | null>(null);
+  const [cancelScheduleInfo, setCancelScheduleInfo] = useState<Schedule | null>(null);
+  const [isCancellingSchedule, setIsCancellingSchedule] = useState(false);
 
   // Filters
   const [appliedStatus, setAppliedStatus] = useState<StatusFilter>("all");
@@ -120,12 +133,6 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
   const [draftDateFromStr, setDraftDateFromStr] = useState("");
   const [draftDateToStr, setDraftDateToStr] = useState("");
 
-  // Load real reels on mount
-  useEffect(() => {
-    listReels()
-      .then((data) => setReels(data))
-      .catch(() => {});
-  }, []);
 
   const hasActiveFilters =
     appliedStatus !== "all" || appliedDateFrom !== "" || appliedDateTo !== "";
@@ -184,7 +191,6 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     const end = Math.min(15, totalSec);
     setCropRange([0, end]);
     setEditStep(0);
-    setCaptionDraft(defaultCaptionDraft());
     setReelTitle(reel.title);
     setReelDescription(initialDescription || (reel.description ?? ""));
     setReelAudience(reel.audience ?? "b2c");
@@ -237,7 +243,6 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     setVideoDurationSeconds(0);
     setIsSubmitting(false);
     setEditStep(0);
-    setCaptionDraft(defaultCaptionDraft());
   }, []);
 
   const handleEditDialogOpenChange = (open: boolean) => {
@@ -248,15 +253,13 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     }
   };
 
+  // Audience is only changeable before/around review — draft (not yet submitted) or rejected
+  // (bounced back, being fixed up). Everything else (pending, resubmitted, and the locked
+  // statuses) keeps audience fixed.
   const audienceLocked =
     editingReel !== null &&
     editingReel.status !== "draft" &&
-    editingReel.status !== "pending";
-
-  const showCaptionOnReelPreview =
-    captionDraft.editorOpen &&
-    captionDraft.text.trim().length > 0 &&
-    editStep >= 1;
+    editingReel.status !== "rejected";
 
   const openPreviewDialog = useCallback((reel: CmsReel) => {
     setPreviewReel(reel);
@@ -282,6 +285,73 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     setDeleteOpen(open);
     if (!open) setPendingDelete(null);
   };
+
+  const openCancelScheduleDialog = useCallback((reel: CmsReel) => {
+    setCancelScheduleTarget(reel);
+    setCancelScheduleInfo(null);
+    setCancelScheduleOpen(true);
+    getReelSchedule(reel.id)
+      .then(setCancelScheduleInfo)
+      .catch(() => {});
+  }, []);
+
+  const handleCancelScheduleDialogOpenChange = (open: boolean) => {
+    setCancelScheduleOpen(open);
+    if (!open) {
+      setCancelScheduleTarget(null);
+      setCancelScheduleInfo(null);
+    }
+  };
+
+  const confirmCancelSchedule = useCallback(async () => {
+    if (!cancelScheduleTarget) return;
+    setIsCancellingSchedule(true);
+    try {
+      await cancelReelSchedule(cancelScheduleTarget.id);
+      setReels((prev) =>
+        prev.map((r) =>
+          r.id === cancelScheduleTarget.id
+            ? { ...r, status: "approved" as const, schedule: null }
+            : r
+        )
+      );
+      toast.success("Schedule cancelled", { description: cancelScheduleTarget.title });
+      setCancelScheduleOpen(false);
+      setCancelScheduleTarget(null);
+      setCancelScheduleInfo(null);
+    } catch (err) {
+      toast.error("Cancel failed", {
+        description: err instanceof Error ? err.message : "Could not cancel schedule.",
+      });
+    } finally {
+      setIsCancellingSchedule(false);
+    }
+  }, [cancelScheduleTarget]);
+
+  const handlePublishReel = useCallback(async (reel: CmsReel) => {
+    try {
+      await publishReel(reel.id);
+      setReels((prev) => prev.map((r) => (r.id === reel.id ? { ...r, status: "published" as const } : r)));
+      toast.success("Reel published", { description: reel.title });
+    } catch (err) {
+      toast.error("Publish failed", {
+        description: err instanceof Error ? err.message : "Could not publish reel.",
+      });
+    }
+  }, []);
+
+  const handleUnpublishReel = useCallback(async (reel: CmsReel) => {
+    if (!window.confirm(`Take "${reel.title}" down from the live feed?`)) return;
+    try {
+      await unpublishReel(reel.id);
+      setReels((prev) => prev.map((r) => (r.id === reel.id ? { ...r, status: "unpublished" as const } : r)));
+      toast.success("Reel unpublished", { description: reel.title });
+    } catch (err) {
+      toast.error("Unpublish failed", {
+        description: err instanceof Error ? err.message : "Could not unpublish reel.",
+      });
+    }
+  }, []);
 
   const confirmDeleteReel = useCallback(async () => {
     if (!pendingDelete) return;
@@ -320,8 +390,10 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
   const applyPickedVideo = useCallback((file: File | undefined) => {
     if (!file) return;
     const ext = file.name.includes(".") ? (file.name.split(".").pop()?.toLowerCase() ?? "") : "";
-    const extOk = ["mp4", "mov", "avi"].includes(ext);
-    const mimeOk = file.type.startsWith("video/");
+    // Exact allow-list on both sides — a loose "video/*" mime prefix check let unsupported
+    // formats (e.g. .webm, .mkv) slip past this into an upload the backend then rejects.
+    const extOk = (ALLOWED_VIDEO_EXTENSIONS as readonly string[]).includes(ext);
+    const mimeOk = (ALLOWED_VIDEO_MIME_TYPES as readonly string[]).includes(file.type);
     if (!extOk && !mimeOk) {
       toast.error("Unsupported format", { description: "Use MP4, MOV, or AVI." });
       return;
@@ -386,23 +458,28 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     }
   }, []);
 
-  // Builds the captions payload from current draft state
-  const buildCaptionsPayload = () => {
-    if (!captionDraft.editorOpen || !captionDraft.text.trim()) return null;
-    return [
-      {
-        text: captionDraft.text,
-        start_ms: cropRange[0] * 1000,
-        end_ms: cropRange[1] * 1000,
-        font_size: captionDraft.fontSize,
-        color: captionDraft.color,
-        pos_x: captionDraft.posX,
-        pos_y: captionDraft.posY,
-      },
-    ];
-  };
-
   const isNewUploadFlow = uploadS3Url !== null;
+
+  /**
+   * If the seller narrowed the crop range below the full clip, trims the raw file client-side
+   * and re-uploads the trimmed clip, returning ITS s3_url + the crop-derived duration. If the
+   * crop still covers the whole clip, reuses the already-uploaded raw file untouched.
+   */
+  const resolveUploadForSubmit = async (): Promise<{ s3Url: string; durationSec: number }> => {
+    const fullDuration =
+      videoDurationSeconds > 0 ? videoDurationSeconds : parseDurationToSeconds(editingReel?.duration ?? "0:00");
+    const [start, end] = cropRange;
+    const isRealCrop = uploadFile && uploadS3Url && end > start && (start > 0 || end < fullDuration);
+
+    if (!isRealCrop) {
+      return { s3Url: uploadS3Url ?? "", durationSec: fullDuration };
+    }
+
+    const trimmed = await trimVideoFile(uploadFile, start, end);
+    const presign = await presignVideoUpload(trimmed.name, trimmed.type || "video/mp4", trimmed.size);
+    await uploadFileToS3(presign.upload_url, trimmed);
+    return { s3Url: presign.s3_url, durationSec: end - start };
+  };
 
   const handleEditPublish = async () => {
     if (!editingReel) return;
@@ -411,27 +488,24 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     if (isNewUploadFlow) {
       if (!activeThumbnailUrl) {
         toast.error("Thumbnail required", {
-          description: "Please upload a thumbnail before publishing.",
+          description: "Please upload a thumbnail before submitting for approval.",
         });
         return;
       }
-      const durationSec =
-        videoDurationSeconds > 0
-          ? videoDurationSeconds
-          : parseDurationToSeconds(editingReel.duration);
       try {
         setIsSubmitting(true);
+        const { s3Url, durationSec } = await resolveUploadForSubmit();
         const created = await createReel({
           title,
           description: reelDescription,
-          s3_url: uploadS3Url,
+          s3_url: s3Url,
           thumbnail_url: activeThumbnailUrl,
           duration_seconds: durationSec,
           audience: reelAudience,
           product_ids: taggedProducts.map((p) => p.id),
         });
-        const captions = buildCaptionsPayload();
-        if (captions) await addCaptions(created.reel_id, captions);
+        // createReel starts the reel as "draft" — submit is what actually sends it for review.
+        await submitReel(created.reel_id);
         const newReel: CmsReel = {
           ...editingReel,
           id: created.reel_id,
@@ -440,7 +514,7 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
           audience: reelAudience,
           product_ids: taggedProducts.map((p) => p.id),
           thumbnail_url: activeThumbnailUrl,
-          s3_url: uploadS3Url,
+          s3_url: s3Url,
         };
         setReels((prev) => [newReel, ...prev]);
         setReelFeedbackReel(newReel);
@@ -455,8 +529,23 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
         setIsSubmitting(false);
       }
     } else {
-      // Edit existing reel
+      // Edit existing reel. Locked statuses (approved/published/unpublished/scheduled) require
+      // force_resubmit — confirm first since that sends it back to admin review.
       const reelId = editingReel.id;
+      const status = editingReel.status;
+      const locked = LOCKED_REEL_STATUSES.includes(status);
+      if (locked) {
+        const confirmed = window.confirm(
+          "This reel has already been approved. Saving changes will send it back for admin review. Continue?",
+        );
+        if (!confirmed) return;
+      }
+      if (status === "draft" && !activeThumbnailUrl) {
+        toast.error("Thumbnail required", {
+          description: "Please upload a thumbnail before submitting for approval.",
+        });
+        return;
+      }
       try {
         setIsSubmitting(true);
         await updateReel(reelId, {
@@ -464,18 +553,27 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
           description: reelDescription,
           ...(activeThumbnailUrl ? { thumbnail_url: activeThumbnailUrl } : {}),
           product_ids: taggedProducts.map((p) => p.id),
+          ...(locked ? { force_resubmit: true } : {}),
         });
-        if (editingReel.status === "rejected") {
+        let newStatus = status;
+        if (status === "draft") {
+          await submitReel(reelId);
+          newStatus = "pending";
+        } else if (status === "rejected") {
           await resubmitReel(reelId);
+          newStatus = "resubmitted";
+        } else if (locked) {
+          newStatus = "resubmitted";
         }
+        // pending/resubmitted: already in review, plain save with no status change.
         setReels((prev) =>
           prev.map((r) =>
             r.id === reelId
-              ? { ...r, title, thumbnail_url: activeThumbnailUrl ?? r.thumbnail_url }
+              ? { ...r, title, status: newStatus, thumbnail_url: activeThumbnailUrl ?? r.thumbnail_url }
               : r
           )
         );
-        setReelFeedbackReel({ ...editingReel, title });
+        setReelFeedbackReel({ ...editingReel, title, status: newStatus });
         setReelFeedbackVariant("published");
         handleEditDialogOpenChange(false);
         setReelFeedbackOpen(true);
@@ -494,22 +592,19 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     const title = reelTitle.trim() || editingReel.title;
 
     if (isNewUploadFlow) {
-      const durationSec =
-        videoDurationSeconds > 0
-          ? videoDurationSeconds
-          : parseDurationToSeconds(editingReel.duration);
       try {
         setIsSubmitting(true);
+        const { s3Url, durationSec } = await resolveUploadForSubmit();
         const created = await createReel({
           title,
           description: reelDescription,
-          s3_url: uploadS3Url,
-          thumbnail_url: activeThumbnailUrl ?? "",
+          s3_url: s3Url,
+          ...(activeThumbnailUrl ? { thumbnail_url: activeThumbnailUrl } : {}),
           duration_seconds: durationSec,
           audience: reelAudience,
           product_ids: taggedProducts.map((p) => p.id),
         });
-        await saveReelAsDraft(created.reel_id);
+        // createReel already starts the reel as "draft" — no separate draft call needed.
         const newReel: CmsReel = {
           ...editingReel,
           id: created.reel_id,
@@ -518,7 +613,7 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
           audience: reelAudience,
           product_ids: taggedProducts.map((p) => p.id),
           thumbnail_url: activeThumbnailUrl ?? undefined,
-          s3_url: uploadS3Url,
+          s3_url: s3Url,
         };
         setReels((prev) => [newReel, ...prev]);
         setReelFeedbackReel(newReel);
@@ -533,7 +628,14 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
         setIsSubmitting(false);
       }
     } else {
-      // Update existing reel and mark as draft
+      // Not offered in the UI for locked-status reels (see EditReelDialogFooter's
+      // canSaveDraft) — guard here too in case this is ever reached another way.
+      if (LOCKED_REEL_STATUSES.includes(editingReel.status)) {
+        toast.error("Can't save as draft", {
+          description: "This reel has already been approved and can't be reverted to a draft.",
+        });
+        return;
+      }
       const reelId = editingReel.id;
       try {
         setIsSubmitting(true);
@@ -543,6 +645,7 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
           ...(activeThumbnailUrl ? { thumbnail_url: activeThumbnailUrl } : {}),
           product_ids: taggedProducts.map((p) => p.id),
         });
+        await saveReelAsDraft(reelId);
         setReels((prev) =>
           prev.map((r) => (r.id === reelId ? { ...r, title, status: "draft" as const } : r))
         );
@@ -560,18 +663,16 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     }
   };
 
+  // Schedule for Later is only ever offered when editing an existing, approved reel (see
+  // EditReelDialogFooter's canSchedule) — scheduling a brand-new upload isn't possible since
+  // it can't be "approved" until admin review happens after submit.
   const handleEditScheduleClick = () => {
     const reel = editingReel;
     if (!reel) return;
-    if (isNewUploadFlow && !activeThumbnailUrl) {
-      toast.error("Thumbnail required", {
-        description: "Please upload a thumbnail before scheduling.",
-      });
-      return;
-    }
     setScheduleTargetReel(reel);
-    setScheduleDateIso(DEFAULT_SCHEDULE_DATE);
-    setScheduleTimeStr(DEFAULT_SCHEDULE_TIME);
+    const defaults = defaultScheduleDateTime();
+    setScheduleDateIso(defaults.date);
+    setScheduleTimeStr(defaults.time);
     handleEditDialogOpenChange(false);
     setScheduleModalOpen(true);
   };
@@ -580,47 +681,38 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     const reel = scheduleTargetReel;
     if (!reel) return;
     const title = reelTitle.trim() || reel.title;
-    const scheduledAt = `${scheduleDateIso}T${scheduleTimeStr}:00`;
+    const scheduledAt = localDateTimeToUtcIso(scheduleDateIso, scheduleTimeStr);
+
+    if (new Date(scheduledAt).getTime() <= Date.now()) {
+      toast.error("Invalid schedule time", {
+        description: "Publish date/time must be in the future.",
+      });
+      return;
+    }
 
     try {
       setIsSubmitting(true);
-      let reelId = reel.id;
+      const reelId = reel.id;
 
-      if (isNewUploadFlow && uploadS3Url) {
-        const durationSec =
-          videoDurationSeconds > 0 ? videoDurationSeconds : parseDurationToSeconds(reel.duration);
-        const created = await createReel({
-          title,
-          description: reelDescription,
-          s3_url: uploadS3Url,
-          thumbnail_url: activeThumbnailUrl ?? "",
-          duration_seconds: durationSec,
-          audience: reelAudience,
-          product_ids: taggedProducts.map((p) => p.id),
-        });
-        reelId = created.reel_id;
-        const captions = buildCaptionsPayload();
-        if (captions) await addCaptions(reelId, captions);
+      if (reel.status === "scheduled") {
+        // Re-scheduling an already-scheduled reel requires cancelling the active
+        // schedule first — the API rejects a second schedule() with 409/422.
+        await cancelReelSchedule(reelId).catch(() => {});
       }
 
-      await scheduleReel(reelId, scheduledAt);
+      const { schedule } = await scheduleReel(reelId, scheduledAt);
 
       const scheduledReel: CmsReel = {
         ...reel,
-        id: reelId,
         title,
         status: "scheduled",
         audience: reelAudience,
         product_ids: taggedProducts.map((p) => p.id),
         thumbnail_url: activeThumbnailUrl ?? reel.thumbnail_url,
-        s3_url: uploadS3Url ?? reel.s3_url,
+        schedule,
       };
 
-      if (isNewUploadFlow) {
-        setReels((prev) => [scheduledReel, ...prev]);
-      } else {
-        setReels((prev) => prev.map((r) => (r.id === reel.id ? scheduledReel : r)));
-      }
+      setReels((prev) => prev.map((r) => (r.id === reel.id ? scheduledReel : r)));
 
       setReelFeedbackReel(scheduledReel);
       setReelFeedbackVariant("scheduled");
@@ -636,21 +728,55 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     }
   };
 
+  // Title search is applied server-side (see effect below). Status is ALSO sent server-side to
+  // shrink the payload, but is re-applied here too — the list endpoint doesn't reliably filter by
+  // status on its own, so relying on it alone silently no-ops the Status filter. Date range isn't
+  // a query param the endpoint takes at all, so it's always client-side.
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return reels.filter((r) => {
       if (appliedStatus !== "all" && r.status !== appliedStatus) return false;
       if (appliedDateFrom && r.uploadedAt < appliedDateFrom) return false;
       if (appliedDateTo && r.uploadedAt > appliedDateTo) return false;
-      if (!q) return true;
-      return r.title.toLowerCase().includes(q);
+      return true;
     });
-  }, [reels, query, appliedStatus, appliedDateFrom, appliedDateTo]);
+  }, [reels, appliedStatus, appliedDateFrom, appliedDateTo]);
+
+  const scheduleBounds = useMemo(() => {
+    const toIso = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const now = new Date();
+    const max = new Date(now);
+    max.setDate(max.getDate() + MAX_SCHEDULE_DAYS_OUT);
+    return { min: toIso(now), max: toIso(max) };
+  }, []);
 
   const pagination = usePagination({
     totalCount: filtered.length,
     pageSize: PAGE_SIZE,
   });
+
+  // Server-side title search + status + date range, debounced so keystrokes don't fire a
+  // request each. Status/date are also re-applied client-side in `filtered` above regardless —
+  // this call is an optimization (smaller payload) when the backend does honor these params.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      listReels({
+        search: query.trim() || undefined,
+        status: appliedStatus !== "all" ? appliedStatus : undefined,
+        date_from: appliedDateFrom ? `${appliedDateFrom}T00:00:00.000Z` : undefined,
+        date_to: appliedDateTo ? `${appliedDateTo}T23:59:59.999Z` : undefined,
+      })
+        .then((data) => {
+          setReels(data);
+          pagination.setPage(1);
+        })
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(handle);
+    // `pagination` is intentionally excluded — it's a new object every render,
+    // and only `.setPage` is used here (to reset to page 1 on a new search/filter).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, appliedStatus, appliedDateFrom, appliedDateTo]);
 
   const pageRows = useMemo(
     () => filtered.slice(pagination.startIndex, pagination.endIndex),
@@ -661,6 +787,9 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
     onEdit: openEditDialog,
     onPreview: openPreviewDialog,
     onDelete: openDeleteDialog,
+    onCancelSchedule: openCancelScheduleDialog,
+    onPublish: handlePublishReel,
+    onUnpublish: handleUnpublishReel,
   });
 
   return (
@@ -732,8 +861,6 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
         onStepClick={setEditStep}
         cropRange={cropRange}
         onCropRangeChange={setCropRange}
-        captionDraft={captionDraft}
-        setCaptionDraft={setCaptionDraft}
         reelTitle={reelTitle}
         onReelTitleChange={setReelTitle}
         reelDescription={reelDescription}
@@ -747,8 +874,8 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
         isUploadingThumbnail={isUploadingThumbnail}
         onThumbnailFileSelected={handleThumbnailFileSelected}
         videoSrc={uploadS3Url ?? editingReel?.s3_url}
-        showCaptionOnReelPreview={showCaptionOnReelPreview}
         isSubmitting={isSubmitting}
+        isNewUploadFlow={isNewUploadFlow}
         onSaveDraft={handleEditSaveDraft}
         onScheduleClick={handleEditScheduleClick}
         onPublish={handleEditPublish}
@@ -763,6 +890,9 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
         scheduleTimeStr={scheduleTimeStr}
         onScheduleTimeStrChange={setScheduleTimeStr}
         onConfirmSchedule={handleConfirmSchedule}
+        isSubmitting={isSubmitting}
+        minDateIso={scheduleBounds.min}
+        maxDateIso={scheduleBounds.max}
       />
 
       <ReelFeedbackDialog
@@ -781,6 +911,14 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
         onOpenChange={handleDeleteDialogOpenChange}
         onConfirm={confirmDeleteReel}
         isDeleting={isDeletingReel}
+      />
+
+      <CancelScheduleDialog
+        open={cancelScheduleOpen}
+        onOpenChange={handleCancelScheduleDialogOpenChange}
+        onConfirm={confirmCancelSchedule}
+        isCancelling={isCancellingSchedule}
+        schedule={cancelScheduleInfo}
       />
     </div>
   );

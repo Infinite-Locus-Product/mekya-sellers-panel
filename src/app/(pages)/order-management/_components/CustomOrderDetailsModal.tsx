@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
     Dialog,
     DialogContent,
@@ -8,342 +8,438 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Loader2, Pencil, Trash2, X } from "lucide-react";
+import { StatusBadge, type StatusVariant } from "@/components/shared/StatusBadge";
+import { formatMoney } from "@/lib/utils";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import { Download, Pencil, Upload } from "lucide-react";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+    CUSTOM_ORDER_REQUEST_STATUS_LABEL,
+    type CustomOrderRequestDetail,
+} from "./segment/customOrderTypes";
 
-export interface CustomOrderFile {
-    readonly name: string;
-    /** When set, "open" on chip uses this URL (e.g. blob or static path). */
-    readonly href?: string;
-}
+const STATUS_VARIANT: Record<CustomOrderRequestDetail["status"], StatusVariant> = {
+    pending_review: "pending",
+    awaiting_buyer_confirmation: "processing",
+    buyer_confirmed: "delivered",
+    buyer_declined: "canceled",
+    rejected: "canceled",
+};
 
-export interface CustomOrderLine {
-    readonly product: string;
-    readonly sku?: string;
-    readonly quantity: number | string;
-    readonly price: string;
-    readonly total: string;
-}
-
-export interface CustomOrderDetailsData {
-    readonly orderId: string;
-    readonly vendorName: string;
-    readonly orderDate: string;
-    readonly contactPerson: string;
-    readonly deadline: string;
-    readonly orderValue: string;
-    readonly currentStatusLabel: string;
-    readonly customizationRequirements: string;
-    readonly uploadedFiles: readonly CustomOrderFile[];
-    readonly packagingPreferences: string;
-    readonly lines: readonly CustomOrderLine[];
-}
-
-const CUSTOM_STATUS_OPTIONS = [
-    { value: "none", label: "None" },
-    { value: "in_process", label: "In Process" },
-    { value: "fulfilled", label: "Fulfilled" },
-    { value: "pending_info", label: "Pending Info" },
-] as const;
-
-type CustomizationStatusValue = (typeof CUSTOM_STATUS_OPTIONS)[number]["value"];
-
-function parseINR(value: string): number {
-    const numeric = Number.parseFloat(String(value ?? "").replaceAll(/[₹,]/g, ""));
-    return Number.isFinite(numeric) ? numeric : 0;
+function formatDateTime(iso: string): string {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
 }
 
 interface CustomOrderDetailsModalProps {
     readonly open: boolean;
     readonly onOpenChange: (open: boolean) => void;
-    readonly data: CustomOrderDetailsData | null;
-    readonly onUpdateStatus?: (payload: {
-        data: CustomOrderDetailsData;
-        newStatus: string;
-        adminNotes: string;
-    }) => void;
-}
-
-interface CustomOrderDetailsModalInnerProps {
-    readonly data: CustomOrderDetailsData;
-    readonly onOpenChange: (open: boolean) => void;
-    readonly onUpdateStatus?: CustomOrderDetailsModalProps["onUpdateStatus"];
+    readonly data: CustomOrderRequestDetail | null;
+    readonly onApprove: (customOrderId: string) => Promise<void>;
+    readonly onReject: (payload: { customOrderId: string; reason: string }) => Promise<void>;
+    readonly onBuyerConfirm: (customOrderId: string) => Promise<void>;
+    readonly onAddNote: (payload: { customOrderId: string; body: string }) => Promise<void>;
+    readonly onEditNote: (payload: { customOrderId: string; noteId: string; body: string }) => Promise<void>;
+    readonly onDeleteNote: (payload: { customOrderId: string; noteId: string }) => Promise<void>;
 }
 
 function CustomOrderDetailsModalInner({
     data,
     onOpenChange,
-    onUpdateStatus,
-}: CustomOrderDetailsModalInnerProps) {
-    const [newStatus, setNewStatus] = useState<CustomizationStatusValue | undefined>(undefined);
-    const [adminNotes, setAdminNotes] = useState("");
+    onApprove,
+    onReject,
+    onBuyerConfirm,
+    onAddNote,
+    onEditNote,
+    onDeleteNote,
+}: Readonly<{
+    data: CustomOrderRequestDetail;
+    onOpenChange: (open: boolean) => void;
+    onApprove: CustomOrderDetailsModalProps["onApprove"];
+    onReject: CustomOrderDetailsModalProps["onReject"];
+    onBuyerConfirm: CustomOrderDetailsModalProps["onBuyerConfirm"];
+    onAddNote: CustomOrderDetailsModalProps["onAddNote"];
+    onEditNote: CustomOrderDetailsModalProps["onEditNote"];
+    onDeleteNote: CustomOrderDetailsModalProps["onDeleteNote"];
+}>) {
+    const [rejectReason, setRejectReason] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    /** Sum of line totals (for reference). */
-    const linesSumFormatted = useMemo(() => {
-        const sum = data.lines.reduce((acc, line) => acc + parseINR(line.total), 0);
-        return new Intl.NumberFormat("en-IN", {
-            style: "currency",
-            currency: "INR",
-            maximumFractionDigits: 0,
-        }).format(sum);
-    }, [data.lines]);
+    const [newNoteBody, setNewNoteBody] = useState("");
+    const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+    const [editingBody, setEditingBody] = useState("");
+    const [noteActionPending, setNoteActionPending] = useState(false);
 
-    /** Footer matches order value when parseable (same as header), else line sum. */
-    const requirementFooterTotal = useMemo(() => {
-        const fromOrder = parseINR(data.orderValue);
-        if (fromOrder > 0) {
-            return new Intl.NumberFormat("en-IN", {
-                style: "currency",
-                currency: "INR",
-                maximumFractionDigits: 0,
-            }).format(fromOrder);
-        }
-        return linesSumFormatted;
-    }, [data.orderValue, linesSumFormatted]);
+    const totalQty = data.orderLines.reduce((sum, l) => sum + l.quantity, 0);
+    const amountLabel =
+        data.totalAmount != null
+            ? formatMoney({ amount: data.totalAmount, currency: data.currency ?? "INR" })
+            : "—";
 
-    const handleDownloadAttachments = () => {
-        const withHref = data.uploadedFiles.filter((f) => Boolean(f.href));
-        if (withHref.length === 0) {
-            toast.message("No downloadable files", {
-                description: "Attach file URLs when the API provides them.",
-            });
-            return;
-        }
-        for (const file of withHref) {
-            if (file.href) window.open(file.href, "_blank", "noopener,noreferrer");
+    const submitApprove = async () => {
+        setIsSubmitting(true);
+        try {
+            await onApprove(data.id);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    const hasSelectedNewStatus = useMemo(
-        () =>
-            newStatus !== undefined &&
-            CUSTOM_STATUS_OPTIONS.some((option) => option.value === newStatus),
-        [newStatus]
-    );
+    const trimmedRejectReason = rejectReason.trim();
+
+    const submitReject = async () => {
+        if (!trimmedRejectReason) return;
+        setIsSubmitting(true);
+        try {
+            await onReject({ customOrderId: data.id, reason: trimmedRejectReason });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const submitBuyerConfirm = async () => {
+        setIsSubmitting(true);
+        try {
+            await onBuyerConfirm(data.id);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const submitAddNote = async () => {
+        const body = newNoteBody.trim();
+        if (!body) return;
+        setNoteActionPending(true);
+        try {
+            await onAddNote({ customOrderId: data.id, body });
+            setNewNoteBody("");
+        } finally {
+            setNoteActionPending(false);
+        }
+    };
+
+    const startEditNote = (noteId: string, currentBody: string) => {
+        setEditingNoteId(noteId);
+        setEditingBody(currentBody);
+    };
+
+    const cancelEditNote = () => {
+        setEditingNoteId(null);
+        setEditingBody("");
+    };
+
+    const submitEditNote = async (noteId: string) => {
+        const body = editingBody.trim();
+        if (!body) return;
+        setNoteActionPending(true);
+        try {
+            await onEditNote({ customOrderId: data.id, noteId, body });
+            cancelEditNote();
+        } finally {
+            setNoteActionPending(false);
+        }
+    };
+
+    const submitDeleteNote = async (noteId: string) => {
+        if (!window.confirm("Delete this note? This cannot be undone.")) return;
+        setNoteActionPending(true);
+        try {
+            await onDeleteNote({ customOrderId: data.id, noteId });
+        } finally {
+            setNoteActionPending(false);
+        }
+    };
 
     return (
-        <>
-            <div className="shrink-0 px-[min(1.25vw,24px)] pt-[clamp(12px,0.75vw,16px)]">
-                <DialogHeader className="mb-0 border-b-0 pb-0">
-                    <DialogTitle className="pr-10 text-left text-xl font-medium leading-tight sm:text-2xl">
-                        <span className="flex items-center gap-2">
-                            <Pencil className="size-5 shrink-0 text-foreground" aria-hidden />
-                            <span>Customization Requests</span>
-                        </span>
-                    </DialogTitle>
-                </DialogHeader>
-                <div className="mt-3 h-px w-full bg-[#E8E9E8]" />
+        <div className="flex max-h-[85vh] flex-col gap-4 overflow-hidden p-1">
+            <DialogHeader className="shrink-0 space-y-1 text-left">
+                <DialogTitle className="text-lg font-semibold">Custom order request</DialogTitle>
+                <p className="text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">{data.id}</span>
+                    {" · Saleor order "}
+                    <span className="font-medium text-foreground">{data.saleorOrderNumber ?? data.saleorOrderId}</span>
+                    {data.linkedSaleorOrderId ? (
+                        <>
+                            {" "}
+                            · Linked order{" "}
+                            <span className="font-medium text-foreground">{data.linkedSaleorOrderId}</span>
+                        </>
+                    ) : null}
+                </p>
+            </DialogHeader>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                        <dt className="text-muted-foreground">Vendor</dt>
+                        <dd className="font-medium">{data.vendorName ?? "—"}</dd>
+                    </div>
+                    <div>
+                        <dt className="text-muted-foreground">Customer</dt>
+                        <dd className="font-medium">{data.customerName ?? "—"}</dd>
+                    </div>
+                    <div>
+                        <dt className="text-muted-foreground">Contact</dt>
+                        <dd className="font-medium">
+                            {data.contactPerson ?? "—"}
+                            {data.customerEmail ? ` · ${data.customerEmail}` : ""}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt className="text-muted-foreground">Request date</dt>
+                        <dd className="font-medium">{formatDateTime(data.createdAt)}</dd>
+                    </div>
+                    <div>
+                        <dt className="text-muted-foreground">Total amount</dt>
+                        <dd className="font-medium">{amountLabel}</dd>
+                    </div>
+                    <div>
+                        <dt className="text-muted-foreground">Status</dt>
+                        <dd className="mt-0.5">
+                            <StatusBadge variant={STATUS_VARIANT[data.status]}>
+                                {CUSTOM_ORDER_REQUEST_STATUS_LABEL[data.status]}
+                            </StatusBadge>
+                        </dd>
+                    </div>
+                </dl>
+
+                {data.requirementsText || data.packagingNotes ? (
+                    <div className="space-y-2">
+                        {data.requirementsText ? (
+                            <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                                <p className="font-medium text-foreground">Requirements</p>
+                                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{data.requirementsText}</p>
+                            </div>
+                        ) : null}
+                        {data.packagingNotes ? (
+                            <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                                <p className="font-medium text-foreground">Packaging notes</p>
+                                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{data.packagingNotes}</p>
+                            </div>
+                        ) : null}
+                    </div>
+                ) : null}
+
+                {data.uploadedFiles.length > 0 ? (
+                    <div>
+                        <p className="mb-1.5 text-sm font-medium">Uploaded reference files</p>
+                        <ul className="flex flex-wrap gap-2">
+                            {data.uploadedFiles.map((f, i) => (
+                                <li key={`${f.url}-${i}`}>
+                                    <a
+                                        href={f.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center rounded-md border bg-muted/40 px-2.5 py-1 text-xs text-foreground underline-offset-2 hover:underline"
+                                    >
+                                        {f.name}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ) : null}
+
+                <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full min-w-[420px] text-left text-sm">
+                        <thead className="border-b bg-muted/50">
+                            <tr>
+                                <th className="px-3 py-2 font-medium">SKU</th>
+                                <th className="px-3 py-2 font-medium">Product</th>
+                                <th className="px-3 py-2 font-medium">Qty</th>
+                                <th className="px-3 py-2 font-medium">Unit price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.orderLines.map((line) => (
+                                <tr key={line.lineId} className="border-b last:border-0">
+                                    <td className="px-3 py-2 text-muted-foreground">{line.sku ?? "—"}</td>
+                                    <td className="px-3 py-2">
+                                        {line.productName}
+                                        {line.variantName ? (
+                                            <span className="text-muted-foreground"> — {line.variantName}</span>
+                                        ) : null}
+                                    </td>
+                                    <td className="px-3 py-2">{line.quantity}</td>
+                                    <td className="px-3 py-2 text-muted-foreground">
+                                        {line.unitPrice != null
+                                            ? formatMoney({ amount: line.unitPrice, currency: line.currency ?? "INR" })
+                                            : "—"}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot>
+                            <tr className="bg-muted/30 font-medium">
+                                <td colSpan={2} className="px-3 py-2 text-right">
+                                    Total
+                                </td>
+                                <td className="px-3 py-2">{totalQty}</td>
+                                <td className="px-3 py-2">{amountLabel}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                {data.status === "pending_review" ? (
+                    <div className="space-y-1.5">
+                        <label htmlFor="reject-reason" className="text-sm font-medium">
+                            Rejection reason (required to reject)
+                        </label>
+                        <textarea
+                            id="reject-reason"
+                            value={rejectReason}
+                            onChange={(e) => setRejectReason(e.target.value)}
+                            placeholder="Why is this request being rejected?"
+                            rows={2}
+                            required
+                            className="w-full rounded-md border bg-background p-2 text-sm"
+                        />
+                    </div>
+                ) : null}
+
+                {data.statusEvents.length > 0 ? (
+                    <div>
+                        <p className="mb-1.5 text-sm font-medium">Status history</p>
+                        <ol className="space-y-2">
+                            {data.statusEvents.map((event) => (
+                                <li key={event.id} className="rounded-md border bg-muted/30 p-2.5 text-xs">
+                                    <p className="font-medium text-foreground">
+                                        {event.fromStatus
+                                            ? `${CUSTOM_ORDER_REQUEST_STATUS_LABEL[event.fromStatus]} → `
+                                            : ""}
+                                        {CUSTOM_ORDER_REQUEST_STATUS_LABEL[event.toStatus]}
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                        {formatDateTime(event.changedAt)} · {event.changedBy}
+                                    </p>
+                                    {event.note ? <p className="mt-1 text-muted-foreground">{event.note}</p> : null}
+                                </li>
+                            ))}
+                        </ol>
+                    </div>
+                ) : null}
+
+                <div>
+                    <p className="mb-1.5 text-sm font-medium">Notes</p>
+                    <div className="space-y-2">
+                        {data.notes.map((note) => (
+                            <div key={note.id} className="rounded-md border bg-muted/30 p-2.5 text-xs">
+                                {editingNoteId === note.id ? (
+                                    <div className="space-y-2">
+                                        <textarea
+                                            value={editingBody}
+                                            onChange={(e) => setEditingBody(e.target.value)}
+                                            rows={3}
+                                            className="w-full rounded-md border bg-background p-2 text-xs"
+                                        />
+                                        <div className="flex justify-end gap-2">
+                                            <Button type="button" variant="outline" size="sm" onClick={cancelEditNote}>
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                disabled={noteActionPending || !editingBody.trim()}
+                                                onClick={() => submitEditNote(note.id)}
+                                            >
+                                                Save
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <p className="font-medium text-foreground">
+                                                {note.author}
+                                                {note.edited ? (
+                                                    <span className="ml-1 font-normal text-muted-foreground">(edited)</span>
+                                                ) : null}
+                                            </p>
+                                            <div className="flex shrink-0 gap-1">
+                                                <button
+                                                    type="button"
+                                                    aria-label="Edit note"
+                                                    disabled={noteActionPending}
+                                                    onClick={() => startEditNote(note.id, note.body)}
+                                                    className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                                                >
+                                                    <Pencil className="size-3.5" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    aria-label="Delete note"
+                                                    disabled={noteActionPending}
+                                                    onClick={() => submitDeleteNote(note.id)}
+                                                    className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                                                >
+                                                    <Trash2 className="size-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{note.body}</p>
+                                        <p className="mt-1 text-muted-foreground">{formatDateTime(note.updatedAt)}</p>
+                                    </>
+                                )}
+                            </div>
+                        ))}
+                        {data.notes.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No notes yet.</p>
+                        ) : null}
+                    </div>
+                    <div className="mt-2 space-y-1.5">
+                        <textarea
+                            value={newNoteBody}
+                            onChange={(e) => setNewNoteBody(e.target.value)}
+                            rows={2}
+                            placeholder="Add an internal note…"
+                            className="w-full rounded-md border bg-background p-2 text-xs"
+                        />
+                        <div className="flex justify-end">
+                            <Button
+                                type="button"
+                                size="sm"
+                                disabled={noteActionPending || !newNoteBody.trim()}
+                                onClick={submitAddNote}
+                            >
+                                Add note
+                            </Button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-[min(1.25vw,24px)] pb-2 pt-[clamp(10px,0.625vw,12px)]">
-                <div className="box-border min-h-[min(7.8125vw,150px)] w-full max-w-[823px] shrink-0 rounded-[5px] bg-[#E8E9E8] p-[clamp(10px,0.833vw,16px)]">
-                    <div className="grid grid-cols-1 gap-x-[clamp(12px,1.25vw,24px)] gap-y-[clamp(6px,0.52vw,10px)] sm:grid-cols-2 xl:grid-cols-3">
-                        <div>
-                            <p className="pb-1 text-[clamp(11px,0.625vw,14px)] font-medium">Vendor Name</p>
-                            <p className="text-[clamp(11px,0.677vw,12px)] font-normal leading-snug text-foreground">
-                                {data.vendorName}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="pb-1 text-[clamp(11px,0.625vw,14px)] font-medium">Contact Person</p>
-                            <p className="text-[clamp(11px,0.677vw,12px)] font-normal leading-snug text-foreground">
-                                {data.contactPerson}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="pb-1 text-[clamp(11px,0.625vw,14px)] font-medium">Order Value</p>
-                            <p className="text-[clamp(11px,0.677vw,13px)] font-medium leading-snug">
-                                {data.orderValue}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="pb-1 text-[clamp(11px,0.625vw,14px)] font-medium">Order Date</p>
-                            <p className="text-[clamp(11px,0.677vw,12px)] font-normal leading-snug">{data.orderDate}</p>
-                        </div>
-                        <div>
-                            <p className="pb-1 text-[clamp(11px,0.625vw,14px)] font-medium">Deadline</p>
-                            <p className="text-[clamp(11px,0.677vw,12px)] font-normal leading-snug">{data.deadline}</p>
-                        </div>
-                        <div>
-                            <p className="pb-1 text-[clamp(11px,0.625vw,14px)] font-medium">Current Status</p>
-                            <span className="inline-flex max-w-full items-center rounded-full bg-[#DBEAFE] px-2.5 py-0.5 text-[clamp(10px,0.625vw,12px)] font-medium leading-tight text-[#1D4ED8]">
-                                {data.currentStatusLabel}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="mt-[clamp(10px,0.833vw,16px)] shrink-0 border-t border-dotted border-[#C4C4C4] pt-[clamp(10px,0.833vw,16px)]">
-                    <p className="mb-1.5 text-[clamp(12px,0.729vw,14px)] font-medium">Customization Requirements</p>
-                    <div className="rounded-[5px] bg-[#E8E9E8] p-[clamp(10px,0.625vw,12px)]">
-                        <p className="text-[clamp(11px,0.677vw,13px)] leading-relaxed text-foreground">
-                            {data.customizationRequirements}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="mt-[clamp(10px,0.833vw,16px)] shrink-0 border-t border-dotted border-[#C4C4C4] pt-[clamp(10px,0.833vw,16px)]">
-                    <p className="mb-1.5 text-[clamp(12px,0.729vw,14px)] font-medium">Uploaded Files</p>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex min-w-0 flex-wrap gap-2">
-                            {data.uploadedFiles.map((file) => (
-                                <button
-                                    key={file.name}
-                                    type="button"
-                                    className="inline-flex max-w-full items-center gap-1.5 rounded-[5px] border border-border px-2.5 py-1.5 text-left text-[clamp(10px,0.677vw,12px)] font-medium text-foreground hover:bg-[#DCDEDD]"
-                                    onClick={() => {
-                                        if (file.href) window.open(file.href, "_blank", "noopener,noreferrer");
-                                    }}
-                                >
-                                    <Upload className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                                    <span className="min-w-0 truncate">{file.name}</span>
-                                </button>
-                            ))}
-                        </div>
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t pt-3">
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    <X className="mr-2 h-4 w-4" aria-hidden />
+                    Close
+                </Button>
+                {data.status === "pending_review" ? (
+                    <>
                         <Button
                             type="button"
-                            variant="default"
-                            className="h-8 shrink-0 gap-2 bg-[#122130] px-2 text-xs text-white hover:bg-[#122130]/90 sm:h-8 sm:text-xs font-normal"
-                            onClick={handleDownloadAttachments}
+                            variant="destructive"
+                            disabled={isSubmitting || !trimmedRejectReason}
+                            onClick={submitReject}
                         >
-                            <Download className="size-4 shrink-0" aria-hidden />
-                            Download Attachments
+                            Reject
                         </Button>
-                    </div>
-                </div>
-
-                <div className="mt-[clamp(10px,0.833vw,16px)] shrink-0 border-t border-dotted border-[#C4C4C4] pt-[clamp(10px,0.833vw,16px)]">
-                    <p className="mb-1.5 text-[clamp(12px,0.729vw,14px)] font-medium">Packaging Preferences</p>
-                    <div className="rounded-[5px] bg-[#E8E9E8] p-[clamp(10px,0.625vw,12px)]">
-                        <p className="text-[clamp(11px,0.677vw,13px)] leading-relaxed text-foreground">
-                            {data.packagingPreferences}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="mt-[clamp(10px,0.833vw,16px)] shrink-0 border-t border-dotted border-[#C4C4C4] pt-[clamp(10px,0.833vw,16px)]">
-                    <div className="mb-2 flex flex-col gap-2">
-                        <p className="text-[clamp(12px,0.729vw,14px)] font-medium">Requirement</p>
-                        <div className="h-px w-full border-t border-dotted border-[#C4C4C4]" aria-hidden />
-                    </div>
-                    <div className="overflow-x-auto rounded-[5px] bg-[#E8E9E8]">
-                        <table className="w-full min-w-[28rem] border-collapse text-[clamp(10px,0.677vw,13px)]">
-                            <thead>
-                                <tr className="border-b border-border/60 bg-[#E8E9E8]">
-                                    <th className="px-2 py-2 text-left font-medium">Product</th>
-                                    <th className="px-2 py-2 text-left font-medium">SKU</th>
-                                    <th className="px-2 py-2 text-left font-medium">Quantity</th>
-                                    <th className="px-2 py-2 text-left font-medium">Price</th>
-                                    <th className="px-2 py-2 text-right font-medium">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {data.lines.length === 0 ? (
-                                    <tr className="bg-white">
-                                        <td
-                                            colSpan={5}
-                                            className="px-3 py-6 text-center text-[clamp(11px,0.677vw,13px)] text-muted-foreground"
-                                        >
-                                            No product lines for this order.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    data.lines.map((line, index) => (
-                                        <tr
-                                            key={`${line.sku ?? line.product}-${index}`}
-                                            className="border-b border-border/40 bg-white last:border-b-0"
-                                        >
-                                            <td className="max-w-[40%] break-words px-2 py-2 align-top font-semibold text-foreground sm:max-w-none">
-                                                {line.product}
-                                            </td>
-                                            <td className="px-2 py-2 align-top font-normal">{line.sku ?? "—"}</td>
-                                            <td className="px-2 py-2 align-top font-normal">{line.quantity}</td>
-                                            <td className="px-2 py-2 align-top font-normal">{line.price}</td>
-                                            <td className="px-2 py-2 text-right align-top font-normal">{line.total}</td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                            <tfoot>
-                                <tr className="bg-[#E8E9E8] font-semibold">
-                                    <td colSpan={4} className="px-2 py-2 text-right">
-                                        TOTAL
-                                    </td>
-                                    <td className="px-2 py-2 text-right">{requirementFooterTotal}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-
-                <div className="mt-[clamp(10px,0.833vw,16px)] shrink-0 border-t border-dotted border-[#C4C4C4] pt-[clamp(10px,0.833vw,16px)]">
-                    <p className="mb-1.5 text-[clamp(12px,0.729vw,14px)] font-medium">Update Customization Status</p>
-                    <Select
-                        value={newStatus}
-                        onValueChange={(value) => setNewStatus(value as CustomizationStatusValue)}
-                    >
-                        <SelectTrigger className="h-10 w-full max-w-full rounded-[5px] border border-border bg-[#E8E9E8] px-3 text-left text-[clamp(11px,0.677vw,13px)] text-foreground shadow-none">
-                            <SelectValue placeholder="Select new status" />
-                        </SelectTrigger>
-                        <SelectContent className="z-[200]">
-                            {CUSTOM_STATUS_OPTIONS.map((opt) => (
-                                <SelectItem key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                <div className="mt-[clamp(10px,0.833vw,16px)] shrink-0">
-                    <p className="mb-1.5 text-[clamp(12px,0.729vw,14px)] font-medium">Admin Notes</p>
-                    <textarea
-                        value={adminNotes}
-                        onChange={(e) => setAdminNotes(e.target.value)}
-                        placeholder="Add notes about this status update"
-                        rows={4}
-                        className="w-full resize-y rounded-[5px] border border-border bg-[#E8E9E8] px-3 py-2 text-[clamp(11px,0.677vw,13px)] text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    />
-                </div>
+                        <Button type="button" disabled={isSubmitting} onClick={submitApprove}>
+                            {isSubmitting ? "Approving…" : "Approve"}
+                        </Button>
+                    </>
+                ) : data.status === "awaiting_buyer_confirmation" ? (
+                    <Button type="button" disabled={isSubmitting} onClick={submitBuyerConfirm}>
+                        {isSubmitting ? "Confirming…" : "Mark Buyer Confirmed"}
+                    </Button>
+                ) : null}
             </div>
-
-            <div className="shrink-0 border-t border-[#E8E9E8] px-3 py-2 sm:px-[min(1.25vw,24px)] sm:py-[clamp(12px,0.833vw,16px)]">
-                <Button
-                    type="button"
-                    disabled={!hasSelectedNewStatus}
-                    className={cn(
-                        "h-10 w-full rounded-[5px] text-sm font-medium text-white min-[1920px]:h-11",
-                        hasSelectedNewStatus
-                            ? "bg-[#122130] hover:bg-[#122130]/90"
-                            : "bg-[#C8C8C8] hover:bg-[#C8C8C8]"
-                    )}
-                    onClick={() => {
-                        if (!hasSelectedNewStatus || newStatus === undefined) return;
-                        const label =
-                            CUSTOM_STATUS_OPTIONS.find((o) => o.value === newStatus)?.label ?? newStatus;
-                        onUpdateStatus?.({
-                            data,
-                            newStatus: label,
-                            adminNotes: adminNotes.trim(),
-                        });
-                        toast.success("Customization status updated", {
-                            description: `Set to “${label}”.`,
-                        });
-                        onOpenChange(false);
-                    }}
-                >
-                    Update Status
-                </Button>
-            </div>
-        </>
+        </div>
     );
 }
 
@@ -351,28 +447,33 @@ export function CustomOrderDetailsModal({
     open,
     onOpenChange,
     data,
-    onUpdateStatus,
-}: CustomOrderDetailsModalProps) {
-    if (!data) return null;
-
+    onApprove,
+    onReject,
+    onBuyerConfirm,
+    onAddNote,
+    onEditNote,
+    onDeleteNote,
+}: Readonly<CustomOrderDetailsModalProps>) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent
-                className={
-                    "!flex !max-w-none flex-col !gap-0 overflow-hidden rounded-[5px] !p-0 " +
-                    "!left-1/2 !top-1/2 !h-[min(43.3333vw,832px,calc(100dvh-2*clamp(12px,1.25vw,24px)))] " +
-                    "!w-[min(45.3646vw,871px,calc(100vw-2*clamp(12px,1.25vw,24px)))] !max-h-[calc(100dvh-2*clamp(12px,1.25vw,24px))] " +
-                    "!-translate-x-1/2 !-translate-y-1/2 " +
-                    "min-[1920px]:!left-[min(27.2917vw,524px)] min-[1920px]:!top-[min(6.4583vw,124px)] min-[1920px]:!h-[min(43.3333vw,832px)] " +
-                    "min-[1920px]:!w-[min(45.3646vw,871px)] min-[1920px]:!translate-x-0 min-[1920px]:!translate-y-0"
-                }
-            >
-                <CustomOrderDetailsModalInner
-                    key={`${data.orderId}-${open}`}
-                    data={data}
-                    onOpenChange={onOpenChange}
-                    onUpdateStatus={onUpdateStatus}
-                />
+            <DialogContent className="max-h-[90vh] max-w-2xl overflow-hidden sm:max-w-2xl">
+                {!data ? (
+                    <div className="flex items-center justify-center py-16">
+                        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                    </div>
+                ) : (
+                    <CustomOrderDetailsModalInner
+                        key={data.id}
+                        data={data}
+                        onOpenChange={onOpenChange}
+                        onApprove={onApprove}
+                        onReject={onReject}
+                        onBuyerConfirm={onBuyerConfirm}
+                        onAddNote={onAddNote}
+                        onEditNote={onEditNote}
+                        onDeleteNote={onDeleteNote}
+                    />
+                )}
             </DialogContent>
         </Dialog>
     );

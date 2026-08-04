@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CalendarX2, EyeOff, Rocket } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import type { TableColumn } from "@/components/shared/DataTable";
@@ -12,28 +13,36 @@ export interface ReelsTableColumnsOptions {
   onEdit: (reel: CmsReel) => void;
   onPreview: (reel: CmsReel) => void;
   onDelete: (reel: CmsReel) => void;
+  onCancelSchedule: (reel: CmsReel) => void;
+  onPublish: (reel: CmsReel) => void;
+  onUnpublish: (reel: CmsReel) => void;
 }
 
 export function useReelsTableColumns({
   onEdit,
   onPreview,
   onDelete,
+  onCancelSchedule,
+  onPublish,
+  onUnpublish,
 }: ReelsTableColumnsOptions): TableColumn<CmsReel>[] {
   return useMemo(
     () => [
       {
         key: "thumbnail",
         header: "Thumbnail",
-        className: "w-[88px]",
+        // Wide enough for the "Thumbnail" label so the header never wraps to two lines.
+        className:
+          "w-[88px] whitespace-nowrap sm:w-[92px] lg:w-[97px] xl:w-[102px] min-[1920px]:w-[107px]",
         cell: (row) => (
-          <div className="relative flex h-[72px] w-[75px] shrink-0 overflow-hidden rounded-[6px] bg-[#2A2A2A] ring-1 ring-[#E8E9E8]">
+          <div className="relative flex w-[57px] shrink-0 overflow-hidden rounded-[6px] bg-[#2A2A2A] ring-1 ring-[#E8E9E8] [aspect-ratio:75/99] sm:w-[60px] lg:w-[65px] xl:w-[70px] min-[1920px]:w-[75px]">
             {row.thumbnail_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={row.thumbnail_url}
                 alt=""
                 width={75}
-                height={72}
+                height={99}
                 className="h-full w-full object-cover"
                 draggable={false}
               />
@@ -51,12 +60,17 @@ export function useReelsTableColumns({
       {
         key: "title",
         header: "Title",
-        className: "min-w-[140px] text-sm font-normal text-[#2A2A2A]",
+        // No font-size utility on col.className — it also styles the <th> header,
+        // which must keep DataTable's shared responsive scale. Style body text via `cell`.
+        className: "min-w-[140px] pl-6 sm:pl-8 lg:pl-10 xl:pl-12 min-[1920px]:pl-16",
+        cell: (row) => <span className="text-sm font-normal text-[#2A2A2A]">{row.title}</span>,
       },
       {
         key: "duration",
         header: "Duration",
-        className: "w-[72px] text-sm text-[#2A2A2A]",
+        // Wide enough for the "Duration" label so the header never wraps to two lines.
+        className: "w-[90px] whitespace-nowrap",
+        cell: (row) => <span className="text-sm text-[#2A2A2A]">{row.duration}</span>,
       },
       {
         key: "status",
@@ -68,16 +82,18 @@ export function useReelsTableColumns({
         key: "uploadDate",
         header: "Upload date",
         sortable: true,
-        className: "min-w-[160px] text-sm text-[#2A2A2A]",
+        className: "min-w-[160px]",
+        cell: (row) => <span className="text-sm text-[#2A2A2A]">{row.uploadDate}</span>,
       },
       {
         key: "views",
         header: "Views",
         sortable: true,
-        className: "w-[72px]",
+        // wide enough for the label + sort icon so "Views" never wraps to two lines
+        className: "w-[96px] whitespace-nowrap",
         cell: (row) => (
           <span className="tabular-nums text-sm text-[#2A2A2A]">
-            {row.views == null ? "—" : row.views}
+            {row.views == null || row.status === "draft" || row.status === "scheduled" ? "—" : row.views}
           </span>
         ),
       },
@@ -91,14 +107,17 @@ export function useReelsTableColumns({
         key: "actions",
         header: "Actions",
         align: "center",
-        className: "w-[152px]",
+        // Button/gap/icon sizes scale together with the column width so the 40px
+        // icon-pitch shrinks in step with the rest of the (responsive) table;
+        // Figma "Frame 94" (4 icons @ 24px on a 40px pitch) is matched at 1920px.
+        className: "w-[104px] sm:w-[124px] lg:w-[130px] xl:w-[146px] min-[1920px]:w-[152px]",
         cell: (row) => (
-          <div className="flex items-center justify-center gap-0.5">
+          <div className="flex items-center justify-center gap-0.5 sm:gap-1 lg:gap-1.5 xl:gap-1.5 min-[1920px]:gap-2 [&_svg]:size-4 lg:[&_svg]:size-5 min-[1920px]:[&_svg]:size-6">
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="size-8 rounded-md text-[#004C5E] hover:bg-[#004C5E]/10"
+              className="size-6 rounded-md text-[#004C5E] hover:bg-[#004C5E]/10 sm:size-7 xl:size-8"
               aria-label={`Edit ${row.title}`}
               onClick={() => onEdit(row)}
             >
@@ -112,7 +131,7 @@ export function useReelsTableColumns({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-8 rounded-md text-[#004C5E] hover:bg-[#004C5E]/10"
+              className="size-6 rounded-md text-[#004C5E] hover:bg-[#004C5E]/10 sm:size-7 xl:size-8"
               aria-label={`Preview ${row.title}`}
               onClick={() => onPreview(row)}
             >
@@ -126,7 +145,7 @@ export function useReelsTableColumns({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-8 rounded-md text-[#004C5E] hover:bg-[#004C5E]/10"
+              className="size-6 rounded-md text-[#004C5E] hover:bg-[#004C5E]/10 sm:size-7 xl:size-8"
               aria-label={`Delete ${row.title}`}
               onClick={() => onDelete(row)}
             >
@@ -135,9 +154,45 @@ export function useReelsTableColumns({
               </svg>
 
             </Button>
+            {row.status === "scheduled" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-6 rounded-md text-[#991B1B] hover:bg-[#991B1B]/10 sm:size-7 xl:size-8"
+                aria-label={`Cancel schedule for ${row.title}`}
+                onClick={() => onCancelSchedule(row)}
+              >
+                <CalendarX2 className="size-4" aria-hidden />
+              </Button>
+            )}
+            {(row.status === "approved" || row.status === "unpublished") && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-6 rounded-md text-[#016630] hover:bg-[#016630]/10 sm:size-7 xl:size-8"
+                aria-label={`Publish ${row.title}`}
+                onClick={() => onPublish(row)}
+              >
+                <Rocket className="size-4" aria-hidden />
+              </Button>
+            )}
+            {row.status === "published" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-6 rounded-md text-[#4B5563] hover:bg-[#4B5563]/10 sm:size-7 xl:size-8"
+                aria-label={`Unpublish ${row.title}`}
+                onClick={() => onUnpublish(row)}
+              >
+                <EyeOff className="size-4" aria-hidden />
+              </Button>
+            )}
             <Link
               href="/cms-management/analytics"
-              className="inline-flex size-8 items-center justify-center rounded-md text-[#004C5E] hover:bg-[#004C5E]/10"
+              className="inline-flex size-6 items-center justify-center rounded-md text-[#004C5E] hover:bg-[#004C5E]/10 sm:size-7 xl:size-8"
               aria-label="Open CMS analytics"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -150,6 +205,6 @@ export function useReelsTableColumns({
         ),
       },
     ],
-    [onDelete, onEdit, onPreview]
+    [onCancelSchedule, onDelete, onEdit, onPreview, onPublish, onUnpublish]
   );
 }

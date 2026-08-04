@@ -44,10 +44,33 @@ export function CustomerInformationSection({
             <OrderDetailCustomerPhoneIcon />
             <p className="text-sm text-muted-foreground">{customer.phone}</p>
           </div>
-          <div className="flex items-start gap-2">
-            <OrderDetailCustomerAddressIcon className="mt-0.5" />
-            <p className="text-sm text-muted-foreground leading-relaxed">{customer.address}</p>
-          </div>
+          {customer.shippingAddress || customer.billingAddress ? (
+            <>
+              {customer.shippingAddress ? (
+                <div className="flex items-start gap-2">
+                  <OrderDetailCustomerAddressIcon className="mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Shipping Address</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{customer.shippingAddress}</p>
+                  </div>
+                </div>
+              ) : null}
+              {customer.billingAddress && customer.billingAddress !== customer.shippingAddress ? (
+                <div className="flex items-start gap-2">
+                  <OrderDetailCustomerAddressIcon className="mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Billing Address</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{customer.billingAddress}</p>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="flex items-start gap-2">
+              <OrderDetailCustomerAddressIcon className="mt-0.5" />
+              <p className="text-sm text-muted-foreground leading-relaxed">{customer.address}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </section>

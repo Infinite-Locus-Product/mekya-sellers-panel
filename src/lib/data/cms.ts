@@ -1,4 +1,26 @@
-export type ReelStatus = "scheduled" | "draft" | "published" | "pending" | "rejected" | "resubmitted";
+export type ReelStatus =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "resubmitted"
+  | "scheduled"
+  | "published"
+  | "unpublished";
+
+/** Statuses editing is locked on — PATCH requires force_resubmit: true, which flips status to "resubmitted". */
+export const LOCKED_REEL_STATUSES: readonly ReelStatus[] = ["approved", "published", "unpublished", "scheduled"];
+
+/** A reel's active schedule row, as returned by the seller schedule endpoints. */
+export interface Schedule {
+  reel_id: string;
+  /** "scheduled" while pending, "failed" if the worker couldn't publish it. */
+  status: string;
+  /** ISO 8601 — when the worker will (or tried to) publish the reel. */
+  scheduled_at: string;
+  /** Present when status === "failed"; the reel stays scheduled until retried. */
+  last_error?: string | null;
+}
 
 export interface CmsReelEngagement {
   likes: number | null;
@@ -25,6 +47,10 @@ export interface CmsReel {
   audience?: "b2b" | "b2c" | "both";
   product_ids?: string[];
   rejection_reason?: string | null;
+  /** True only when status === "approved" — use this instead of hardcoding the status check. */
+  canSchedule?: boolean;
+  /** Populated on demand via getReelSchedule() — not part of the list/detail payload. */
+  schedule?: Schedule | null;
 }
 
 export interface CmsAnalyticsKpis {
