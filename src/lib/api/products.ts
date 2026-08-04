@@ -399,3 +399,60 @@ export async function updateProductVariant(
   );
   return res.data;
 }
+
+// ─── GET /seller/inventory/product/{product_id} ───────────────────────────
+// Per-variant, per-warehouse stock breakdown for one product.
+
+export interface ProductInventoryWarehouse {
+  warehouse_id: string;
+  saleor_warehouse_id: string;
+  warehouse_name: string;
+  status: "pending_approval" | "active" | "rejected";
+  quantity: number;
+}
+
+export interface ProductInventoryVariant {
+  variant_id: string;
+  sku: string;
+  variant_name: string;
+  warehouses: ProductInventoryWarehouse[];
+}
+
+export interface ProductInventoryResponse {
+  product_id: string;
+  product_name: string;
+  variants: ProductInventoryVariant[];
+}
+
+export async function getProductInventory(productId: string): Promise<ProductInventoryResponse> {
+  const res = await authService.api.get<ProductInventoryResponse>(
+    `/seller/inventory/product/${encodeURIComponent(productId)}`,
+  );
+  return res.data;
+}
+
+// ─── PATCH /seller/inventory/product/{product_id} ─────────────────────────
+// Bulk-edit quantities for multiple variant/warehouse pairs at once.
+
+export interface UpdateProductInventoryRow {
+  variant_id: string;
+  saleor_warehouse_id: string;
+  new_quantity: number;
+}
+
+export interface UpdateProductInventoryResponse {
+  applied: number;
+  failed: number;
+  errors: unknown[];
+}
+
+export async function updateProductInventory(
+  productId: string,
+  rows: UpdateProductInventoryRow[],
+): Promise<UpdateProductInventoryResponse> {
+  const res = await authService.api.patch<UpdateProductInventoryResponse>(
+    `/seller/inventory/product/${encodeURIComponent(productId)}`,
+    { rows },
+  );
+  return res.data;
+}

@@ -1,15 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Pencil, Package, Tag, Ruler, Palette, Info, Layers } from "lucide-react";
+import { toast } from "sonner";
+import { ArrowLeft, Pencil, Package, Tag, Ruler, Palette, Info, Layers, Boxes, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import { COLOR_PALETTE } from "@/components/shared/ColorSelect";
 import { PRODUCT_INVENTORY_TYPE_LABELS } from "@/lib/tableTypes";
-import { getProduct, parseProductDescription } from "@/lib/api/products";
-import type { ProductDetail, FlatVariant } from "@/lib/api/products";
+import {
+  getProduct,
+  getProductInventory,
+  updateProductInventory,
+  parseProductDescription,
+} from "@/lib/api/products";
+import type {
+  ProductDetail,
+  FlatVariant,
+  ProductInventoryVariant,
+} from "@/lib/api/products";
+
+interface WarehouseColumn {
+  saleor_warehouse_id: string;
+  warehouse_name: string;
+}
 
 // ─── Colour lookup ────────────────────────────────────────────────────────────
 
@@ -130,6 +147,11 @@ export function ProductViewClient({ productId }: { productId: string }) {
   const [selectedImage, setSelectedImage] = useState(0);
   const [error, setError] = useState(false);
 
+  const [inventoryVariants, setInventoryVariants] = useState<ProductInventoryVariant[]>([]);
+  const [loadingInventory, setLoadingInventory] = useState(true);
+  const [inventoryEdits, setInventoryEdits] = useState<Record<string, string>>({});
+  const [isSavingInventory, setIsSavingInventory] = useState(false);
+
   useEffect(() => {
     getProduct(productId)
       .then((p) => {
@@ -141,6 +163,149 @@ export function ProductViewClient({ productId }: { productId: string }) {
         setIsLoading(false);
       });
   }, [productId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingInventory(true);
+    getProductInventory(productId)
+      .then((result) => {
+        if (cancelled) return;
+        setInventoryVariants(result.variants);
+        setInventoryEdits({});
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Could not load inventory by warehouse");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingInventory(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
+
+  // One column per distinct warehouse seen across any variant, in first-seen order.
+  const warehouseColumns: WarehouseColumn[] = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const variant of inventoryVariants) {
+      for (const w of variant.warehouses) {
+        if (!seen.has(w.saleor_warehouse_id)) seen.set(w.saleor_warehouse_id, w.warehouse_name);
+      }
+    }
+    return Array.from(seen, ([saleor_warehouse_id, warehouse_name]) => ({
+      saleor_warehouse_id,
+      warehouse_name,
+    }));
+  }, [inventoryVariants]);
+
+  const editKey = (variantId: string, saleorWarehouseId: string) => `${variantId}::${saleorWarehouseId}`;
+
+  const dirtyInventoryRows = useMemo(() => {
+    const dirty: Array<{ variant_id: string; saleor_warehouse_id: string; new_quantity: number }> = [];
+    for (const variant of inventoryVariants) {
+      for (const w of variant.warehouses) {
+        const edited = inventoryEdits[editKey(variant.variant_id, w.saleor_warehouse_id)];
+        if (edited !== undefined && edited.trim() !== "" && Number(edited) !== w.quantity) {
+          dirty.push({
+            variant_id: variant.variant_id,
+            saleor_warehouse_id: w.saleor_warehouse_id,
+            new_quantity: Number(edited),
+          });
+        }
+      }
+    }
+    return dirty;
+  }, [inventoryVariants, inventoryEdits]);
+
+  const invalidInventoryEdit = Object.entries(inventoryEdits).some(([, value]) => {
+    if (value.trim() === "") return false;
+    const num = Number(value);
+    return !Number.isFinite(num) || num < 0 || !Number.isInteger(num);
+  });
+
+  const saveInventory = async () => {
+    if (invalidInventoryEdit) {
+      toast.error("Quantities must be whole numbers of 0 or more");
+      return;
+    }
+    if (dirtyInventoryRows.length === 0) {
+      toast.error("No quantity changes to save");
+      return;
+    }
+    setIsSavingInventory(true);
+    try {
+      const res = await updateProductInventory(productId, dirtyInventoryRows);
+      if (res.failed > 0) {
+        toast.error(`${res.applied} updated, ${res.failed} failed`, {
+          description: res.errors.length > 0 ? JSON.stringify(res.errors[0]) : undefined,
+        });
+      } else {
+        toast.success(`Updated ${res.applied} cell${res.applied === 1 ? "" : "s"}`);
+      }
+      setInventoryVariants((prev) =>
+        prev.map((variant) => ({
+          ...variant,
+          warehouses: variant.warehouses.map((w) => {
+            const match = dirtyInventoryRows.find(
+              (r) => r.variant_id === variant.variant_id && r.saleor_warehouse_id === w.saleor_warehouse_id,
+            );
+            return match ? { ...w, quantity: match.new_quantity } : w;
+          }),
+        })),
+      );
+      setInventoryEdits({});
+    } catch (err) {
+      toast.error("Could not update inventory", {
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setIsSavingInventory(false);
+    }
+  };
+
+  const inventoryColumns: TableColumn<ProductInventoryVariant>[] = useMemo(
+    () => [
+      {
+        key: "variant_name",
+        header: "Variant",
+        cell: (variant) => (
+          <div className="min-w-0">
+            <p className="truncate text-[11px] font-medium text-foreground min-[1920px]:text-sm">
+              {variant.variant_name}
+            </p>
+            <p className="truncate text-[11px] text-muted-foreground">{variant.sku}</p>
+          </div>
+        ),
+      },
+      ...warehouseColumns.map((wh): TableColumn<ProductInventoryVariant> => ({
+        key: wh.saleor_warehouse_id,
+        header: wh.warehouse_name,
+        align: "center",
+        cell: (variant) => {
+          const entry = variant.warehouses.find((w) => w.saleor_warehouse_id === wh.saleor_warehouse_id);
+          if (!entry) {
+            return <span className="text-[11px] text-muted-foreground">—</span>;
+          }
+          const key = editKey(variant.variant_id, wh.saleor_warehouse_id);
+          const value = inventoryEdits[key] ?? String(entry.quantity);
+          const isDirty = dirtyInventoryRows.some(
+            (r) => r.variant_id === variant.variant_id && r.saleor_warehouse_id === wh.saleor_warehouse_id,
+          );
+          return (
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              value={value}
+              onChange={(e) => setInventoryEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+              className={`mx-auto h-8 w-20 text-center text-sm ${isDirty ? "border-amber-500 focus-visible:ring-amber-500" : ""}`}
+            />
+          );
+        },
+      })),
+    ],
+    [warehouseColumns, inventoryEdits, dirtyInventoryRows],
+  );
 
   if (isLoading) return <LoadingSkeleton />;
 
@@ -484,6 +649,43 @@ export function ProductViewClient({ productId }: { productId: string }) {
           </CardContent>
         </Card>
       )}
+
+      {/* Inventory by warehouse */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0 pb-2 pt-4">
+          <SectionTitle icon={Boxes} title="Inventory by Warehouse" />
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] text-muted-foreground">
+              {dirtyInventoryRows.length > 0
+                ? `${dirtyInventoryRows.length} unsaved change${dirtyInventoryRows.length === 1 ? "" : "s"}`
+                : ""}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={isSavingInventory || loadingInventory || dirtyInventoryRows.length === 0}
+              onClick={saveInventory}
+            >
+              {isSavingInventory ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pb-4">
+          {loadingInventory ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <DataTable
+              columns={inventoryColumns}
+              data={inventoryVariants}
+              striped
+              emptyMessage="No warehouse stock found for this product."
+            />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
