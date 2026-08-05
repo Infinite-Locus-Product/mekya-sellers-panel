@@ -7,16 +7,15 @@ import { updateShipmentStatus } from "@/lib/api/orders"
 import type { ShipmentStepperStep } from "./types"
 import { MarkPickedUpModal, MarkDeliveredModal } from "./PickupModals"
 import { CancelShipmentAction } from "./CancelShipmentAction"
-import { CreateRtoAction } from "./CreateRtoAction"
 import { findCurrentStepKey } from "./utils"
 
 /**
  * One contextual action button per shipment stage — no dropdown, no stepper. Pending / order
  * placed / processing / ready for dispatch → "Pack and label" (single click, no modal; PATCHes
  * straight to "ready"), plus a secondary "Cancel shipment". Ready → "Mark picked up" (modal), plus
- * "Cancel shipment". Shipped / in transit → "Mark delivered" (modal) plus "Create RTO record".
- * Delivered → "Create RTO record" only. RTO-received (once the parcel is physically back) lives on
- * the Cancellation tab, not here.
+ * "Cancel shipment". Shipped / in transit → "Mark delivered" (modal). Delivered is terminal — no
+ * action. RTO-received (once a cancelled parcel is physically back) lives on the Cancellation tab,
+ * not here.
  */
 export function ShipmentActions({
   orderId,
@@ -154,13 +153,8 @@ export function ShipmentActions({
         >
           Mark delivered
         </Button>
-        <CreateRtoAction orderId={orderId} onDone={onDone} />
       </>
     )
-  }
-
-  if (statusKey === "delivered") {
-    return <CreateRtoAction orderId={orderId} onDone={onDone} />
   }
 
   return null

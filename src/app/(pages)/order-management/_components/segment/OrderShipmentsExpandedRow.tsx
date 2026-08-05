@@ -11,6 +11,7 @@ interface ExpandedRowShipmentData {
     shipments: ShipmentDisplay[];
     unfulfilledLines: OrderDetailUnfulfilledLine[];
     deliveryPincode: string | null;
+    orderStatus: string;
 }
 
 /** Survives row collapse/re-expand (DataTable unmounts the expanded row on collapse) so
@@ -46,6 +47,7 @@ export function OrderShipmentsExpandedRow({ orderId }: Readonly<OrderShipmentsEx
                     shipments: mapped.shipments ?? [],
                     unfulfilledLines: mapped.unfulfilledLines ?? [],
                     deliveryPincode: mapped.deliveryPincode ?? null,
+                    orderStatus: mapped.status,
                 };
                 shipmentsCache.set(orderId, next);
                 setData(next);
@@ -82,6 +84,7 @@ export function OrderShipmentsExpandedRow({ orderId }: Readonly<OrderShipmentsEx
                 orderId={orderId}
                 unfulfilledLines={data.unfulfilledLines}
                 deliveryPincode={data.deliveryPincode}
+                orderStatus={data.orderStatus}
                 onRefresh={() => setRefreshToken((t) => t + 1)}
             />
         </div>

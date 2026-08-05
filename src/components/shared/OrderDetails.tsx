@@ -119,6 +119,7 @@ export function OrderDetails({
           orderId={order.id}
           unfulfilledLines={order.unfulfilledLines}
           deliveryPincode={order.deliveryPincode}
+          orderStatus={order.status}
           onRefresh={onRefresh}
         />
       ) : order.customer.tag !== "general" && !order.b2bFulfillmentStats ? (

@@ -78,16 +78,16 @@ export const PAYMENT_STATUS_FILTER_OPTIONS = [
 export type PaymentStatusFilterValue = (typeof PAYMENT_STATUS_FILTER_OPTIONS)[number]["value"];
 
 // ─── Orders / Exchange Status filter — pipeline vocabulary, scoped per sub-tab ──────────────
-// The filter's chosen display wording ("Packed", "Completed") doesn't match the backend's own
-// label for those two stages ("Ready for Pickup", "Delivered") — rather than rename that label
-// everywhere else it's used (KPI tiles, the Order Status column, dashboards), this table keeps
-// the real backend string as the option `value` (still sent as-is to `statuses`) and only swaps
-// the `label` shown in this one filter control.
+// The filter's chosen display wording ("Packed") doesn't match the backend's own label for that
+// stage ("Ready for Pickup") — rather than rename that label everywhere else it's used (KPI
+// tiles, the Order Status column, dashboards), this table keeps the real backend string as the
+// option `value` (still sent as-is to `statuses`) and only swaps the `label` shown in this one
+// filter control. "Completed" is reserved for the tab that aggregates delivered/cancelled/
+// returned (and their partial variants) — the individual "Delivered" status keeps its own name
+// here so the two aren't conflated.
 const ORDER_STATUS_DISPLAY_LABEL: Record<string, string> = {
     "Ready for Pickup": "Packed",
     "Partially Ready for Pickup": "Partially Packed",
-    Delivered: "Completed",
-    "Partially Delivered": "Partially Completed",
 };
 
 function orderStatusOption(realLabel: string): { label: string; value: string } {
@@ -147,7 +147,16 @@ const ORDER_STATUS_LABELS_BY_SUBTAB: Record<OrderSubtabId, readonly string[]> = 
         "Partially Returned",
         "Partially Cancelled",
     ],
-    delivered: ["Delivered", "Partially Delivered", "Partially Returned", "Partially Cancelled"],
+    // "Completed" tab (id "delivered") — every terminal outcome, not just a clean delivery:
+    // full and partial delivered/cancelled/returned all count as the order being done.
+    delivered: [
+        "Delivered",
+        "Partially Delivered",
+        "Cancelled",
+        "Partially Cancelled",
+        "Returned",
+        "Partially Returned",
+    ],
 };
 
 export function getOrderStatusFilterOptions(

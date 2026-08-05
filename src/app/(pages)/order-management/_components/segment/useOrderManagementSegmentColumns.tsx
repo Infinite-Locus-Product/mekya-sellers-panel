@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useCallback } from "react";
-import { ChevronRight, Download } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { TableColumn } from "@/components/shared/DataTable";
 import type { AllOrder, PaymentStatus, ReturnStatus } from "@/lib/tableTypes";
 import {
@@ -173,7 +173,6 @@ export interface UseOrderManagementSegmentColumnsParams {
     readonly openReturnDetails: (order: AllOrder) => void;
     readonly openExchangeDetails: (exchangeId: string) => void;
     readonly handleInvoice: (orderId: string) => void;
-    readonly handleInvoicePdf: (orderId: string) => void;
     readonly expandedOrderIds: Set<string>;
     readonly onToggleOrderExpand: (orderId: string) => void;
     readonly onExchangeChanged: () => void;
@@ -189,7 +188,6 @@ export function useOrderManagementSegmentColumns({
     openReturnDetails,
     openExchangeDetails,
     handleInvoice,
-    handleInvoicePdf,
     expandedOrderIds,
     onToggleOrderExpand,
     onExchangeChanged,
@@ -441,25 +439,11 @@ export function useOrderManagementSegmentColumns({
                                 <span className="absolute -bottom-1 left-[68%] h-2 w-2 -translate-x-1/2 rotate-45 bg-black" />
                             </div>
                         </div>
-                        <div className="group relative inline-flex">
-                            <button
-                                type="button"
-                                className="inline-flex size-7 items-center justify-center min-[1920px]:size-8"
-                                aria-label="Download invoice PDF"
-                                onClick={() => handleInvoicePdf(row.id)}
-                            >
-                                <Download className="size-4" aria-hidden />
-                            </button>
-                            <div className="pointer-events-none absolute -top-11 left-1/2 -translate-x-[68%] flex h-[36px] w-[145px] items-center justify-center rounded-[5px] bg-black text-md font-medium text-white opacity-0 shadow-sm transition-opacity duration-150 group-hover:opacity-100">
-                                <span>Download PDF</span>
-                                <span className="absolute -bottom-1 left-[68%] h-2 w-2 -translate-x-1/2 rotate-45 bg-black" />
-                            </div>
-                        </div>
                     </div>
                 ),
             },
         ],
-        [expandColumn, handleOrderIdClick, handleOrderClick, handleInvoice, handleInvoicePdf]
+        [expandColumn, handleOrderIdClick, handleOrderClick, handleInvoice]
     );
 
     const b2bAllOrdersColumns: TableColumn<AllOrder>[] = useMemo(
@@ -550,25 +534,11 @@ export function useOrderManagementSegmentColumns({
                                 <span className="absolute -bottom-1 left-[68%] h-2 w-2 -translate-x-1/2 rotate-45 bg-black" />
                             </div>
                         </div>
-                        <div className="group relative inline-flex">
-                            <button
-                                type="button"
-                                className="inline-flex size-7 items-center justify-center min-[1920px]:size-8"
-                                aria-label="Download invoice PDF"
-                                onClick={() => handleInvoicePdf(row.id)}
-                            >
-                                <Download className="size-4" aria-hidden />
-                            </button>
-                            <div className="pointer-events-none absolute -top-11 left-1/2 -translate-x-[68%] flex h-[36px] w-[145px] items-center justify-center rounded-[5px] bg-black text-md font-medium text-white opacity-0 shadow-sm transition-opacity duration-150 group-hover:opacity-100">
-                                <span>Download PDF</span>
-                                <span className="absolute -bottom-1 left-[68%] h-2 w-2 -translate-x-1/2 rotate-45 bg-black" />
-                            </div>
-                        </div>
                     </div>
                 ),
             },
         ],
-        [expandColumn, handleOrderIdClick, handleOrderClick, handleInvoice, handleInvoicePdf]
+        [expandColumn, handleOrderIdClick, handleOrderClick, handleInvoice]
     );
 
     const returnRequestsColumns: TableColumn<AllOrder>[] = useMemo(

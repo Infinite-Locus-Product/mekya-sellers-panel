@@ -278,7 +278,7 @@ export const ORDERS_TAB_SUBTABS = [
   { id: "processing", label: "Processing" },
   { id: "ready", label: "Ready for pickup" },
   { id: "shipped", label: "Shipped" },
-  { id: "delivered", label: "Delivered" },
+  { id: "delivered", label: "Completed" },
 ] as const;
 
 export type OrderSubtabId = (typeof ORDERS_TAB_SUBTABS)[number]["id"];

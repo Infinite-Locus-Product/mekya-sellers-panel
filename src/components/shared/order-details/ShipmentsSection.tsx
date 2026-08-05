@@ -320,15 +320,21 @@ export function ShipmentsSection({
   orderId,
   unfulfilledLines,
   deliveryPincode,
+  orderStatus,
   onRefresh,
 }: Readonly<{
   shipments: ShipmentDisplay[]
   orderId: string
   unfulfilledLines?: OrderDetailUnfulfilledLine[]
   deliveryPincode?: string | null
+  /** Raw order status label (e.g. "Cancelled") — a fully cancelled order with no shipments
+   *  has nothing left to fulfill, so the "create a shipment" prompt below is suppressed
+   *  rather than offered for an action that can't do anything. */
+  orderStatus?: string
   onRefresh?: () => void
 }>) {
   if (shipments.length === 0) {
+    const isCancelled = orderStatus === "Cancelled"
     return (
       <section aria-label="Fulfill this order" className="contents">
         {unfulfilledLines && unfulfilledLines.length > 0 ? (
@@ -338,6 +344,12 @@ export function ShipmentsSection({
             unfulfilledLines={unfulfilledLines}
             onDone={onRefresh}
           />
+        ) : isCancelled ? (
+          <div className="rounded-md border border-dashed border-border bg-white p-4">
+            <p className="text-xs text-muted-foreground sm:text-sm">
+              This order was cancelled — no shipment is needed.
+            </p>
+          </div>
         ) : (
           <div className="rounded-md border border-dashed border-border bg-white p-4">
             <p className="mb-3 text-xs text-muted-foreground sm:text-sm">

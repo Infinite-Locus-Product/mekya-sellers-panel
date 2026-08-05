@@ -18,7 +18,6 @@ import type {
 import { ORDER_SUBTABS, ORDERS_TAB_SUBTABS, RETURN_SUBTABS } from "@/lib/tableTypes";
 import { usePagination } from "@/hooks";
 import { presetToDateRange } from "@/lib/dateRangePreset";
-import { downloadBlob } from "@/lib/utils";
 import { BulkActionModal } from "@/app/(pages)/order-management/_components/BulkActionModal";
 import {
     ExchangeDetailsModal,
@@ -65,7 +64,6 @@ import {
     getCustomOrderKPIs,
     getExchangeOrder,
     getOrderInvoice,
-    getOrderInvoicePdf,
     getOrderKpis,
     listCancellations,
     listCancelledItems,
@@ -115,14 +113,28 @@ type CustomOrderSubtabId = (typeof CUSTOM_ORDER_SUBTABS)[number]["id"];
 
 /** Maps the Orders subtab to the server-side `pipeline_status` filter (GET /seller/orders). "ready"
  * (labeled "Ready for pickup") maps to the `ready_for_dispatch` code — the backend's own naming —
- * not to the later, seller-set "ready" code, which has no dedicated subtab. "all" sends no filter. */
+ * not to the later, seller-set "ready" code, which has no dedicated subtab. "all" sends no filter.
+ * "delivered" (labeled "Completed") has no single pipeline_status of its own — it aggregates
+ * delivered/cancelled/returned (and their partial variants), so it's scoped via the `statuses`
+ * post-filter instead (see COMPLETED_SUBTAB_STATUSES below), not this per-shipment-status prefilter. */
 const ORDER_SUBTAB_TO_PIPELINE_STATUS: Partial<Record<OrderSubtabId, PipelineStatusFilter>> = {
     pending: "pending",
     processing: "processing",
     ready: "ready_for_dispatch",
     shipped: "shipped",
-    delivered: "delivered",
 };
+
+/** Default `statuses` filter for the "Completed" subtab (id "delivered") when the seller hasn't
+ * narrowed it further via the status filter dropdown — every terminal outcome, not just a clean
+ * delivery. Real backend label strings, sent as-is to /seller/orders' `statuses` param. */
+const COMPLETED_SUBTAB_STATUSES = [
+    "Delivered",
+    "Partially Delivered",
+    "Cancelled",
+    "Partially Cancelled",
+    "Returned",
+    "Partially Returned",
+];
 
 
 
@@ -231,10 +243,14 @@ export function OrderManagementSegmentClient({
     const showsOrdersList = activeTab === "orders";
     // Memoized (not recomputed as a fresh array every render) so it's a stable useEffect dependency.
     // Real pipeline-label strings (e.g. "Ready for Pickup", "Partially Delivered") straight from
-    // getOrderStatusFilterOptions — sent as-is to /seller/orders' `statuses` param.
+    // getOrderStatusFilterOptions — sent as-is to /seller/orders' `statuses` param. The "Completed"
+    // subtab has no pipeline_status prefilter (see ORDER_SUBTAB_TO_PIPELINE_STATUS above), so it
+    // falls back to its own fixed status set here when the seller hasn't chosen anything narrower.
     const effectiveStatuses: string[] | undefined = useMemo(() => {
-        return showsOrdersList && genericStatusFilter.length > 0 ? genericStatusFilter : undefined;
-    }, [showsOrdersList, genericStatusFilter]);
+        if (!showsOrdersList) return undefined;
+        if (genericStatusFilter.length > 0) return genericStatusFilter;
+        return orderSubtab === "delivered" ? COMPLETED_SUBTAB_STATUSES : undefined;
+    }, [showsOrdersList, genericStatusFilter, orderSubtab]);
     // Server-side pipeline-stage filter for the Orders subtab — each distinct value pages
     // independently, so switching subtabs must reset pagination (see allViewFilterKey below).
     const pipelineStatus: PipelineStatusFilter | undefined =
@@ -730,16 +746,6 @@ export function OrderManagementSegmentClient({
             .catch(() => {});
     }, []);
 
-    const handleInvoicePdf = useCallback((orderId: string) => {
-        getOrderInvoicePdf(orderId)
-            .then((blob) => downloadBlob(blob, `invoice-${orderId}.pdf`))
-            .catch((err: unknown) => {
-                toast.error("Could not download invoice", {
-                    description: err instanceof Error ? err.message : "Please try again.",
-                });
-            });
-    }, []);
-
     const handleToggleOrderExpand = useCallback((orderId: string) => {
         setExpandedOrderIds((prev) => {
             const next = new Set(prev);
@@ -825,7 +831,6 @@ export function OrderManagementSegmentClient({
         openReturnDetails,
         openExchangeDetails,
         handleInvoice,
-        handleInvoicePdf,
         expandedOrderIds,
         onToggleOrderExpand: handleToggleOrderExpand,
         onExchangeChanged: () => setExchangeRefreshToken((t) => t + 1),

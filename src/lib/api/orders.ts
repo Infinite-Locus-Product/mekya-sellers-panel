@@ -1323,36 +1323,6 @@ export async function updateCancelledItemSettlement(
   return res.data;
 }
 
-export interface CreateRtoRecordRequest {
-  /** 1-256 chars. */
-  tracking_number: string;
-  /** 1-500 chars; defaults server-side to "Customer unavailable at delivery" if omitted. */
-  reason?: string;
-}
-
-export interface CreateRtoRecordResponse {
-  order_id: string;
-  status: string;
-  tracking_number: string;
-  reason: string;
-  created_at: string;
-}
-
-/** Records a post-delivery return-to-origin — the shipment must already be shipped/delivered/
- * in_transit. No Saleor mutation; the order stays FULFILLED in Saleor. This is the order-level
- * counterpart to {@link rtoReceiveShipment}, which marks a *cancelled* (pre-dispatch) shipment as
- * physically received back — the two cover different origins of an RTO. */
-export async function createRtoRecord(
-  orderId: string,
-  body: CreateRtoRecordRequest,
-): Promise<CreateRtoRecordResponse> {
-  const res = await authService.api.post<CreateRtoRecordResponse>(
-    `/seller/orders/${encodeURIComponent(orderId)}/cancellations/rto`,
-    body,
-  );
-  return res.data;
-}
-
 // ─── GET /seller/orders/{order_id}/invoice/view ──────────────────────────────
 // Backend returns a full HTML page — fetch as raw text with auth header.
 

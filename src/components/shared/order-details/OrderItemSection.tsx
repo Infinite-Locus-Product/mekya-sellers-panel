@@ -96,7 +96,7 @@ export function OrderItemSection({
                       {item.quantity}
                       {cancelledQty > 0 ? (
                         <span className="ml-1.5 whitespace-nowrap rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                          {cancelledQty} cancelled
+                          ({cancelledQty} cancelled)
                         </span>
                       ) : null}
                     </td>
