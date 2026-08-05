@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { useState, useCallback, useEffect } from "react"
-import { ChevronUp, Package } from "lucide-react"
+import { ChevronUp, Package, Warehouse } from "lucide-react"
 import Image from "next/image"
 import {
   CmsAnalyticsIcon,
@@ -47,6 +47,7 @@ const navItems: NavItem[] = [
       { label: "B2B Orders", href: "/order-management/b2b", icon: Package },
     ],
   },
+  { label: "Warehouse", href: "/inventory", icon: Warehouse },
   {
     label: "CMS Management",
     href: "/cms-management",
