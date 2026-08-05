@@ -2,41 +2,129 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { Card, CardContent } from "@/components/ui/card";
 import { DataTable } from "@/components/shared/DataTable";
+import { TabList } from "@/components/shared/TabList";
 import type {
     AllOrder,
-    CustomOrderStatus,
-    OrderStatus,
-    PaymentStatus,
+    OrderSubtabId,
     ProductInventoryType,
     ReturnStatus,
+    ReturnSubtabId,
 } from "@/lib/tableTypes";
+import { ORDER_SUBTABS, ORDERS_TAB_SUBTABS, RETURN_SUBTABS } from "@/lib/tableTypes";
 import { usePagination } from "@/hooks";
+import { presetToDateRange } from "@/lib/dateRangePreset";
+import { downloadBlob } from "@/lib/utils";
 import { BulkActionModal } from "@/app/(pages)/order-management/_components/BulkActionModal";
 import {
+    ExchangeDetailsModal,
+    type ExchangeDetailsData,
+} from "@/app/(pages)/order-management/_components/ExchangeDetailsModal";
+import { CustomOrderDetailsModal } from "@/app/(pages)/order-management/_components/CustomOrderDetailsModal";
+import {
+    CursorPager,
+    CustomOrdersKpiGrid,
     OrderManagementKpiGrid,
-    OrderViewToggle,
+    OrderShipmentsExpandedRow,
     OrdersCardToolbar,
+    ORDER_SUBTAB_LIST_CLASS,
+    ORDER_TAB_ITEM_CLASS,
+    ORDER_TAB_LIST_CLASS,
     PAGE_TITLE_ORDER_MANAGEMENT,
     SegmentOrderModals,
-    computeKpiStats,
-    filterSegmentOrders,
-    getOrderViewToggleLabels,
+    getOrderManagementTabs,
     getSegmentViewCopy,
+    mapApiCustomOrderRequest,
+    mapApiExchangeOrder,
+    mapApiCancellation,
     selectSegmentTableColumns,
-    sliceOrdersForKpis,
     useBulkActionExecuteHandler,
     useOrderManagementSegmentColumns,
     useOrderManagementSegmentModals,
+    getOrderStatusFilterOptions,
+    getExchangeStatusFilterOptions,
+    getReturnStatusFilterOptions,
+    RETURN_TYPE_FILTER_OPTIONS,
+    CANCELLATION_TYPE_FILTER_OPTIONS,
+    CUSTOM_ORDER_STATUS_FILTER_OPTIONS,
+    RETURN_SUBTABS_WITH_PAYMENT_FILTER,
+    type CustomOrderRequestKpis,
+    type CustomOrderRequestRow,
+    type ExchangeOrderRow,
+    type CancellationRow,
+    type CancellationSubtabId,
+    CANCELLATION_SUBTABS,
+    type OrderManagementTabId,
+    type PaymentStatusFilterValue,
 } from "@/app/(pages)/order-management/_components/segment";
-import { listOrders } from "@/lib/api/orders";
+import {
+    getCustomOrderKPIs,
+    getExchangeOrder,
+    getOrderInvoice,
+    getOrderInvoicePdf,
+    getOrderKpis,
+    listCancellations,
+    listCancelledItems,
+    mapApiCancelledItem,
+    type CancelledItemRow,
+    listCustomOrderRequests,
+    listExchangeOrders,
+    listOrders,
+    listReturns,
+    type CancellationType,
+    type CustomOrderRequestStatus,
+    type ExchangeOrderStatus,
+    type ListOrdersParams,
+    type OrderKpis,
+    type PipelineStatusFilter,
+    type ReturnRequestType,
+} from "@/lib/api/orders";
 
 export interface OrderManagementSegmentClientProps {
     initialOrders: AllOrder[];
     segment: "b2c" | "b2b";
 }
+
+/** Maps a sortable column's `key` to the /seller/orders `sort_by` value it drives. */
+const COLUMN_KEY_TO_SORT_BY: Record<string, NonNullable<ListOrdersParams["sort_by"]>> = {
+    date: "created",
+    amount: "total",
+};
+const SORT_BY_TO_COLUMN_KEY: Record<NonNullable<ListOrdersParams["sort_by"]>, string> = {
+    created: "date",
+    number: "date",
+    total: "amount",
+};
+
+/** Custom Orders subtabs — sent as-is to GET /seller/orders/custom's `custom_status` param ("all"
+ * omits it). "Buyer Declined" and "Rejected" are kept as separate subtabs for clarity even though
+ * the backend's `custom_statuses` (plural) param could combine them into one bucket if desired. */
+const CUSTOM_ORDER_SUBTABS = [
+    { id: "all", label: "All" },
+    { id: "pending_review", label: "Pending Review" },
+    { id: "awaiting_buyer_confirmation", label: "Awaiting Confirmation" },
+    { id: "buyer_confirmed", label: "Buyer Confirmed" },
+    { id: "buyer_declined", label: "Buyer Declined" },
+    { id: "rejected", label: "Rejected" },
+] as const;
+type CustomOrderSubtabId = (typeof CUSTOM_ORDER_SUBTABS)[number]["id"];
+
+/** Maps the Orders subtab to the server-side `pipeline_status` filter (GET /seller/orders). "ready"
+ * (labeled "Ready for pickup") maps to the `ready_for_dispatch` code — the backend's own naming —
+ * not to the later, seller-set "ready" code, which has no dedicated subtab. "all" sends no filter. */
+const ORDER_SUBTAB_TO_PIPELINE_STATUS: Partial<Record<OrderSubtabId, PipelineStatusFilter>> = {
+    pending: "pending",
+    processing: "processing",
+    ready: "ready_for_dispatch",
+    shipped: "shipped",
+    delivered: "delivered",
+};
+
+
 
 export function OrderManagementSegmentClient({
     initialOrders,
@@ -44,12 +132,584 @@ export function OrderManagementSegmentClient({
 }: Readonly<OrderManagementSegmentClientProps>) {
     const router = useRouter();
     const [orders, setOrders] = useState<AllOrder[]>(initialOrders);
+    const [returnOrders, setReturnOrders] = useState<AllOrder[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    // Returns/Exchanges (B2C "Returns" tab) — server-driven page-based pagination + filters.
+    const [returnsPage, setReturnsPage] = useState(1);
+    const [returnsPageSize, setReturnsPageSize] = useState(10);
+    const [returnsTotal, setReturnsTotal] = useState(0);
+    const [returnsTotalPages, setReturnsTotalPages] = useState(1);
+    const [returnsRefreshToken, setReturnsRefreshToken] = useState(0);
+    const [loadingReturns, setLoadingReturns] = useState(false);
+
+    const [activeTab, setActiveTab] = useState<OrderManagementTabId>("orders");
+    const [orderSubtab, setOrderSubtab] = useState<OrderSubtabId>("all");
+    // Status filter — shared across Orders/Exchange/Returns/Custom Orders (only one tab's
+    // toolbar renders it at a time, with tab/sub-tab-scoped options); Type filter — shared
+    // across Returns (Return/Exchange) and Cancellation (Cancelled/RTO); Payment Status —
+    // shared across every tab that has one, same "All Payments/Pending/Completed" vocabulary
+    // everywhere, persists across tab switches like `dateFilter` already does.
+    const [genericStatusFilter, setGenericStatusFilter] = useState<string[]>([]);
+    const [typeFilter, setTypeFilter] = useState<string[]>([]);
+    const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatusFilterValue>("all");
+    const [returnSubtab, setReturnSubtab] = useState<ReturnSubtabId>("all");
+    const [dateFilter, setDateFilter] = useState("all_dates");
+    const [inventoryTypeFilter, setInventoryTypeFilter] = useState<"all" | ProductInventoryType>("all");
+    const [searchQuery, setSearchQuery] = useState("");
+    const [sortBy, setSortBy] = useState<NonNullable<ListOrdersParams["sort_by"]>>("created");
+    const [sortDir, setSortDir] = useState<NonNullable<ListOrdersParams["sort_dir"]>>("desc");
+    const [selectedRows, setSelectedRows] = useState<Set<AllOrder>>(() => new Set());
+    const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(() => new Set());
+    const [bulkActionOpen, setBulkActionOpen] = useState(false);
+    const [orderKpis, setOrderKpis] = useState<OrderKpis | null>(null);
+
+    // Custom Orders (B2B "Custom Orders" tab) — a distinct API-backed resource (pre-order buyer
+    // requests), not AllOrder rows. No search/date query params on this endpoint, so those stay
+    // filtered client-side on the fetched page, same as Exchange/Cancellation below.
+    const [customOrderRequests, setCustomOrderRequests] = useState<CustomOrderRequestRow[]>([]);
+    const [customOrdersTotal, setCustomOrdersTotal] = useState(0);
+    const [customOrderKpis, setCustomOrderKpis] = useState<CustomOrderRequestKpis | null>(null);
+    const [loadingCustomOrders, setLoadingCustomOrders] = useState(false);
+    const [customOrdersRefreshToken, setCustomOrdersRefreshToken] = useState(0);
+    const [customOrderSubtab, setCustomOrderSubtab] = useState<CustomOrderSubtabId>("all");
+
+    // Exchange ("Exchange" tab) — a distinct API-backed resource (its own EXC-... id), not a
+    // filtered Returns view. The All/Processing/Ready/Shipped/Delivered subtabs are sent as the
+    // `status` query param (server-side); search/date have no query params on this endpoint, so
+    // those stay filtered client-side on the fetched page.
+    const [exchangeOrders, setExchangeOrders] = useState<ExchangeOrderRow[]>([]);
+    const [exchangeTotal, setExchangeTotal] = useState(0);
+    const [loadingExchange, setLoadingExchange] = useState(false);
+    const [exchangeRefreshToken, setExchangeRefreshToken] = useState(0);
+    const [exchangeSubtab, setExchangeSubtab] = useState<OrderSubtabId>("all");
+    const [exchangeDetailsOpen, setExchangeDetailsOpen] = useState(false);
+    const [exchangeDetailsData, setExchangeDetailsData] = useState<ExchangeDetailsData | null>(null);
+
+    // Cancellation ("Cancellation" tab) — a distinct API-backed resource, not the order list filtered
+    // by status=Cancelled. No channel/search/date query params either — filtered client-side below.
+    const [cancellations, setCancellations] = useState<CancellationRow[]>([]);
+    const [cancellationsTotal, setCancellationsTotal] = useState(0);
+    const [loadingCancellations, setLoadingCancellations] = useState(false);
+    const [cancellationsRefreshToken, setCancellationsRefreshToken] = useState(0);
+    /** Which resource the Cancellation tab is showing: whole cancelled orders/RTOs, or
+     *  individual cancelled line items. */
+    const [cancellationSubtab, setCancellationSubtab] = useState<CancellationSubtabId>("orders");
+
+    // Cancelled Items ("Cancellation" → "Cancelled Items" subtab) — one row per cancelled line
+    // item. Unlike /cancellations, this endpoint DOES take search + date query params, so those
+    // are sent server-side rather than filtered on the fetched page.
+    const [cancelledItems, setCancelledItems] = useState<CancelledItemRow[]>([]);
+    const [cancelledItemsTotal, setCancelledItemsTotal] = useState(0);
+    const [loadingCancelledItems, setLoadingCancelledItems] = useState(false);
+    const [cancelledItemsRefreshToken, setCancelledItemsRefreshToken] = useState(0);
+
+    // Debounce search so the "all" view doesn't refetch on every keystroke.
+    const [debouncedSearch, setDebouncedSearch] = useState("");
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+        return () => clearTimeout(t);
+    }, [searchQuery]);
+
+    // Cursor-based pagination for the "all" view (GET /seller/orders). `cursorHistory[i]` is the
+    // cursor used to fetch page i; `nextCursor` is the cursor the *next* page would use, from the
+    // last response. Both are plain state — appended only from event handlers, never from an effect
+    // body or during render, so they can't trigger the cascading-render/ref-during-render lint rules.
+    const [pageIndex, setPageIndex] = useState(0);
+    const [pageSize, setPageSize] = useState(20);
+    const [hasNext, setHasNext] = useState(false);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
+    const [cursorHistory, setCursorHistory] = useState<(string | undefined)[]>([undefined]);
+
+    const handleSortChange = useCallback((key: string, direction: "asc" | "desc") => {
+        const nextSortBy = COLUMN_KEY_TO_SORT_BY[key];
+        if (!nextSortBy) return;
+        setSortBy(nextSortBy);
+        setSortDir(direction);
+    }, []);
+
+    const showsOrdersList = activeTab === "orders";
+    // Memoized (not recomputed as a fresh array every render) so it's a stable useEffect dependency.
+    // Real pipeline-label strings (e.g. "Ready for Pickup", "Partially Delivered") straight from
+    // getOrderStatusFilterOptions — sent as-is to /seller/orders' `statuses` param.
+    const effectiveStatuses: string[] | undefined = useMemo(() => {
+        return showsOrdersList && genericStatusFilter.length > 0 ? genericStatusFilter : undefined;
+    }, [showsOrdersList, genericStatusFilter]);
+    // Server-side pipeline-stage filter for the Orders subtab — each distinct value pages
+    // independently, so switching subtabs must reset pagination (see allViewFilterKey below).
+    const pipelineStatus: PipelineStatusFilter | undefined =
+        activeTab === "orders" ? ORDER_SUBTAB_TO_PIPELINE_STATUS[orderSubtab] : undefined;
+    // Bucketed Payment Status filter — shared state, reinterpreted per active tab's own
+    // payment/settlement vocabulary below.
+    const paymentStatusParam: "pending" | "completed" | undefined =
+        paymentStatusFilter === "all" ? undefined : paymentStatusFilter;
+
+    // When any filter changes, reset pagination during render (not in an effect) — the
+    // React-endorsed way to adjust state in response to other state changing; see
+    // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+    const { date_from: allViewDateFrom, date_to: allViewDateTo } = presetToDateRange(dateFilter);
+    const allViewFilterKey = JSON.stringify({
+        segment,
+        activeTab,
+        effectiveStatuses,
+        pipelineStatus,
+        paymentStatusParam,
+        debouncedSearch,
+        sortBy,
+        sortDir,
+        date_from: allViewDateFrom,
+        date_to: allViewDateTo,
+    });
+    const [prevAllViewFilterKey, setPrevAllViewFilterKey] = useState(allViewFilterKey);
+    if (allViewFilterKey !== prevAllViewFilterKey) {
+        setPrevAllViewFilterKey(allViewFilterKey);
+        setPageIndex(0);
+        setCursorHistory([undefined]);
+        setNextCursor(null);
+        setSelectedRows(new Set());
+    }
 
     useEffect(() => {
-        listOrders({ limit: 50 })
-            .then(({ orders: fetched }) => setOrders(fetched))
+        if (!showsOrdersList) return;
+        // Deferred to a microtask (not a synchronous effect-body call) and guarded by `cancelled`
+        // so a slower superseded request can't clobber a faster, newer one's result.
+        let cancelled = false;
+        queueMicrotask(() => {
+            if (!cancelled) setLoading(true);
+        });
+        listOrders({
+            channel: segment,
+            cursor: cursorHistory[pageIndex],
+            limit: pageSize,
+            statuses: effectiveStatuses,
+            pipeline_status: pipelineStatus,
+            payment_status: paymentStatusParam,
+            search: debouncedSearch.trim() || undefined,
+            sort_by: sortBy,
+            sort_dir: sortDir,
+            date_from: allViewDateFrom,
+            date_to: allViewDateTo,
+        })
+            .then(({ orders: fetched, has_next, next_cursor }) => {
+                if (cancelled) return;
+                setOrders(fetched);
+                setHasNext(has_next);
+                setNextCursor(next_cursor);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        showsOrdersList,
+        segment,
+        pageIndex,
+        pageSize,
+        effectiveStatuses,
+        pipelineStatus,
+        paymentStatusParam,
+        debouncedSearch,
+        sortBy,
+        sortDir,
+        allViewDateFrom,
+        allViewDateTo,
+        cursorHistory,
+    ]);
+
+    const showsReturnsList = activeTab === "returns";
+
+    // Real ReturnStatus display labels (e.g. "Defect Check") map 1:1 to backend codes via
+    // RETURN_STATUS_TO_API inside listReturns() — no translation needed here.
+    const returnStatusesParam: ReturnStatus[] | undefined =
+        showsReturnsList && genericStatusFilter.length > 0 ? (genericStatusFilter as ReturnStatus[]) : undefined;
+    const returnTypesParam: ReturnRequestType[] | undefined =
+        showsReturnsList && typeFilter.length > 0 ? (typeFilter as ReturnRequestType[]) : undefined;
+    // Payment Status is only offered (and only sent) on the sub-tabs where a payment outcome can
+    // actually exist — see RETURN_SUBTABS_WITH_PAYMENT_FILTER.
+    const returnsPaymentStatusParam =
+        showsReturnsList && RETURN_SUBTABS_WITH_PAYMENT_FILTER.has(returnSubtab) ? paymentStatusParam : undefined;
+
+    // Reset to page 1 whenever a returns filter changes, during render (not in an effect) —
+    // mirrors the "all" view's filter-key reset above.
+    const returnsFilterKey = JSON.stringify({
+        activeTab,
+        returnSubtab,
+        returnStatusesParam,
+        returnTypesParam,
+        returnsPaymentStatusParam,
+        debouncedSearch,
+        date_from: allViewDateFrom,
+        date_to: allViewDateTo,
+        segment,
+    });
+    const [prevReturnsFilterKey, setPrevReturnsFilterKey] = useState(returnsFilterKey);
+    if (returnsFilterKey !== prevReturnsFilterKey) {
+        setPrevReturnsFilterKey(returnsFilterKey);
+        setReturnsPage(1);
+    }
+
+    useEffect(() => {
+        if (!showsReturnsList) return;
+        // Deferred to a microtask (not a synchronous effect-body call) and guarded by `cancelled`
+        // so a slower superseded request can't clobber a faster, newer one's result.
+        let cancelled = false;
+        queueMicrotask(() => {
+            if (!cancelled) setLoadingReturns(true);
+        });
+
+        listReturns({
+            channel: segment,
+            tab: returnSubtab === "all" ? undefined : returnSubtab,
+            statuses: returnStatusesParam,
+            request_types: returnTypesParam,
+            payment_status: returnsPaymentStatusParam,
+            search: debouncedSearch.trim() || undefined,
+            date_from: allViewDateFrom,
+            date_to: allViewDateTo,
+            page: returnsPage,
+            limit: returnsPageSize,
+        })
+            .then(({ items, total, total_pages }) => {
+                if (cancelled) return;
+                setReturnOrders(items);
+                setReturnsTotal(total);
+                setReturnsTotalPages(total_pages);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (!cancelled) setLoadingReturns(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        showsReturnsList,
+        segment,
+        activeTab,
+        returnSubtab,
+        returnStatusesParam,
+        returnTypesParam,
+        returnsPaymentStatusParam,
+        debouncedSearch,
+        allViewDateFrom,
+        allViewDateTo,
+        returnsPage,
+        returnsPageSize,
+        returnsRefreshToken,
+    ]);
+
+    const isExchangeView = activeTab === "exchange";
+    const isCancellationView = activeTab === "cancellation";
+
+    // Real ExchangeOrderStatus codes (lowercase: "ready", "delivered", ...) straight from
+    // getExchangeStatusFilterOptions — sent as-is to /seller/orders/exchange's `statuses` param.
+    const exchangeStatusesParam: ExchangeOrderStatus[] | undefined =
+        isExchangeView && genericStatusFilter.length > 0
+            ? (genericStatusFilter as ExchangeOrderStatus[])
+            : undefined;
+    const exchangePaymentStatusParam = isExchangeView ? paymentStatusParam : undefined;
+
+    // Offset pagination for the Exchange tab (GET /seller/orders/exchange).
+    const exchangePagination = usePagination({ totalCount: exchangeTotal, pageSize: 20 });
+    const setExchangePageRef = useRef(exchangePagination.setPage);
+    useEffect(() => {
+        setExchangePageRef.current = exchangePagination.setPage;
+    }, [exchangePagination.setPage]);
+    useEffect(() => {
+        setExchangePageRef.current(1);
+    }, [
+        debouncedSearch,
+        allViewDateFrom,
+        allViewDateTo,
+        exchangeSubtab,
+        exchangeStatusesParam,
+        exchangePaymentStatusParam,
+    ]);
+
+    useEffect(() => {
+        if (!isExchangeView) return;
+        let cancelled = false;
+        queueMicrotask(() => {
+            if (!cancelled) setLoadingExchange(true);
+        });
+        listExchangeOrders({
+            status: exchangeStatusesParam
+                ? undefined
+                : exchangeSubtab === "all" || exchangeSubtab === "pending"
+                  ? undefined
+                  : exchangeSubtab,
+            statuses: exchangeStatusesParam,
+            payment_status: exchangePaymentStatusParam,
+            limit: exchangePagination.pageSize,
+            offset: exchangePagination.startIndex,
+        })
+            .then(({ items, total }) => {
+                if (cancelled) return;
+                setExchangeOrders(items.map(mapApiExchangeOrder));
+                setExchangeTotal(total);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (!cancelled) setLoadingExchange(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        isExchangeView,
+        exchangeSubtab,
+        exchangeStatusesParam,
+        exchangePaymentStatusParam,
+        exchangePagination.pageSize,
+        exchangePagination.startIndex,
+        exchangeRefreshToken,
+    ]);
+
+    // Status is filtered server-side (see the effect above); the endpoint has no channel/search/date
+    // query params, so those stay filtered client-side on the fetched page.
+    const displayedExchangeOrders = useMemo(() => {
+        let result = exchangeOrders;
+        const q = debouncedSearch.trim().toLowerCase();
+        if (q) {
+            result = result.filter(
+                (r) =>
+                    r.id.toLowerCase().includes(q) ||
+                    r.originalOrderId.toLowerCase().includes(q) ||
+                    r.customerName.toLowerCase().includes(q)
+            );
+        }
+        if (allViewDateFrom || allViewDateTo) {
+            result = result.filter((r) => {
+                const d = r.createdAt.slice(0, 10);
+                if (allViewDateFrom && d < allViewDateFrom) return false;
+                if (allViewDateTo && d > allViewDateTo) return false;
+                return true;
+            });
+        }
+        return result;
+    }, [exchangeOrders, debouncedSearch, allViewDateFrom, allViewDateTo]);
+
+    // Type/Payment Status only apply to the "orders" sub-resource (whole cancelled orders/RTOs)
+    // — "items" (individual cancelled lines) has no Cancelled/RTO distinction and no payment
+    // concept of its own, so these stay undefined (and the toolbar hides both controls) there.
+    const showsCancellationFilters = isCancellationView && cancellationSubtab === "orders";
+    const cancellationTypeParam: CancellationType | undefined =
+        showsCancellationFilters && typeFilter.length === 1 ? (typeFilter[0] as CancellationType) : undefined;
+    const cancellationPaymentStatusParam = showsCancellationFilters ? paymentStatusParam : undefined;
+
+    // Offset pagination for the Cancellation tab (GET /seller/orders/cancellations).
+    const cancellationsPagination = usePagination({ totalCount: cancellationsTotal, pageSize: 20 });
+    const setCancellationsPageRef = useRef(cancellationsPagination.setPage);
+    useEffect(() => {
+        setCancellationsPageRef.current = cancellationsPagination.setPage;
+    }, [cancellationsPagination.setPage]);
+    useEffect(() => {
+        setCancellationsPageRef.current(1);
+    }, [debouncedSearch, allViewDateFrom, allViewDateTo, cancellationTypeParam, cancellationPaymentStatusParam]);
+
+    useEffect(() => {
+        // Guard the subtab too, not just the tab — without it this fired while the
+        // Cancelled Items subtab was showing, issuing a wasted /cancellations request.
+        if (!isCancellationView || cancellationSubtab !== "orders") return;
+        let cancelled = false;
+        queueMicrotask(() => {
+            if (!cancelled) setLoadingCancellations(true);
+        });
+        listCancellations({
+            type: cancellationTypeParam,
+            payment_status: cancellationPaymentStatusParam,
+            order_type: segment === "b2b" ? "B2B" : "B2C",
+            search: debouncedSearch.trim() || undefined,
+            date_from: allViewDateFrom || undefined,
+            date_to: allViewDateTo || undefined,
+            limit: cancellationsPagination.pageSize,
+            offset: cancellationsPagination.startIndex,
+        })
+            .then(({ items, total }) => {
+                if (cancelled) return;
+                setCancellations(items.map(mapApiCancellation));
+                setCancellationsTotal(total);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (!cancelled) setLoadingCancellations(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        isCancellationView,
+        cancellationSubtab,
+        segment,
+        debouncedSearch,
+        allViewDateFrom,
+        allViewDateTo,
+        cancellationTypeParam,
+        cancellationPaymentStatusParam,
+        cancellationsPagination.pageSize,
+        cancellationsPagination.startIndex,
+        cancellationsRefreshToken,
+    ]);
+
+    // Offset pagination for the Cancelled Items subtab (GET /seller/orders/cancelled-items).
+    const cancelledItemsPagination = usePagination({ totalCount: cancelledItemsTotal, pageSize: 20 });
+    const setCancelledItemsPageRef = useRef(cancelledItemsPagination.setPage);
+    useEffect(() => {
+        setCancelledItemsPageRef.current = cancelledItemsPagination.setPage;
+    }, [cancelledItemsPagination.setPage]);
+    useEffect(() => {
+        setCancelledItemsPageRef.current(1);
+    }, [debouncedSearch, allViewDateFrom, allViewDateTo]);
+
+    useEffect(() => {
+        if (!isCancellationView || cancellationSubtab !== "items") return;
+        let cancelled = false;
+        queueMicrotask(() => {
+            if (!cancelled) setLoadingCancelledItems(true);
+        });
+        listCancelledItems({
+            search: debouncedSearch.trim() || undefined,
+            dateFrom: allViewDateFrom || undefined,
+            dateTo: allViewDateTo || undefined,
+            orderType: segment === "b2b" ? "B2B" : "B2C",
+            limit: cancelledItemsPagination.pageSize,
+            offset: cancelledItemsPagination.startIndex,
+        })
+            .then(({ items, total }) => {
+                if (cancelled) return;
+                setCancelledItems(items.map(mapApiCancelledItem));
+                setCancelledItemsTotal(total);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (!cancelled) setLoadingCancelledItems(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        isCancellationView,
+        cancellationSubtab,
+        debouncedSearch,
+        allViewDateFrom,
+        allViewDateTo,
+        segment,
+        cancelledItemsPagination.pageSize,
+        cancelledItemsPagination.startIndex,
+        cancelledItemsRefreshToken,
+    ]);
+
+    // Both cancellation lists filter entirely server-side (channel, search, date), so the
+    // rows are rendered as received. Filtering here instead would desync them from the
+    // server's `total` and make the pager count a page it then hides.
+    const displayedCancelledItems = cancelledItems;
+    const displayedCancellations = cancellations;
+
+    const isCustomOrdersView = activeTab === "custom";
+
+    // Explicit multi-select takes full priority over the sub-tab's single custom_status — the
+    // backend's custom_status/custom_statuses combine as a union, not an override, so sending
+    // both at once would search "sub-tab's status OR multi-select's statuses" instead of
+    // narrowing within the sub-tab as the filter UI implies.
+    const customStatusesParam: CustomOrderRequestStatus[] | undefined =
+        isCustomOrdersView && genericStatusFilter.length > 0
+            ? (genericStatusFilter as CustomOrderRequestStatus[])
+            : undefined;
+    const customOrdersPaymentStatusParam = isCustomOrdersView ? paymentStatusParam : undefined;
+
+    // Offset pagination for the Custom Orders tab (GET /seller/orders/custom).
+    const customOrdersPagination = usePagination({ totalCount: customOrdersTotal, pageSize: 20 });
+    const setCustomOrdersPageRef = useRef(customOrdersPagination.setPage);
+    useEffect(() => {
+        setCustomOrdersPageRef.current = customOrdersPagination.setPage;
+    }, [customOrdersPagination.setPage]);
+    useEffect(() => {
+        setCustomOrdersPageRef.current(1);
+    }, [customOrderSubtab, customStatusesParam, customOrdersPaymentStatusParam]);
+
+    useEffect(() => {
+        if (!isCustomOrdersView) return;
+        let cancelled = false;
+        queueMicrotask(() => {
+            if (!cancelled) setLoadingCustomOrders(true);
+        });
+        listCustomOrderRequests({
+            custom_status: customStatusesParam
+                ? undefined
+                : customOrderSubtab === "all"
+                  ? undefined
+                  : (customOrderSubtab as CustomOrderRequestStatus),
+            custom_statuses: customStatusesParam,
+            payment_status: customOrdersPaymentStatusParam,
+            limit: customOrdersPagination.pageSize,
+            offset: customOrdersPagination.startIndex,
+        })
+            .then(({ items, total }) => {
+                if (cancelled) return;
+                setCustomOrderRequests(items.map(mapApiCustomOrderRequest));
+                setCustomOrdersTotal(total);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (!cancelled) setLoadingCustomOrders(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        isCustomOrdersView,
+        customOrderSubtab,
+        customStatusesParam,
+        customOrdersPaymentStatusParam,
+        customOrdersPagination.pageSize,
+        customOrdersPagination.startIndex,
+        customOrdersRefreshToken,
+    ]);
+
+    // Real KPI endpoint covers total/pending-review/awaiting-confirmation/buyer-confirmed (its
+    // field names are stale from an older status enum, but the counts match current statuses).
+    // It has no declined/rejected count, so that one tile still needs a single combined-status
+    // list lookup — 2 calls total instead of the previous 5.
+    useEffect(() => {
+        if (!isCustomOrdersView) return;
+        let cancelled = false;
+        Promise.all([
+            getCustomOrderKPIs(),
+            listCustomOrderRequests({ custom_statuses: ["buyer_declined", "rejected"], limit: 1 }),
+        ])
+            .then(([kpis, declinedOrRejected]) => {
+                if (cancelled) return;
+                setCustomOrderKpis({
+                    totalRequests: kpis.total_custom_orders,
+                    pendingReview: kpis.active_orders,
+                    awaitingConfirmation: kpis.pending_info,
+                    buyerConfirmed: kpis.completed_orders,
+                    declinedOrRejected: declinedOrRejected.total,
+                });
+            })
             .catch(() => {});
-    }, []);
+        return () => {
+            cancelled = true;
+        };
+    }, [isCustomOrdersView, customOrdersRefreshToken]);
+
+    // GET /seller/orders/kpis has no channel/segment query param — refetched on segment switch in
+    // case the backend scopes it implicitly, and whenever a returns action could change the counts.
+    useEffect(() => {
+        if (isCustomOrdersView) return;
+        let cancelled = false;
+        getOrderKpis()
+            .then((kpis) => {
+                if (!cancelled) setOrderKpis(kpis);
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, [isCustomOrdersView, segment, returnsRefreshToken]);
 
     const handleOrderClick = useCallback(
         (orderId: string) => {
@@ -57,6 +717,69 @@ export function OrderManagementSegmentClient({
         },
         [router, segment]
     );
+
+    const handleInvoice = useCallback((orderId: string) => {
+        getOrderInvoice(orderId)
+            .then((html) => {
+                const win = window.open("", "_blank");
+                if (!win) return;
+                win.document.open();
+                win.document.write(html);
+                win.document.close();
+            })
+            .catch(() => {});
+    }, []);
+
+    const handleInvoicePdf = useCallback((orderId: string) => {
+        getOrderInvoicePdf(orderId)
+            .then((blob) => downloadBlob(blob, `invoice-${orderId}.pdf`))
+            .catch((err: unknown) => {
+                toast.error("Could not download invoice", {
+                    description: err instanceof Error ? err.message : "Please try again.",
+                });
+            });
+    }, []);
+
+    const handleToggleOrderExpand = useCallback((orderId: string) => {
+        setExpandedOrderIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(orderId)) next.delete(orderId);
+            else next.add(orderId);
+            return next;
+        });
+    }, []);
+
+    const openExchangeDetails = useCallback((exchangeId: string) => {
+        setExchangeDetailsOpen(true);
+        setExchangeDetailsData(null);
+
+        getExchangeOrder(exchangeId)
+            .then((r) =>
+                setExchangeDetailsData({
+                    exchangeId: r.exchange_id,
+                    returnId: r.return_id,
+                    originalOrderId: r.original_order_id,
+                    customerName: r.customer_name ?? "—",
+                    itemName: r.item_name,
+                    sku: r.sku ?? null,
+                    replacementItemName: r.replacement_item_name,
+                    replacementSku: r.replacement_sku ?? null,
+                    status: r.status,
+                    trackingNumber: r.tracking_number,
+                    courier: r.courier,
+                    estimatedDeliveryAt: r.estimated_delivery_at,
+                    dispatchedAt: r.dispatched_at,
+                    deliveredAt: r.delivered_at,
+                    extraPaymentDue: r.extra_payment_due,
+                    refundDue: r.refund_due,
+                    settlementStatus: r.settlement_status,
+                    createdAt: r.created_at,
+                })
+            )
+            .catch(() => {
+                setExchangeDetailsOpen(false);
+            });
+    }, []);
 
     const {
         returnDetailsOpen,
@@ -66,90 +789,72 @@ export function OrderManagementSegmentClient({
         customOrderDetailsOpen,
         setCustomOrderDetailsOpen,
         customOrderDetailsData,
-        setCustomOrderDetailsData,
         openCustomOrderDetails,
         openReturnDetails,
-    } = useOrderManagementSegmentModals();
+        handleApproveCustomOrderRequest,
+        handleRejectCustomOrderRequest,
+        handleBuyerConfirmCustomOrderRequest,
+        handleAddCustomOrderNote,
+        handleEditCustomOrderNote,
+        handleDeleteCustomOrderNote,
+        handleApproveRequestReturn,
+        handleAddTrackingReturn,
+        handleReceiveReturn,
+        handleQcPassReturn,
+        handleQcFailReturn,
+        handleConfirmDefectiveReturn,
+        handleRejectReturn,
+        handleShipBackReturn,
+    } = useOrderManagementSegmentModals({
+        onCustomOrderChanged: () => setCustomOrdersRefreshToken((t) => t + 1),
+        onReturnChanged: () => setReturnsRefreshToken((t) => t + 1),
+    });
 
-    const { customOrdersColumns, allOrdersColumns, b2bAllOrdersColumns, returnRequestsColumns } =
-        useOrderManagementSegmentColumns({
-            openCustomOrderDetails,
-            handleOrderClick,
-            openReturnDetails,
-        });
+    const {
+        customOrdersColumns,
+        allOrdersColumns,
+        b2bAllOrdersColumns,
+        returnRequestsColumns,
+        exchangeColumns,
+        cancellationColumns,
+        cancelledItemsColumns,
+    } = useOrderManagementSegmentColumns({
+        segment,
+        openCustomOrderDetails,
+        handleOrderClick,
+        openReturnDetails,
+        openExchangeDetails,
+        handleInvoice,
+        handleInvoicePdf,
+        expandedOrderIds,
+        onToggleOrderExpand: handleToggleOrderExpand,
+        onExchangeChanged: () => setExchangeRefreshToken((t) => t + 1),
+        onCancellationChanged: () => setCancellationsRefreshToken((t) => t + 1),
+        onCancelledItemsChanged: () => setCancelledItemsRefreshToken((t) => t + 1),
+        onCustomOrderChanged: () => setCustomOrdersRefreshToken((t) => t + 1),
+    });
 
-    const [orderView, setOrderView] = useState<"all" | "returns">("all");
-    const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
-    const [returnStatusFilter, setReturnStatusFilter] = useState<"all" | ReturnStatus>("all");
-    const [customOrderStatusFilter, setCustomOrderStatusFilter] = useState<"all" | CustomOrderStatus>(
-        "all"
-    );
-    const [dateFilter, setDateFilter] = useState("all_dates");
-    const [inventoryTypeFilter, setInventoryTypeFilter] = useState<"all" | ProductInventoryType>("all");
-    const [paymentFilter] = useState<"all" | PaymentStatus>("all");
-    const [searchQuery, setSearchQuery] = useState("");
-    const [selectedRows, setSelectedRows] = useState<Set<AllOrder>>(() => new Set());
-    const [bulkActionOpen, setBulkActionOpen] = useState(false);
+    // "Orders" is already filtered/sorted/paginated server-side, including the Orders subtab
+    // (sent as pipeline_status — see ORDER_SUBTAB_TO_PIPELINE_STATUS); inventory type is the only
+    // filter left client-side, since it has no backend param yet.
+    const allViewOrders = useMemo(() => {
+        if (segment === "b2b" && inventoryTypeFilter !== "all") {
+            return orders.filter((o) => o.inventoryType === inventoryTypeFilter);
+        }
+        return orders;
+    }, [orders, segment, inventoryTypeFilter]);
 
-    const segmentOrders = useMemo(
-        () => orders.filter((o) => (segment === "b2b" ? o.type === "B2B" : o.type === "B2C")),
-        [orders, segment]
-    );
-
-    const segmentOrdersForKpis = useMemo(
-        () => sliceOrdersForKpis(segmentOrders, segment),
-        [segment, segmentOrders]
-    );
-
-    const kpiStats = useMemo(() => computeKpiStats(segmentOrdersForKpis), [segmentOrdersForKpis]);
-
-    const filteredOrders = useMemo(
-        () =>
-            filterSegmentOrders({
-                segmentOrders,
-                segment,
-                orderView,
-                customOrderStatusFilter,
-                returnStatusFilter,
-                statusFilter,
-                paymentFilter,
-                inventoryTypeFilter,
-                searchQuery,
-            }),
-        [
-            segmentOrders,
-            segment,
-            orderView,
-            customOrderStatusFilter,
-            returnStatusFilter,
-            statusFilter,
-            paymentFilter,
-            inventoryTypeFilter,
-            searchQuery,
-        ]
-    );
-
-    const pagination = usePagination({ totalCount: filteredOrders.length, pageSize: 10 });
-    const setPageRef = useRef(pagination.setPage);
-
-    useEffect(() => {
-        setPageRef.current = pagination.setPage;
-    }, [pagination.setPage]);
-
-    const paginatedOrders = useMemo(
-        () => filteredOrders.slice(pagination.startIndex, pagination.endIndex),
-        [filteredOrders, pagination.startIndex, pagination.endIndex]
-    );
+    // Returns is fully server-driven: filters (status/search/date) and pagination (page/limit) are
+    // sent as query params — see the listReturns effect above. Custom Orders/Exchange/Cancellation
+    // are distinct API-backed resources, fetched/rendered via their own dedicated DataTable below,
+    // not routed through this pipeline at all.
+    const displayedOrders = showsReturnsList ? returnOrders : allViewOrders;
 
     const handleSelectAll = useCallback(
         (selected: boolean) => {
-            if (selected) {
-                setSelectedRows(new Set(paginatedOrders));
-            } else {
-                setSelectedRows(new Set());
-            }
+            setSelectedRows(selected ? new Set(displayedOrders) : new Set());
         },
-        [paginatedOrders]
+        [displayedOrders]
     );
 
     const handleSelectRow = useCallback((row: AllOrder, selected: boolean) => {
@@ -164,35 +869,45 @@ export function OrderManagementSegmentClient({
         });
     }, []);
 
-    useEffect(() => {
-        setPageRef.current(1);
-    }, [
-        orderView,
-        statusFilter,
-        returnStatusFilter,
-        customOrderStatusFilter,
-        dateFilter,
-        inventoryTypeFilter,
-        segment,
-    ]);
-
     const columnSets = useMemo(
         () => ({
-            customOrdersColumns,
             allOrdersColumns,
             b2bAllOrdersColumns,
             returnRequestsColumns,
         }),
-        [customOrdersColumns, allOrdersColumns, b2bAllOrdersColumns, returnRequestsColumns]
+        [allOrdersColumns, b2bAllOrdersColumns, returnRequestsColumns]
     );
 
     const columns = useMemo(
-        () => selectSegmentTableColumns(orderView, segment, columnSets),
-        [orderView, segment, columnSets]
+        () => selectSegmentTableColumns(activeTab, segment, columnSets),
+        [activeTab, segment, columnSets]
     );
 
-    const viewCopy = useMemo(() => getSegmentViewCopy(segment, orderView), [segment, orderView]);
-    const orderViewToggleLabels = useMemo(() => getOrderViewToggleLabels(segment), [segment]);
+    const viewCopy = useMemo(() => getSegmentViewCopy(segment, activeTab), [segment, activeTab]);
+    const tabs = useMemo(() => getOrderManagementTabs(segment), [segment]);
+
+    // Scoped Status/Type filter options for the toolbar — computed per active tab (and, for
+    // Status, per sub-tab too) so the toolbar itself stays generic/tab-agnostic.
+    const toolbarStatusFilterOptions = useMemo(() => {
+        if (showsOrdersList) return getOrderStatusFilterOptions(orderSubtab);
+        if (isExchangeView) return getExchangeStatusFilterOptions(exchangeSubtab);
+        if (showsReturnsList) return getReturnStatusFilterOptions(returnSubtab);
+        if (isCustomOrdersView) return CUSTOM_ORDER_STATUS_FILTER_OPTIONS;
+        return undefined;
+    }, [showsOrdersList, isExchangeView, showsReturnsList, isCustomOrdersView, orderSubtab, exchangeSubtab, returnSubtab]);
+
+    const toolbarTypeFilterOptions = useMemo(() => {
+        if (showsReturnsList) return RETURN_TYPE_FILTER_OPTIONS;
+        if (showsCancellationFilters) return CANCELLATION_TYPE_FILTER_OPTIONS;
+        return undefined;
+    }, [showsReturnsList, showsCancellationFilters]);
+
+    const showsToolbarPaymentStatusFilter =
+        showsOrdersList ||
+        isExchangeView ||
+        isCustomOrdersView ||
+        showsCancellationFilters ||
+        (showsReturnsList && RETURN_SUBTABS_WITH_PAYMENT_FILTER.has(returnSubtab));
 
     const clearBulkSelection = useCallback(() => {
         setSelectedRows(new Set());
@@ -200,18 +915,19 @@ export function OrderManagementSegmentClient({
 
     const handleBulkExecute = useBulkActionExecuteHandler(clearBulkSelection);
 
-    const handleSelectAllOrderView = useCallback(() => {
+    const handleTabChange = useCallback((tabId: string) => {
         setSelectedRows(new Set());
-        setReturnStatusFilter("all");
-        setCustomOrderStatusFilter("all");
-        setOrderView("all");
-    }, []);
-
-    const handleSelectReturnsOrderView = useCallback(() => {
-        setSelectedRows(new Set());
-        setReturnStatusFilter("all");
-        setCustomOrderStatusFilter("all");
-        setOrderView("returns");
+        setExpandedOrderIds(new Set());
+        setReturnSubtab("all");
+        setCustomOrderSubtab("all");
+        setOrderSubtab("all");
+        setExchangeSubtab("all");
+        // Status/Type option lists are tab-specific — a selection made on one tab wouldn't be a
+        // valid choice on another (Payment Status is left as-is; its 3-value vocabulary is the
+        // same everywhere, matching how `dateFilter` already persists across tab switches).
+        setGenericStatusFilter([]);
+        setTypeFilter([]);
+        setActiveTab(tabId as OrderManagementTabId);
     }, []);
 
     return (
@@ -231,12 +947,33 @@ export function OrderManagementSegmentClient({
                     if (!open) setReturnDetailsData(null);
                 }}
                 returnDetailsData={returnDetailsData}
-                customOrderDetailsOpen={customOrderDetailsOpen}
-                onCustomOrderDetailsOpenChange={(open) => {
-                    setCustomOrderDetailsOpen(open);
-                    if (!open) setCustomOrderDetailsData(null);
+                onApproveRequestReturn={handleApproveRequestReturn}
+                onAddTrackingReturn={handleAddTrackingReturn}
+                onReceiveReturn={handleReceiveReturn}
+                onQcPassReturn={handleQcPassReturn}
+                onQcFailReturn={handleQcFailReturn}
+                onConfirmDefectiveReturn={handleConfirmDefectiveReturn}
+                onRejectReturn={handleRejectReturn}
+                onShipBackReturn={handleShipBackReturn}
+            />
+            <ExchangeDetailsModal
+                open={exchangeDetailsOpen}
+                onOpenChange={(open) => {
+                    setExchangeDetailsOpen(open);
+                    if (!open) setExchangeDetailsData(null);
                 }}
-                customOrderDetailsData={customOrderDetailsData}
+                data={exchangeDetailsData}
+            />
+            <CustomOrderDetailsModal
+                open={customOrderDetailsOpen}
+                onOpenChange={setCustomOrderDetailsOpen}
+                data={customOrderDetailsData}
+                onApprove={handleApproveCustomOrderRequest}
+                onReject={handleRejectCustomOrderRequest}
+                onBuyerConfirm={handleBuyerConfirmCustomOrderRequest}
+                onAddNote={handleAddCustomOrderNote}
+                onEditNote={handleEditCustomOrderNote}
+                onDeleteNote={handleDeleteCustomOrderNote}
             />
             <Breadcrumb
                 items={[
@@ -252,55 +989,252 @@ export function OrderManagementSegmentClient({
                     </h1>
                     <p className="text-[11px] text-muted-foreground min-[1920px]:text-sm">{viewCopy.pageSubtitle}</p>
                 </div>
-                <OrderViewToggle
-                    orderView={orderView}
-                    labels={orderViewToggleLabels}
-                    onSelectAllView={handleSelectAllOrderView}
-                    onSelectReturnsView={handleSelectReturnsOrderView}
+                <TabList
+                    tabs={tabs}
+                    value={activeTab}
+                    onValueChange={handleTabChange}
+                    variant="muted"
+                    className={ORDER_TAB_LIST_CLASS}
+                    tabClassName={ORDER_TAB_ITEM_CLASS}
+                    aria-label="Order management tabs"
                 />
             </div>
 
-            <OrderManagementKpiGrid stats={kpiStats} />
+            {activeTab === "orders" ? (
+                <TabList
+                    tabs={[...ORDERS_TAB_SUBTABS]}
+                    value={orderSubtab}
+                    onValueChange={(id) => {
+                        setOrderSubtab(id as OrderSubtabId);
+                        setGenericStatusFilter([]);
+                    }}
+                    variant="segmented"
+                    className={ORDER_SUBTAB_LIST_CLASS}
+                    aria-label="Order subtabs"
+                />
+            ) : isExchangeView ? (
+                <TabList
+                    tabs={[...ORDER_SUBTABS]}
+                    value={exchangeSubtab}
+                    onValueChange={(id) => {
+                        setExchangeSubtab(id as OrderSubtabId);
+                        setGenericStatusFilter([]);
+                    }}
+                    variant="segmented"
+                    className={ORDER_SUBTAB_LIST_CLASS}
+                    aria-label="Exchange subtabs"
+                />
+            ) : showsReturnsList ? (
+                <TabList
+                    tabs={[...RETURN_SUBTABS]}
+                    value={returnSubtab}
+                    onValueChange={(id) => {
+                        setReturnSubtab(id as ReturnSubtabId);
+                        setGenericStatusFilter([]);
+                    }}
+                    variant="segmented"
+                    className={ORDER_SUBTAB_LIST_CLASS}
+                    aria-label="Return subtabs"
+                />
+            ) : isCancellationView ? (
+                <TabList
+                    tabs={[...CANCELLATION_SUBTABS]}
+                    value={cancellationSubtab}
+                    onValueChange={(id) => setCancellationSubtab(id as CancellationSubtabId)}
+                    variant="segmented"
+                    className={ORDER_SUBTAB_LIST_CLASS}
+                    aria-label="Cancellation subtabs"
+                />
+            ) : isCustomOrdersView ? (
+                <TabList
+                    tabs={[...CUSTOM_ORDER_SUBTABS]}
+                    value={customOrderSubtab}
+                    onValueChange={(id) => {
+                        setCustomOrderSubtab(id as CustomOrderSubtabId);
+                        setGenericStatusFilter([]);
+                    }}
+                    variant="segmented"
+                    className={ORDER_SUBTAB_LIST_CLASS}
+                    aria-label="Custom order subtabs"
+                />
+            ) : null}
+
+            {isCustomOrdersView ? (
+                <CustomOrdersKpiGrid stats={customOrderKpis} />
+            ) : (
+                <OrderManagementKpiGrid stats={orderKpis} />
+            )}
 
             <Card className="min-w-0 overflow-hidden">
                 <OrdersCardToolbar
                     segment={segment}
-                    orderView={orderView}
+                    activeTab={activeTab}
                     viewCopy={viewCopy}
                     searchQuery={searchQuery}
                     onSearchQueryChange={setSearchQuery}
-                    statusFilter={statusFilter}
-                    onStatusFilterChange={setStatusFilter}
-                    returnStatusFilter={returnStatusFilter}
-                    onReturnStatusFilterChange={setReturnStatusFilter}
-                    customOrderStatusFilter={customOrderStatusFilter}
-                    onCustomOrderStatusFilterChange={setCustomOrderStatusFilter}
                     dateFilter={dateFilter}
                     onDateFilterChange={setDateFilter}
                     inventoryTypeFilter={inventoryTypeFilter}
                     onInventoryTypeFilterChange={setInventoryTypeFilter}
                     selectedRowCount={selectedRows.size}
                     onBulkActionClick={() => setBulkActionOpen(true)}
+                    statusFilterOptions={toolbarStatusFilterOptions}
+                    statusFilter={genericStatusFilter}
+                    onStatusFilterChange={setGenericStatusFilter}
+                    typeFilterOptions={toolbarTypeFilterOptions}
+                    typeFilter={typeFilter}
+                    onTypeFilterChange={setTypeFilter}
+                    showPaymentStatusFilter={showsToolbarPaymentStatusFilter}
+                    paymentStatusFilter={paymentStatusFilter}
+                    onPaymentStatusFilterChange={setPaymentStatusFilter}
                 />
 
                 <CardContent className="min-w-0 bg-[#F9FAF9] px-1.5 pt-2 sm:px-3 sm:pt-3 lg:px-4 min-[1920px]:px-6">
-                    <DataTable
-                        columns={columns}
-                        data={paginatedOrders}
-                        striped
-                        emptyMessage={viewCopy.emptyMessage}
-                        selectedRows={orderView === "all" && segment === "b2b" ? selectedRows : undefined}
-                        onSelectAll={orderView === "all" && segment === "b2b" ? handleSelectAll : undefined}
-                        onSelectRow={orderView === "all" && segment === "b2b" ? handleSelectRow : undefined}
-                        pagination={{
-                            currentPage: pagination.currentPage,
-                            totalPages: pagination.totalPages,
-                            onPageChange: pagination.setPage,
-                            pageSize: pagination.pageSize,
-                            onPageSizeChange: pagination.setPageSize,
-                            totalRowCount: filteredOrders.length,
-                        }}
-                    />
+                    {isCustomOrdersView ? (
+                        loadingCustomOrders ? (
+                            <div className="flex items-center justify-center py-16">
+                                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                            </div>
+                        ) : (
+                            <DataTable
+                                columns={customOrdersColumns}
+                                data={customOrderRequests}
+                                striped
+                                emptyMessage={viewCopy.emptyMessage}
+                                pagination={{
+                                    currentPage: customOrdersPagination.currentPage,
+                                    totalPages: customOrdersPagination.totalPages,
+                                    onPageChange: customOrdersPagination.setPage,
+                                    pageSize: customOrdersPagination.pageSize,
+                                    onPageSizeChange: customOrdersPagination.setPageSize,
+                                    totalRowCount: customOrdersTotal,
+                                }}
+                            />
+                        )
+                    ) : isExchangeView ? (
+                        loadingExchange ? (
+                            <div className="flex items-center justify-center py-16">
+                                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                            </div>
+                        ) : (
+                            <DataTable
+                                columns={exchangeColumns}
+                                data={displayedExchangeOrders}
+                                striped
+                                emptyMessage={viewCopy.emptyMessage}
+                                pagination={{
+                                    currentPage: exchangePagination.currentPage,
+                                    totalPages: exchangePagination.totalPages,
+                                    onPageChange: exchangePagination.setPage,
+                                    pageSize: exchangePagination.pageSize,
+                                    onPageSizeChange: exchangePagination.setPageSize,
+                                    totalRowCount: exchangeTotal,
+                                }}
+                            />
+                        )
+                    ) : isCancellationView ? (
+                        cancellationSubtab === "items" ? (
+                            loadingCancelledItems ? (
+                                <div className="flex items-center justify-center py-16">
+                                    <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                                </div>
+                            ) : (
+                                <DataTable
+                                    columns={cancelledItemsColumns}
+                                    data={displayedCancelledItems}
+                                    striped
+                                    emptyMessage="No cancelled items match your filters"
+                                    pagination={{
+                                        currentPage: cancelledItemsPagination.currentPage,
+                                        totalPages: cancelledItemsPagination.totalPages,
+                                        onPageChange: cancelledItemsPagination.setPage,
+                                        pageSize: cancelledItemsPagination.pageSize,
+                                        onPageSizeChange: cancelledItemsPagination.setPageSize,
+                                        totalRowCount: cancelledItemsTotal,
+                                    }}
+                                />
+                            )
+                        ) : loadingCancellations ? (
+                            <div className="flex items-center justify-center py-16">
+                                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                            </div>
+                        ) : (
+                            <DataTable
+                                columns={cancellationColumns}
+                                data={displayedCancellations}
+                                striped
+                                emptyMessage={viewCopy.emptyMessage}
+                                pagination={{
+                                    currentPage: cancellationsPagination.currentPage,
+                                    totalPages: cancellationsPagination.totalPages,
+                                    onPageChange: cancellationsPagination.setPage,
+                                    pageSize: cancellationsPagination.pageSize,
+                                    onPageSizeChange: cancellationsPagination.setPageSize,
+                                    totalRowCount: cancellationsTotal,
+                                }}
+                            />
+                        )
+                    ) : (showsOrdersList ? loading : loadingReturns) ? (
+                        <div className="flex items-center justify-center py-16">
+                            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : (
+                        <DataTable
+                            columns={columns}
+                            data={displayedOrders}
+                            striped
+                            emptyMessage={viewCopy.emptyMessage}
+                            selectedRows={activeTab === "orders" && segment === "b2b" ? selectedRows : undefined}
+                            onSelectAll={activeTab === "orders" && segment === "b2b" ? handleSelectAll : undefined}
+                            onSelectRow={activeTab === "orders" && segment === "b2b" ? handleSelectRow : undefined}
+                            sortConfig={
+                                showsOrdersList ? { key: SORT_BY_TO_COLUMN_KEY[sortBy], direction: sortDir } : undefined
+                            }
+                            onSortChange={showsOrdersList ? handleSortChange : undefined}
+                            getRowId={showsOrdersList ? (row) => row.id : undefined}
+                            expandedRowIds={showsOrdersList ? expandedOrderIds : undefined}
+                            renderExpandedRow={
+                                showsOrdersList ? (row) => <OrderShipmentsExpandedRow orderId={row.id} /> : undefined
+                            }
+                            pagination={
+                                showsReturnsList
+                                    ? {
+                                          currentPage: returnsPage,
+                                          totalPages: returnsTotalPages,
+                                          onPageChange: setReturnsPage,
+                                          pageSize: returnsPageSize,
+                                          onPageSizeChange: (size) => {
+                                              setReturnsPageSize(size);
+                                              setReturnsPage(1);
+                                          },
+                                          totalRowCount: returnsTotal,
+                                      }
+                                    : undefined
+                            }
+                        />
+                    )}
+                    {showsOrdersList && !loading ? (
+                        <CursorPager
+                            pageNumber={pageIndex + 1}
+                            hasPrev={pageIndex > 0}
+                            hasNext={hasNext}
+                            onPrev={() => setPageIndex((i) => Math.max(0, i - 1))}
+                            onNext={() => {
+                                setCursorHistory((prev) =>
+                                    prev.length === pageIndex + 1 ? [...prev, nextCursor ?? undefined] : prev
+                                );
+                                setPageIndex((i) => i + 1);
+                            }}
+                            pageSize={pageSize}
+                            onPageSizeChange={(size) => {
+                                setPageSize(size);
+                                setPageIndex(0);
+                                setCursorHistory([undefined]);
+                                setNextCursor(null);
+                            }}
+                            rowCount={displayedOrders.length}
+                        />
+                    ) : null}
                 </CardContent>
             </Card>
         </div>

@@ -1,17 +1,11 @@
-import type { Dispatch, SetStateAction } from "react";
 import { useState } from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import type { ReelAudience } from "@/lib/api/reels";
-import type { CmsReel } from "@/lib/data/cms";
+import { LOCKED_REEL_STATUSES, type CmsReel, type ReelStatus } from "@/lib/data/cms";
 import { CmsReelIconClose, CmsReelIconUpload } from "../cms-reels-icons";
 import { EDIT_FLOW_STEPS } from "../../lib/constants";
-import {
-  parseDurationToSeconds,
-  reelDisplayFileName,
-  type CaptionDraftState,
-} from "../../lib/utils";
-import { EditReelCaptionsStep } from "./EditReelCaptionsStep";
+import { parseDurationToSeconds, reelDisplayFileName } from "../../lib/utils";
 import { EditReelCropStep } from "./EditReelCropStep";
 import { EditReelDialogFooter } from "./EditReelDialogFooter";
 import { EditReelPreviewAside } from "./EditReelPreviewAside";
@@ -27,8 +21,6 @@ export interface EditReelDialogProps {
   onStepClick: (index: number) => void;
   cropRange: [number, number];
   onCropRangeChange: (range: [number, number]) => void;
-  captionDraft: CaptionDraftState;
-  setCaptionDraft: Dispatch<SetStateAction<CaptionDraftState>>;
   // Tag Products step
   reelTitle: string;
   onReelTitleChange: (value: string) => void;
@@ -45,12 +37,22 @@ export interface EditReelDialogProps {
   onThumbnailFileSelected: (file: File) => void;
   // Shared
   videoSrc?: string | null;
-  showCaptionOnReelPreview: boolean;
   isSubmitting: boolean;
+  /** True while uploading a brand-new reel — Schedule for Later isn't offered at creation time. */
+  isNewUploadFlow: boolean;
   onSaveDraft: () => void;
   onScheduleClick: () => void;
   onPublish: () => void;
   onNextStep: () => void;
+}
+
+/** Rightmost footer button's label on the final step — varies with the reel's current status. */
+function getSubmitLabel(status: ReelStatus | undefined, isNewUploadFlow: boolean): string {
+  if (isNewUploadFlow || !status || status === "draft" || status === "rejected") {
+    return "Send for Approval";
+  }
+  if (LOCKED_REEL_STATUSES.includes(status)) return "Save & Resubmit";
+  return "Save Changes"; // pending, resubmitted — already in review, no status change on save
 }
 
 export function EditReelDialog({
@@ -61,8 +63,6 @@ export function EditReelDialog({
   onStepClick,
   cropRange,
   onCropRangeChange,
-  captionDraft,
-  setCaptionDraft,
   reelTitle,
   onReelTitleChange,
   reelDescription,
@@ -76,8 +76,8 @@ export function EditReelDialog({
   isUploadingThumbnail,
   onThumbnailFileSelected,
   videoSrc,
-  showCaptionOnReelPreview,
   isSubmitting,
+  isNewUploadFlow,
   onSaveDraft,
   onScheduleClick,
   onPublish,
@@ -88,7 +88,12 @@ export function EditReelDialog({
     reel?.status === "rejected" || reel?.status === "resubmitted"
       ? (reel.rejection_reason ?? null)
       : null;
+  // Server-driven — true only when status === "approved". Never hardcode the status check here.
+  const canSchedule = !isNewUploadFlow && (reel?.canSchedule ?? false);
+  const canSaveDraft = isNewUploadFlow || !reel || !LOCKED_REEL_STATUSES.includes(reel.status);
+  const submitLabel = getSubmitLabel(reel?.status, isNewUploadFlow);
   const [feedbackOpen, setFeedbackOpen] = useState(true);
+  const lastStep = EDIT_FLOW_STEPS.length - 1;
 
   return (
     <Dialog open={open} onOpenChange={isSubmitting ? undefined : onOpenChange}>
@@ -127,8 +132,6 @@ export function EditReelDialog({
             <div className="grid min-h-0 grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] md:min-h-[min(70vh,560px)]">
               <EditReelPreviewAside
                 durationSeconds={durationSeconds}
-                showCaptionOnReelPreview={showCaptionOnReelPreview}
-                captionDraft={captionDraft}
                 taggedProducts={taggedProducts}
                 videoSrc={videoSrc}
               />
@@ -166,11 +169,6 @@ export function EditReelDialog({
                       onCropRangeChange={onCropRangeChange}
                     />
                   ) : editStep === 1 ? (
-                    <EditReelCaptionsStep
-                      captionDraft={captionDraft}
-                      onCaptionDraftChange={setCaptionDraft}
-                    />
-                  ) : editStep === 2 ? (
                     <EditReelTagProductsStep
                       reelTitle={reelTitle}
                       onReelTitleChange={onReelTitleChange}
@@ -182,7 +180,7 @@ export function EditReelDialog({
                       taggedProducts={taggedProducts}
                       onTaggedProductsChange={onTaggedProductsChange}
                     />
-                  ) : editStep === 3 ? (
+                  ) : editStep === 2 ? (
                     <EditReelThumbnailStep
                       thumbnailUrl={activeThumbnailUrl}
                       isUploadingThumbnail={isUploadingThumbnail}
@@ -196,8 +194,12 @@ export function EditReelDialog({
                 </div>
 
                 <EditReelDialogFooter
-                  editStep={editStep}
+                  isLastStep={editStep === lastStep}
                   isSubmitting={isSubmitting}
+                  isNewUploadFlow={isNewUploadFlow}
+                  canSchedule={canSchedule}
+                  canSaveDraft={canSaveDraft}
+                  submitLabel={submitLabel}
                   onSaveDraft={onSaveDraft}
                   onScheduleClick={onScheduleClick}
                   onPublish={onPublish}

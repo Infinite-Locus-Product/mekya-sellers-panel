@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { KPICard } from "@/components/shared/KPICard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { Clock } from "lucide-react";
+import { Clock, PackageCheck, XCircle } from "lucide-react";
 import { KpiSaleTrendIcon, KpiOrdersBagIcon, KpiReturnUndoIcon, KpiAverageOrderValueIcon } from "@/assets/icons";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import type { AllOrder } from "@/lib/tableTypes";
@@ -17,8 +17,23 @@ import { AverageOrderValueModal } from "@/components/modals/average-order-value/
 import { TotalOrdersAnalyticsModal } from "@/components/modals/total-orders/TotalOrdersAnalyticsModal";
 import { ReturnOrdersAnalyticsModal } from "@/components/modals";
 import { AppSelect } from "@/components/shared/AppSelect";
+import { PieChart, type ChartDataPoint } from "@/components/analytics/PieChart";
+import { getSellerAnalytics, type SellerAnalytics } from "@/lib/api/analytics";
+import { formatMoney, formatNumber } from "@/lib/utils";
+import { presetToDateRange } from "@/lib/dateRangePreset";
 
 const INITIAL_PAGE_SIZE = 10;
+
+/** Pie-slice colors keyed by the exact status strings /seller/analytics returns. */
+const ORDER_STATUS_COLORS: Record<string, string> = {
+  Fulfilled: "#16A34A",
+  Unfulfilled: "#CA8A04",
+  "Partially Fulfilled": "#0F766E",
+  Unconfirmed: "#2C4FBF",
+  Cancelled: "#DC2626",
+  Returned: "#C2650C",
+};
+const FALLBACK_STATUS_COLOR = "#71717A";
 
 export interface DashboardClientProps {
   initialOrders: AllOrder[];
@@ -31,6 +46,34 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
   const [isReturnOrdersModalOpen, setIsReturnOrdersModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateRange, setDateRange] = useState("last_30_days");
+  const [channelFilter, setChannelFilter] = useState("all");
+  const [analytics, setAnalytics] = useState<SellerAnalytics | null>(null);
+
+  useEffect(() => {
+    const { date_from, date_to } = presetToDateRange(dateRange);
+    getSellerAnalytics({
+      ...(channelFilter === "b2b" || channelFilter === "b2c" ? { channel: channelFilter } : {}),
+      ...(date_from ? { date_from } : {}),
+      ...(date_to ? { date_to } : {}),
+    })
+      .then(setAnalytics)
+      .catch(() => {});
+  }, [dateRange, channelFilter]);
+
+  const kpis = analytics?.kpis;
+  const orderStatusBreakdown = analytics?.order_status_breakdown ?? [];
+  const returnedOrders = orderStatusBreakdown.find((s) => s.status === "Returned")?.count ?? 0;
+  const averageOrderValue =
+    kpis && kpis.total_orders > 0
+      ? { amount: kpis.total_revenue.amount / kpis.total_orders, currency: kpis.total_revenue.currency }
+      : null;
+  const orderStatusChartData: ChartDataPoint[] = orderStatusBreakdown.map((s) => ({
+    label: s.status,
+    value: s.count,
+  }));
+  const orderStatusChartColors = orderStatusBreakdown.map(
+    (s) => ORDER_STATUS_COLORS[s.status] ?? FALLBACK_STATUS_COLOR
+  );
 
   const filteredOrders = useMemo(() => {
     if (statusFilter === "all") return initialOrders;
@@ -140,63 +183,118 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
       />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-medium text-foreground mb-2">Key Performance Summary</h1>
-        <div className="flex items-center gap-2 whitespace-nowrap">
-          Date range : <AppSelect
-            placeholder="Last 30 days"
-            value={dateRange}
-            onChange={(value: string) => setDateRange(value)}
-            options={[
-              { label: "Today", value: "today" },
-              { label: "Yesterday", value: "yesterday" },
-              { label: "Last 7 days", value: "last_7_days" },
-              { label: "Last 30 days", value: "last_30_days" },
-              { label: "This Week", value: "this_week" },
-              { label: "Last Week", value: "last_week" },
-              { label: "This Month", value: "this_month" },
-              { label: "Last Month", value: "last_month" },
-            ]}
-          />
+        <div className="flex items-center gap-4 whitespace-nowrap">
+          <div className="flex items-center gap-2">
+            Channel : <AppSelect
+              placeholder="All Channels"
+              value={channelFilter}
+              onChange={(value: string) => setChannelFilter(value)}
+              options={[
+                { label: "All Channels", value: "all" },
+                { label: "B2B", value: "b2b" },
+                { label: "B2C", value: "b2c" },
+              ]}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            Date range : <AppSelect
+              placeholder="Last 30 days"
+              value={dateRange}
+              onChange={(value: string) => setDateRange(value)}
+              options={[
+                { label: "Today", value: "today" },
+                { label: "Yesterday", value: "yesterday" },
+                { label: "Last 7 days", value: "last_7_days" },
+                { label: "Last 30 days", value: "last_30_days" },
+                { label: "This Week", value: "this_week" },
+                { label: "Last Week", value: "last_week" },
+                { label: "This Month", value: "this_month" },
+                { label: "Last Month", value: "last_month" },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <KPICard
           title="Total Sales"
-          value="₹50,000"
-          change="+12.5% From Previous Period"
-          changeType="positive"
+          value={kpis ? formatMoney(kpis.total_revenue) : "—"}
           icon={<KpiSaleTrendIcon />}
           onClick={() => setIsSalesModalOpen(true)}
           kpiType={1}
         />
         <KPICard
           title="Average Order Value"
-          value="1,546"
-          change="+12.5% From Previous Period"
-          changeType="positive"
+          value={averageOrderValue ? formatMoney(averageOrderValue) : "—"}
           icon={<KpiAverageOrderValueIcon />}
           onClick={() => setIsAverageOrderValueModalOpen(true)}
           kpiType={2}
         />
         <KPICard
           title="Total Orders"
-          value="580"
-          change="+102% From Previous Period"
-          changeType="positive"
+          value={kpis ? formatNumber(kpis.total_orders) : "—"}
           icon={<KpiOrdersBagIcon />}
           onClick={() => setIsTotalOrdersModalOpen(true)}
           kpiType={3}
         />
         <KPICard
           title="Return Orders"
-          value="248"
-          change="+12.5% From Previous Period"
-          changeType="positive"
+          value={analytics ? formatNumber(returnedOrders) : "—"}
           icon={<KpiReturnUndoIcon />}
           onClick={() => setIsReturnOrdersModalOpen(true)}
           kpiType={4}
         />
       </div>
+
+      <Card className="overflow-hidden">
+        <CardContent className="p-4 sm:p-6">
+          <div className="mb-4">
+            <CardTitle className="text-base">Order Status Overview</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Breakdown of orders by fulfillment status for the selected period
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr] lg:items-center">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <KPICard
+                title="Pending Orders"
+                value={kpis ? formatNumber(kpis.pending_orders) : "—"}
+                icon={<Clock className="text-[#854D0E]" />}
+                variant="warning"
+              />
+              <KPICard
+                title="Delivered Orders"
+                value={kpis ? formatNumber(kpis.delivered_orders) : "—"}
+                icon={<PackageCheck className="text-[#016630]" />}
+                variant="success"
+              />
+              <KPICard
+                title="Cancelled Orders"
+                value={kpis ? formatNumber(kpis.cancelled_orders) : "—"}
+                icon={<XCircle className="text-[#660101]" />}
+                variant="error"
+              />
+            </div>
+            {orderStatusChartData.length > 0 ? (
+              <PieChart
+                data={orderStatusChartData}
+                colors={orderStatusChartColors}
+                layout="chart-left"
+                labelPosition="right"
+                showFooter={false}
+                showTitle={false}
+                compact
+                fluid
+              />
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No orders in the selected period.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="overflow-hidden">
         <div className="bg-[#F9FAF9] px-6 pt-6">

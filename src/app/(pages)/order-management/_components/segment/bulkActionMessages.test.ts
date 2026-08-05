@@ -4,8 +4,8 @@ import { getBulkActionSuccessMessage } from "./bulkActionMessages";
 describe("getBulkActionSuccessMessage", () => {
     it("formats update_status with typographic quotes", () => {
         expect(
-            getBulkActionSuccessMessage("update_status", 2, { newOrderStatus: "Shipped" })
-        ).toBe(`🎉 Updated 2 orders to \u201cShipped\u201d`);
+            getBulkActionSuccessMessage("update_status", 2, { newOrderStatus: "Fulfilled" })
+        ).toBe(`🎉 Updated 2 orders to \u201cFulfilled\u201d`);
     });
 
     it("formats generate_invoice singular", () => {

@@ -6,41 +6,45 @@ import {
     KpiPendingOrdersIcon,
     KpiDeliveredOrdersIcon,
 } from "@/assets/icons";
-import type { OrderManagementKpiStats } from "./kpiMetrics";
+import type { OrderKpis } from "@/lib/api/orders";
 
 export interface OrderManagementKpiGridProps {
-    readonly stats: OrderManagementKpiStats;
+    readonly stats: OrderKpis | null;
 }
 
+/** Tiles mirror GET /seller/orders/kpis exactly — no client-side derivation. */
 export function OrderManagementKpiGrid({ stats }: Readonly<OrderManagementKpiGridProps>) {
-    const { totalOrders, totalRevenue, pendingOrders, deliveredOrders, returnOrders } = stats;
+    const s = stats ?? {
+        pending: 0,
+        processing: 0,
+        ready_for_dispatch: 0,
+        shipped: 0,
+        returns_initiated: 0,
+        returns_in_process: 0,
+    };
 
     return (
-        <div className="grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-2 sm:gap-2 lg:grid-cols-3 xl:grid-cols-5 min-[1920px]:gap-3">
-            <KPICard title="Total Orders" value={String(totalOrders)} icon={<KpiOrdersBagIcon />} kpiType={1} />
+        <div className="grid min-w-0 grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-3 xl:grid-cols-6 min-[1920px]:gap-3">
+            <KPICard title="Pending" value={String(s.pending)} icon={<KpiPendingOrdersIcon />} kpiType={1} />
+            <KPICard title="Processing" value={String(s.processing)} icon={<KpiOrdersBagIcon />} kpiType={2} />
             <KPICard
-                title="Total Revenue"
-                value={`₹${totalRevenue.toLocaleString("en-IN")}`}
-                icon={<KpiTotalRevenueIcon />}
-                kpiType={2}
-            />
-            <KPICard
-                title="Pending Orders"
-                value={String(pendingOrders)}
-                icon={<KpiPendingOrdersIcon />}
+                title="Ready for Dispatch"
+                value={String(s.ready_for_dispatch)}
+                icon={<KpiDeliveredOrdersIcon />}
                 kpiType={3}
             />
+            <KPICard title="Shipped" value={String(s.shipped)} icon={<KpiTotalRevenueIcon />} kpiType={4} />
             <KPICard
-                title="Delivered"
-                value={String(deliveredOrders)}
-                icon={<KpiDeliveredOrdersIcon />}
-                kpiType={4}
-            />
-            <KPICard
-                title="Return & Exchanges"
-                value={String(returnOrders)}
+                title="Returns Initiated"
+                value={String(s.returns_initiated)}
                 icon={<KpiReturnUndoIcon />}
                 kpiType={5}
+            />
+            <KPICard
+                title="Returns In Process"
+                value={String(s.returns_in_process)}
+                icon={<KpiReturnUndoIcon />}
+                kpiType={1}
             />
         </div>
     );

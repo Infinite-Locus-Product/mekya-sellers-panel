@@ -24,7 +24,7 @@ describe("orders data layer", () => {
   it("getOrderDetails maps B2B orders with line items and inventory type", async () => {
     const orders = await getOrders();
     const b2b = orders.find(
-      (o) => o.type === "B2B" && o.status !== "Partial Fulfillment",
+      (o) => o.type === "B2B" && o.status !== "Partially Fulfilled",
     );
     expect(b2b).toBeDefined();
     const details = await getOrderDetails(b2b!.id);
@@ -41,7 +41,7 @@ describe("orders data layer", () => {
     const details = await getOrderDetails("ORD-2026-025");
     expect(details).not.toBeNull();
     expect(details!.inventoryType).toBe("pre_booking");
-    expect(details!.status).toBe("partial");
+    expect(details!.status).toBe("Partially Fulfilled");
     expect(details!.b2bFulfillmentStats).toEqual({
       totalItems: 60,
       fulfilled: 0,
@@ -52,14 +52,14 @@ describe("orders data layer", () => {
     expect(details!.payment.method).toBe("Wire Transfer");
   });
 
-  it("getOrderDetails sets Ready for Dispatch as current for B2B ready_to_ship processing", async () => {
+  it("getOrderDetails sets Ready for pickup as current for B2B ready_to_ship processing", async () => {
     const details = await getOrderDetails("ORD-2026-029");
     expect(details).not.toBeNull();
     expect(details!.orderType).toBe("B2B");
     expect(details!.inventoryType).toBe("ready_to_ship");
-    expect(details!.status).toBe("processing");
+    expect(details!.status).toBe("Unfulfilled");
     const current = details!.timeline.find((t) => t.current);
-    expect(current?.stage).toBe("Ready for Dispatch");
+    expect(current?.stage).toBe("Ready for pickup");
     expect(
       details!.timeline.find((t) => t.stage === "Order Placed")?.completed,
     ).toBe(true);
@@ -68,14 +68,14 @@ describe("orders data layer", () => {
     ).toBe(true);
   });
 
-  it("getOrderDetails sets Ready for Dispatch as current for B2B ready_to_ship pending", async () => {
+  it("getOrderDetails sets Ready for pickup as current for B2B ready_to_ship pending", async () => {
     const details = await getOrderDetails("ORD-2024-003");
     expect(details).not.toBeNull();
     expect(details!.orderType).toBe("B2B");
     expect(details!.inventoryType).toBe("ready_to_ship");
-    expect(details!.status).toBe("pending");
+    expect(details!.status).toBe("Unconfirmed");
     const current = details!.timeline.find((t) => t.current);
-    expect(current?.stage).toBe("Ready for Dispatch");
+    expect(current?.stage).toBe("Ready for pickup");
     expect(
       details!.timeline.find((t) => t.stage === "Order Placed")?.completed,
     ).toBe(true);
@@ -88,7 +88,7 @@ describe("orders data layer", () => {
     const details = await getOrderDetails("ORD-2026-026");
     expect(details).not.toBeNull();
     expect(details!.inventoryType).toBe("pre_booking");
-    expect(details!.status).toBe("partial");
+    expect(details!.status).toBe("Partially Fulfilled");
     expect(details!.b2bFulfillmentStats).toEqual({
       totalItems: 75,
       fulfilled: 30,
@@ -102,7 +102,7 @@ describe("orders data layer", () => {
     const details = await getOrderDetails("ORD-2026-031");
     expect(details).not.toBeNull();
     expect(details!.inventoryType).toBe("pre_booking");
-    expect(details!.status).toBe("partial");
+    expect(details!.status).toBe("Partially Fulfilled");
     expect(details!.b2bFulfillmentStats).toEqual({
       totalItems: 40,
       fulfilled: 40,
@@ -116,7 +116,7 @@ describe("orders data layer", () => {
     const details = await getOrderDetails("ORD-2026-022");
     expect(details).not.toBeNull();
     expect(details!.inventoryType).toBe("pre_booking");
-    expect(details!.status).toBe("delivered");
+    expect(details!.status).toBe("Fulfilled");
     expect(details!.b2bFulfillmentStats).toEqual({
       totalItems: 64,
       fulfilled: 64,
@@ -128,7 +128,7 @@ describe("orders data layer", () => {
 
   it("getOrderDetails keeps Order Placed current for B2B pending non-ready_to_ship", async () => {
     const details = await getOrderDetails("ORD-2024-002");
-    expect(details!.status).toBe("pending");
+    expect(details!.status).toBe("Unconfirmed");
     expect(details!.inventoryType).toBe("sale_or_return");
     expect(details!.timeline.find((t) => t.current)?.stage).toBe(
       "Order Placed",
