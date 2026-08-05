@@ -12,6 +12,11 @@ export interface ScheduleReelDialogProps {
   scheduleTimeStr: string;
   onScheduleTimeStrChange: (value: string) => void;
   onConfirmSchedule: () => void;
+  isSubmitting?: boolean;
+  /** yyyy-mm-dd, inclusive lower bound for the date input (defaults to today). */
+  minDateIso?: string;
+  /** yyyy-mm-dd, inclusive upper bound for the date input. */
+  maxDateIso?: string;
 }
 
 export function ScheduleReelDialog({
@@ -22,6 +27,9 @@ export function ScheduleReelDialog({
   scheduleTimeStr,
   onScheduleTimeStrChange,
   onConfirmSchedule,
+  isSubmitting = false,
+  minDateIso,
+  maxDateIso,
 }: Readonly<ScheduleReelDialogProps>) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -58,6 +66,8 @@ export function ScheduleReelDialog({
               <Input
                 type="date"
                 value={scheduleDateIso}
+                min={minDateIso}
+                max={maxDateIso}
                 onChange={(e) => onScheduleDateIsoChange(e.target.value)}
                 className="h-11 cursor-pointer rounded-lg border border-[#E8E9E8] bg-[#F3F4F6] pr-10 text-sm text-[#2A2A2A] shadow-none [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-3 [&::-webkit-calendar-picker-indicator]:opacity-0"
                 aria-label="Publish date"
@@ -77,10 +87,11 @@ export function ScheduleReelDialog({
           </div>
           <Button
             type="button"
+            disabled={isSubmitting}
             className="mt-2 h-11 w-full bg-[#121C2D] font-semibold text-white shadow-none hover:bg-[#121C2D]/90"
             onClick={onConfirmSchedule}
           >
-            Schedule for Later
+            {isSubmitting ? "Scheduling…" : "Schedule for Later"}
           </Button>
         </div>
       </DialogContent>

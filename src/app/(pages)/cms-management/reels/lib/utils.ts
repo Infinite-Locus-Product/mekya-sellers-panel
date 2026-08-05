@@ -21,6 +21,32 @@ export function reelDisplayFileName(title: string): string {
   return `${title}.mov`;
 }
 
+/** Local &lt;input type="date"&gt; + &lt;input type="time"&gt; values → UTC ISO 8601 with a trailing "Z", as the schedule API expects. */
+export function localDateTimeToUtcIso(dateIso: string, timeStr: string): string {
+  const [y, m, d] = dateIso.split("-").map(Number);
+  const [h, min] = timeStr.split(":").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1, h || 0, min || 0, 0, 0).toISOString();
+}
+
+/** now() + 1 hour, split into the local date/time strings the schedule inputs use. */
+export function defaultScheduleDateTime(): { date: string; time: string } {
+  const dt = new Date(Date.now() + 60 * 60 * 1000);
+  const date = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  const time = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+  return { date, time };
+}
+
+/** Display string for a Schedule's scheduled_at, e.g. "14 Jun 2026, 10:30 am" */
+export function formatScheduleDateTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 /** Parse filter field; empty input → ok ""; invalid → error */
 export function parseDdMmYyyyToIso(raw: string): { ok: true; iso: string } | { ok: false } {
   const t = raw.trim();
@@ -67,16 +93,3 @@ export function syntheticCmsReelFromUploadedFile(file: File): CmsReel {
     engagement: { likes: null, comments: null, shares: null },
   };
 }
-
-export function defaultCaptionDraft() {
-  return {
-    editorOpen: false,
-    text: "",
-    fontSize: 24,
-    color: "#FFFFFF" as string,
-    posX: 50,
-    posY: 85,
-  };
-}
-
-export type CaptionDraftState = ReturnType<typeof defaultCaptionDraft>;
