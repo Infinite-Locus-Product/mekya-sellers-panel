@@ -29,15 +29,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardIcon },
-  {
-    label: "Product Listing",
-    href: "/product-listing",
-    icon: Package,
-    subItems: [
-      { label: "B2C Products", href: "/product-listing", icon: Package },
-      { label: "B2B Products", href: "/product-listing/b2b", icon: Package },
-    ],
-  },
+  { label: "Product Listing", href: "/product-listing", icon: Package },
   {
     label: "Order Management",
     href: "/order-management",
