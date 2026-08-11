@@ -470,7 +470,6 @@ export function ProductViewClient({ productId }: { productId: string }) {
               <DetailRow label="Category" value={product.category?.name} />
               <DetailRow label="Inventory Type" value={inventoryLabel} />
               <DetailRow label="Gender" value={gender} />
-              <DetailRow label="Shipping Days" value={def.shipping_days} />
               <DetailRow label="Ships From" value={def.ships_from} />
               <DetailRow label="Customisable" value={def.is_customisable ? "Yes" : "No"} />
               <DetailRow label="Set Purchase Mode" value={def.set_purchase_mode} />

@@ -174,6 +174,20 @@ export const TABLE_CUSTOM_ORDER_STATUS_COLUMN_CLASS =
   "min-w-0 w-[11rem] max-w-[11rem] sm:w-[12rem] sm:max-w-[12rem] md:w-[13rem] md:max-w-[13rem] lg:w-[14rem] lg:max-w-[14rem] xl:w-[15rem] xl:max-w-[15rem] 2xl:w-[16rem] 2xl:max-w-[16rem] min-[1920px]:w-[20rem] min-[1920px]:max-w-[20rem]";
 
 /**
+ * Product listing status column — only ever "Active"/"In-active", so it is sized to those
+ * rather than to the long order-status labels {@link TABLE_BADGE_PILL_COLUMN_CLASS} allows for.
+ */
+export const TABLE_LISTING_STATUS_COLUMN_CLASS =
+  "min-w-0 whitespace-nowrap w-[4.5rem] max-w-[4.5rem] sm:w-[5.75rem] sm:max-w-[5.75rem] md:w-[6rem] md:max-w-[6rem] lg:w-[6.25rem] lg:max-w-[6.25rem] xl:w-[6.5rem] xl:max-w-[6.5rem] 2xl:w-[7rem] 2xl:max-w-[7rem] min-[1920px]:w-[8rem] min-[1920px]:max-w-[8rem]";
+
+/**
+ * Product listing channel column — fits "B2C & B2B" on one line under `table-fixed`, at the
+ * standard cell text scale (`text-[10px]` → `text-sm`), which the pill follows.
+ */
+export const TABLE_CHANNEL_COLUMN_CLASS =
+  "min-w-0 whitespace-nowrap w-[5.5rem] max-w-[5.5rem] sm:w-[6.25rem] sm:max-w-[6.25rem] md:w-[6.5rem] md:max-w-[6.5rem] lg:w-[6.75rem] lg:max-w-[6.75rem] xl:w-[7.5rem] xl:max-w-[7.5rem] 2xl:w-[7.75rem] 2xl:max-w-[7.75rem] min-[1920px]:w-[9rem] min-[1920px]:max-w-[9rem]";
+
+/**
  * Payment status column: same idea — fixed width per breakpoint, narrower than badge columns;
  * pills use `ORDER_PAYMENT_PILL_BASE` for matching text scale.
  */

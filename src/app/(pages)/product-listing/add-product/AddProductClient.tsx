@@ -68,11 +68,7 @@ type ProductDraftState = {
   categorySlug: string | undefined;
   subcategorySlug: string | undefined;
   inventoryType: string | undefined;
-  deliveryTimeline: string;
   mrp: string;
-  sellingPrice: string;
-  b2bSellingPrice: string;
-  availableQty: string;
   minQty: number;
   maxQty: number;
   selectedColors: string[];
@@ -154,7 +150,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
   const [setPurchaseMode, setSetPurchaseMode] = useState<SetPurchaseMode>(
     (initialProduct?.setPurchaseMode as SetPurchaseMode) ?? "custom_mix_match"
   );
-  const [deliveryTimeline, setDeliveryTimeline] = useState(initialProduct?.deliveryTimeline ?? "");
   const [sizeOptions, setSizeOptions] = useState<string[]>([]);
   const [selectedSizes, setSelectedSizes] = useState<Set<string>>(
     () => new Set(initialProduct?.sizes ?? [])
@@ -164,20 +159,15 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
   const [isColorDropdownOpen, setIsColorDropdownOpen] = useState(false);
   const [channels, setChannels] = useState<"b2c" | "b2b" | "both">(initialProduct?.channels ?? defaultChannel ?? "both");
   const [mrp, setMrp] = useState(initialProduct?.mrp ?? "");
-  const [sellingPrice, setSellingPrice] = useState(initialProduct?.sellingPrice ?? "");
-  const [b2bSellingPrice, setB2bSellingPrice] = useState(initialProduct?.b2bSellingPrice ?? "");
   const [productVariants, setProductVariants] = useState<FlatVariant[]>([]);
   const [variantEdits, setVariantEdits] = useState<
     Record<string, { b2c_price: string; b2b_price: string; quantity: string }>
   >({});
   const [savingVariantId, setSavingVariantId] = useState<string | null>(null);
-  const [availableQty, setAvailableQty] = useState(
-    initialProduct ? String(initialProduct.availableQty) : ""
-  );
   const [variantPricing, setVariantPricing] = useState<VariantPricingRow[]>([]);
-  /** Color × size cells the seller has explicitly excluded from the create-time
-   * variant matrix (keyed `${color} ${size}`) — create mode only, per the
-   * existing per-row exclusion feature; never touches edit-mode reconciliation. */
+  /** Color × size cells excluded from the variant matrix (keyed `${color} ${size}`).
+   * On create these are combinations the seller unchecked; on edit they additionally
+   * start out covering every cell the product has no saved variant for. */
   const [excludedCells, setExcludedCells] = useState<Set<string>>(new Set());
   const [minQty, setMinQty] = useState(initialProduct?.minQty ?? 0);
   const [maxQty, setMaxQty] = useState(initialProduct?.maxQty ?? 0);
@@ -259,7 +249,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       getProduct(productId)
         .then((prod) => {
           const legacy = prod.is_legacy;
-          const firstVariant = prod.variant_list[0];
           const colors = legacy
             ? (prod.legacy?.colors ?? [])
             : (prod.variants?.colors.map((c) => c.color) ?? []);
@@ -276,16 +265,12 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
             subcategorySlug: legacy ? undefined : prod.taxonomy?.subcategory_slug,
             inventoryType: (prod.product.inventory_type as ProductInventoryType) ?? "ready_to_ship",
             gender: legacy ? (prod.legacy?.gender ?? undefined) : prod.taxonomy?.gender,
-            deliveryTimeline: prod.product.shipping_days ?? "",
             setPurchaseMode: prod.product.set_purchase_mode ?? undefined,
             sizes,
             colors,
             attributeSelections: legacy ? {} : (prod.taxonomy?.attributes ?? {}),
             tagSlugs: legacy ? [] : (prod.taxonomy?.tags ?? []),
             mrp: prod.metadata.mrp ?? "",
-            sellingPrice: firstVariant?.b2c_price != null ? String(firstVariant.b2c_price) : "",
-            b2bSellingPrice: firstVariant?.b2b_price != null ? String(firstVariant.b2b_price) : "",
-            availableQty: firstVariant?.quantity ?? 0,
             minQty: prod.product.min_quantity_per_set ?? 0,
             maxQty: prod.product.max_quantity_per_set ?? 0,
             isCustomisable: prod.product.is_customisable,
@@ -316,14 +301,10 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     setCategorySlug(initialProduct.categorySlug);
     setSubcategorySlug(initialProduct.subcategorySlug);
     setSetPurchaseMode((initialProduct.setPurchaseMode as SetPurchaseMode) ?? "custom_mix_match");
-    setDeliveryTimeline(initialProduct.deliveryTimeline ?? "");
     setSelectedSizes(new Set(initialProduct.sizes));
     setSelectedColors(initialProduct.colors);
     setChannels(initialProduct.channels ?? "both");
     setMrp(initialProduct.mrp);
-    setSellingPrice(initialProduct.sellingPrice);
-    setB2bSellingPrice(initialProduct.b2bSellingPrice ?? "");
-    setAvailableQty(String(initialProduct.availableQty));
     setMinQty(initialProduct.minQty);
     setMaxQty(initialProduct.maxQty);
     setAttributeSelections(initialProduct.attributeSelections);
@@ -353,8 +334,46 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     setVariantEdits(edits);
   }, [productVariants]);
 
+  /**
+   * Seeds the create-style variant matrix from an existing product so the edit form opens on
+   * its real prices and stock rather than blanks.
+   *
+   * A product's variants can be sparse — the seller may have unchecked cells at create time —
+   * while the matrix below always renders the full color × size grid. Any cell with no saved
+   * variant is therefore pre-excluded, which keeps `includedVariantRows` exactly equal to what
+   * the product already has. Without that, simply opening the form would look like the seller
+   * had added every missing combination.
+   */
   useEffect(() => {
-    if (isEditMode) return;
+    if (!initialProduct || productVariants.length === 0) return;
+    const saved = new Map(
+      productVariants
+        .filter((v) => v.color && v.size)
+        .map((v) => [`${v.color} ${v.size}`, v])
+    );
+    const rows = computeVariantRows(initialProduct.colors, initialProduct.sizes);
+    setVariantPricing(
+      rows.map(({ color, size }) => {
+        const v = saved.get(`${color} ${size}`);
+        return {
+          color,
+          size,
+          b2c_price: v?.b2c_price != null ? String(v.b2c_price) : "",
+          b2b_price: v?.b2b_price != null ? String(v.b2b_price) : "",
+          qty: v?.quantity != null ? String(v.quantity) : "",
+        };
+      })
+    );
+    setExcludedCells(
+      new Set(
+        rows
+          .filter(({ color, size }) => !saved.has(`${color} ${size}`))
+          .map(({ color, size }) => `${color} ${size}`)
+      )
+    );
+  }, [initialProduct, productVariants]);
+
+  useEffect(() => {
     const sortedSizes = [...selectedSizes].sort((a, b) =>
       sizeOptions.indexOf(a) - sizeOptions.indexOf(b)
     );
@@ -366,7 +385,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
           existingMap.get(`${color} ${size}`) ?? { color, size, b2c_price: "", b2b_price: "", qty: "" }
       );
     });
-  }, [selectedColors, selectedSizes, sizeOptions, isEditMode]);
+  }, [selectedColors, selectedSizes, sizeOptions]);
 
   const saveDraftToStorage = useCallback(() => {
     if (submittedRef.current) return;
@@ -378,11 +397,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         categorySlug,
         subcategorySlug,
         inventoryType,
-        deliveryTimeline,
         mrp,
-        sellingPrice,
-        b2bSellingPrice,
-        availableQty,
         minQty,
         maxQty,
         selectedColors,
@@ -407,7 +422,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     } catch {
       // localStorage unavailable — silent fail
     }
-  }, [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, deliveryTimeline, mrp, sellingPrice, b2bSellingPrice, availableQty, minQty, maxQty, selectedColors, selectedSizes, attributeSelections, tagSlugs, description, channels, isCustomisable, moqSets, moqUnits, shipsFrom, setPurchaseMode, isEditMode, variantPricing, excludedCells, b2bMinOrderQty, b2bMaxOrderQty, b2cMinOrderQty, b2cMaxOrderQty, draftKey]);
+  }, [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, minQty, maxQty, selectedColors, selectedSizes, attributeSelections, tagSlugs, description, channels, isCustomisable, moqSets, moqUnits, shipsFrom, setPurchaseMode, isEditMode, variantPricing, excludedCells, b2bMinOrderQty, b2bMaxOrderQty, b2cMinOrderQty, b2cMaxOrderQty, draftKey]);
 
   const saveDraftRef = useRef(saveDraftToStorage);
   useEffect(() => {
@@ -446,12 +461,8 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     setCategorySlug(restoredDraft.categorySlug);
     setSubcategorySlug(restoredDraft.subcategorySlug);
     setInventoryType(restoredDraft.inventoryType);
-    setDeliveryTimeline(restoredDraft.deliveryTimeline);
     setChannels(restoredDraft.channels ?? "both");
     setMrp(restoredDraft.mrp);
-    setSellingPrice(restoredDraft.sellingPrice);
-    setB2bSellingPrice(restoredDraft.b2bSellingPrice ?? "");
-    setAvailableQty(restoredDraft.availableQty);
     setMinQty(restoredDraft.minQty);
     setMaxQty(restoredDraft.maxQty);
     setSelectedColors(restoredDraft.selectedColors);
@@ -641,13 +652,30 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
   );
 
   const variantPricingValid = useMemo(() => {
-    if (isEditMode || includedVariantRows.length === 0) return true;
+    if (includedVariantRows.length === 0) return true;
     return includedVariantRows.every((row) => {
       const b2cOk = channels === "b2b" || (row.b2c_price.trim() !== "" && !isNaN(parseFloat(row.b2c_price)));
       const b2bOk = channels === "b2c" || (row.b2b_price.trim() !== "" && !isNaN(parseFloat(row.b2b_price)));
       return b2cOk && b2bOk;
     });
-  }, [isEditMode, includedVariantRows, channels]);
+  }, [includedVariantRows, channels]);
+
+  /**
+   * True only once the seller has actually changed which color × size cells exist — by adding
+   * a color or size, or by unchecking a row in the variant matrix. The update payload then
+   * carries a `variants` section; while the included cells still match the product's saved
+   * variants, `variants` is omitted so a routine edit (name, prices, stock, images) never
+   * resubmits — and never rebuilds — the variant matrix. Legacy products are excluded: they
+   * edit sizes through `legacy_sizes` instead.
+   */
+  const variantSelectionChanged = useMemo(() => {
+    if (!isEditMode || isLegacy) return false;
+    const saved = new Set(
+      productVariants.filter((v) => v.color && v.size).map((v) => `${v.color} ${v.size}`)
+    );
+    const current = includedVariantRows.map((r) => `${r.color} ${r.size}`);
+    return current.length !== saved.size || current.some((key) => !saved.has(key));
+  }, [isEditMode, isLegacy, productVariants, includedVariantRows]);
 
   const requiredAttributesFilled = useMemo(() => {
     if (isEditMode || isLegacy) return true;
@@ -663,18 +691,17 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       (isEditMode || Boolean(subcategorySlug)) &&
       Boolean(inventoryType) &&
       Boolean(mrp) &&
-      (isEditMode ? (channels === "b2b" || Boolean(sellingPrice)) : variantPricingValid) &&
-      (isEditMode ? (channels === "b2c" || Boolean(b2bSellingPrice)) : true) &&
+      variantPricingValid &&
       selectedColors.length > 0 &&
-      (isEditMode || selectedSizes.size > 0) &&
-      (isEditMode || includedVariantRows.length > 0) &&
+      selectedSizes.size > 0 &&
+      includedVariantRows.length > 0 &&
       (images.length > 0 || (isEditMode && existingImages.length > 0)) &&
       description.trim().length > 0 &&
       requiredAttributesFilled &&
       !qtyRangeInvalid &&
       !b2bOrderQtyRangeInvalid &&
       !b2cOrderQtyRangeInvalid,
-    [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, sellingPrice, channels, b2bSellingPrice, selectedColors, selectedSizes, includedVariantRows, images, existingImages, isEditMode, description, qtyRangeInvalid, b2bOrderQtyRangeInvalid, b2cOrderQtyRangeInvalid, variantPricingValid, requiredAttributesFilled]
+    [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, channels, selectedColors, selectedSizes, includedVariantRows, images, existingImages, isEditMode, description, qtyRangeInvalid, b2bOrderQtyRangeInvalid, b2cOrderQtyRangeInvalid, variantPricingValid, requiredAttributesFilled]
   );
 
   /** Builds the ProductDefinitionUpdate section — never includes
@@ -690,7 +717,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       article_number: articleNumber.trim() || undefined,
       is_customisable: isCustomisable,
       ships_from: shipsFrom.trim() || undefined,
-      shipping_days: deliveryTimeline.trim() || undefined,
       moq_sets: moqSets ? parseInt(moqSets, 10) : undefined,
       moq_units: moqUnits ? parseInt(moqUnits, 10) : undefined,
       min_quantity_per_set: minQty > 0 ? minQty : undefined,
@@ -710,14 +736,22 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     return {
       mrp: mrp ? parseFloat(mrp) : undefined,
       channels,
-      selling_price: channels !== "b2b" && sellingPrice ? parseFloat(sellingPrice) : undefined,
-      b2b_selling_price: channels !== "b2c" && b2bSellingPrice ? parseFloat(b2bSellingPrice) : undefined,
+      overrides: includedVariantRows
+        .filter((r) => r.b2c_price || r.b2b_price)
+        .map((r) => ({
+          color: r.color,
+          size: r.size,
+          b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
+          b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
+        })),
     };
   }
 
   function buildInventoryUpdateSection() {
     return {
-      available_qty: parseInt(availableQty, 10) > 0 ? parseInt(availableQty, 10) : undefined,
+      overrides: includedVariantRows
+        .filter((r) => r.qty)
+        .map((r) => ({ color: r.color, size: r.size, available_qty: parseInt(r.qty, 10) })),
     };
   }
 
@@ -736,7 +770,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       moq_sets: moqSets ? parseInt(moqSets, 10) : undefined,
       moq_units: moqUnits ? parseInt(moqUnits, 10) : undefined,
       ships_from: shipsFrom.trim() || undefined,
-      shipping_days: deliveryTimeline.trim() || undefined,
       attributes: attributeSelections,
       tags: tagSlugs,
       set_purchase_mode: setPurchaseMode,
@@ -768,6 +801,15 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     };
   }
 
+  /** Same shape as the create-time configuration, but falls back to the product's
+   * already-saved image URLs when the seller didn't upload new ones — passing an
+   * empty `images` array would detach the existing images from every color. */
+  function buildUpdateVariantConfiguration(newImageUrls: string[]) {
+    return buildCreateVariantConfiguration(
+      newImageUrls.length > 0 ? newImageUrls : existingImages.map((img) => img.url)
+    );
+  }
+
   const handleSaveDraft = async () => {
     if (isSubmitting) return;
     if (productId && !initialProduct) {
@@ -790,20 +832,20 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       toast.error("Inventory type is required to save a draft.");
       return;
     }
+    // Drafts accept blank variant prices — only reject ones already entered above MRP.
     if (mrp) {
       const mrpNum = parseFloat(mrp);
       if (!isNaN(mrpNum) && mrpNum > 0) {
-        if (channels !== "b2b" && sellingPrice) {
-          const spNum = parseFloat(sellingPrice);
-          if (!isNaN(spNum) && spNum > mrpNum) {
-            toast.error("Selling Price cannot exceed MRP");
+        for (const row of includedVariantRows) {
+          const label = `${row.color} / ${row.size}`;
+          const b2c = parseFloat(row.b2c_price);
+          if (channels !== "b2b" && row.b2c_price && !isNaN(b2c) && b2c > mrpNum) {
+            toast.error(`B2C price for "${label}" cannot exceed MRP`);
             return;
           }
-        }
-        if (channels !== "b2c" && b2bSellingPrice) {
-          const b2bNum = parseFloat(b2bSellingPrice);
-          if (!isNaN(b2bNum) && b2bNum > mrpNum) {
-            toast.error("B2B Selling Price cannot exceed MRP");
+          const b2b = parseFloat(row.b2b_price);
+          if (channels !== "b2c" && row.b2b_price && !isNaN(b2b) && b2b > mrpNum) {
+            toast.error(`B2B price for "${label}" cannot exceed MRP`);
             return;
           }
         }
@@ -819,6 +861,9 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       if (isEditMode && initialProduct) {
         await updateProduct(initialProduct.id, {
           product: { ...buildProductUpdateSection(), description: draftDescription },
+          variants: variantSelectionChanged
+            ? buildUpdateVariantConfiguration(imageUrls)
+            : undefined,
           pricing: buildPricingUpdateSection(),
           inventory: buildInventoryUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
@@ -913,11 +958,11 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       toast.error("Select at least one color");
       return;
     }
-    if (!isEditMode && selectedSizes.size === 0) {
+    if (selectedSizes.size === 0) {
       toast.error("Select at least one size");
       return;
     }
-    if (!isEditMode && includedVariantRows.length === 0) {
+    if (includedVariantRows.length === 0) {
       toast.error("At least one color/size combination must be included");
       return;
     }
@@ -942,60 +987,27 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       toast.error("Enter a valid MRP");
       return;
     }
-    if (!isEditMode) {
-      for (const row of includedVariantRows) {
-        const label = `${row.color} / ${row.size}`;
-        if (channels !== "b2b") {
-          const b2c = parseFloat(row.b2c_price);
-          if (!row.b2c_price.trim() || isNaN(b2c) || b2c <= 0) {
-            toast.error(`Enter a valid B2C price for "${label}"`);
-            return;
-          }
-          if (b2c > mrpNum) {
-            toast.error(`B2C price for "${label}" cannot exceed MRP`);
-            return;
-          }
-        }
-        if (channels !== "b2c") {
-          const b2b = parseFloat(row.b2b_price);
-          if (!row.b2b_price.trim() || isNaN(b2b) || b2b <= 0) {
-            toast.error(`Enter a valid B2B price for "${label}"`);
-            return;
-          }
-          if (b2b > mrpNum) {
-            toast.error(`B2B price for "${label}" cannot exceed MRP`);
-            return;
-          }
-        }
-      }
-    } else {
+    for (const row of includedVariantRows) {
+      const label = `${row.color} / ${row.size}`;
       if (channels !== "b2b") {
-        if (!sellingPrice.trim()) {
-          toast.error("Selling Price is required");
+        const b2c = parseFloat(row.b2c_price);
+        if (!row.b2c_price.trim() || isNaN(b2c) || b2c <= 0) {
+          toast.error(`Enter a valid B2C price for "${label}"`);
           return;
         }
-        const spNum = parseFloat(sellingPrice);
-        if (isNaN(spNum) || spNum <= 0) {
-          toast.error("Enter a valid Selling Price");
-          return;
-        }
-        if (spNum > mrpNum) {
-          toast.error("Selling Price cannot exceed MRP");
+        if (b2c > mrpNum) {
+          toast.error(`B2C price for "${label}" cannot exceed MRP`);
           return;
         }
       }
       if (channels !== "b2c") {
-        if (!b2bSellingPrice.trim()) {
-          toast.error("B2B Selling Price is required");
+        const b2b = parseFloat(row.b2b_price);
+        if (!row.b2b_price.trim() || isNaN(b2b) || b2b <= 0) {
+          toast.error(`Enter a valid B2B price for "${label}"`);
           return;
         }
-        const b2bNum = parseFloat(b2bSellingPrice);
-        if (isNaN(b2bNum) || b2bNum <= 0) {
-          toast.error("Enter a valid B2B Selling Price");
-          return;
-        }
-        if (b2bNum > mrpNum) {
-          toast.error("B2B Selling Price cannot exceed MRP");
+        if (b2b > mrpNum) {
+          toast.error(`B2B price for "${label}" cannot exceed MRP`);
           return;
         }
       }
@@ -1010,6 +1022,9 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       if (isEditMode && initialProduct) {
         await updateProduct(initialProduct.id, {
           product: buildProductUpdateSection(),
+          variants: variantSelectionChanged
+            ? buildUpdateVariantConfiguration(imageUrls)
+            : undefined,
           pricing: buildPricingUpdateSection(),
           inventory: buildInventoryUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
@@ -1246,18 +1261,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                   />
                 )}
               </div>
-              <div className="space-y-3">
-                <label htmlFor="delivery-timeline" className="text-sm font-medium">
-                  Delivery Timeline
-                </label>
-                <Input
-                  id="delivery-timeline"
-                  placeholder="e.g. 5–7 days"
-                  value={deliveryTimeline}
-                  onChange={(e) => setDeliveryTimeline(e.target.value)}
-                  className="bg-white"
-                />
-              </div>
             </CardContent>
           </Card>
         </div>
@@ -1345,23 +1348,15 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                     )}
                   </div>
                 </div>
-              ) : isEditMode ? (
-                <div className="flex flex-wrap gap-2">
-                  {[...selectedSizes].map((s) => (
-                    <span key={s} className="inline-flex rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
-                      {s}
-                    </span>
-                  ))}
-                  {selectedSizes.size === 0 && (
-                    <span className="text-xs text-muted-foreground">None</span>
-                  )}
-                  <p className="w-full text-xs text-muted-foreground">
-                    Adding or removing sizes on an existing product isn&apos;t supported here yet —
-                    use the Variant Pricing &amp; Stock table below to adjust existing sizes.
-                  </p>
-                </div>
               ) : (
                 <>
+                  {isEditMode && (
+                    <p className="text-xs text-muted-foreground">
+                      Changing the selected sizes rebuilds this product&apos;s color × size
+                      variants when you save. Prices and stock for new combinations start empty —
+                      set them in Variant Pricing &amp; Stock after saving.
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {sizeOptions.length === 0 ? (
                       <span className="text-xs text-muted-foreground">
@@ -1420,31 +1415,25 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                 <span className="text-sm font-medium">
                   Color <RequiredMark />
                 </span>
-                {isEditMode ? (
-                  <p className="text-xs text-muted-foreground">
-                    Adding or removing colors on an existing product isn&apos;t supported here yet.
-                  </p>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3">
-                    <ColorSelect
-                      className="w-full min-w-0"
-                      placeholder="Select color."
-                      value={activeColorSelection}
-                      onChange={selectColor}
-                      open={isColorDropdownOpen}
-                      onOpenChange={setIsColorDropdownOpen}
-                      options={colorSelectOptions}
-                    />
-                    <Button
-                      type="button"
-                      className="h-9 whitespace-nowrap bg-[#122130] px-3 text-xs hover:bg-[#0d1a28]"
-                      onClick={() => setIsColorDropdownOpen(true)}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add more color
-                    </Button>
-                  </div>
-                )}
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3">
+                  <ColorSelect
+                    className="w-full min-w-0"
+                    placeholder="Select color."
+                    value={activeColorSelection}
+                    onChange={selectColor}
+                    open={isColorDropdownOpen}
+                    onOpenChange={setIsColorDropdownOpen}
+                    options={colorSelectOptions}
+                  />
+                  <Button
+                    type="button"
+                    className="h-9 whitespace-nowrap bg-[#122130] px-3 text-xs hover:bg-[#0d1a28]"
+                    onClick={() => setIsColorDropdownOpen(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add more color
+                  </Button>
+                </div>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   {selectedColors.length === 0 ? (
                     <span className="text-xs text-muted-foreground">No color selected</span>
@@ -1455,16 +1444,14 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                         className="inline-flex items-center gap-2 rounded-xs bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
                       >
                         {color}
-                        {!isEditMode && (
-                          <button
-                            type="button"
-                            className="rounded p-0.5 hover:bg-background"
-                            aria-label={`Remove ${color}`}
-                            onClick={() => removeColor(color)}
-                          >
-                            <span className="text-muted-foreground">×</span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="rounded p-0.5 hover:bg-background"
+                          aria-label={`Remove ${color}`}
+                          onClick={() => removeColor(color)}
+                        >
+                          <span className="text-muted-foreground">×</span>
+                        </button>
                       </span>
                     ))
                   )}
@@ -1521,69 +1508,15 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                   className="bg-white"
                 />
               </div>
-              {isEditMode ? (
-                <>
-                  {channels !== "b2b" && (
-                    <div className="space-y-3">
-                      <label htmlFor="selling-price" className="text-sm font-medium">
-                        B2C Selling Price (₹) <RequiredMark />
-                      </label>
-                      <Input
-                        id="selling-price"
-                        inputMode="decimal"
-                        placeholder="Enter selling price."
-                        value={sellingPrice}
-                        onChange={(e) => setSellingPrice(e.target.value)}
-                        className="bg-white"
-                      />
-                      {mrp && sellingPrice && parseFloat(sellingPrice) > parseFloat(mrp) && (
-                        <p className="text-xs text-destructive" role="alert">
-                          Selling Price cannot exceed MRP.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {channels !== "b2c" && (
-                    <div className="space-y-3">
-                      <label htmlFor="b2b-selling-price" className="text-sm font-medium">
-                        B2B Selling Price (₹) <RequiredMark />
-                      </label>
-                      <Input
-                        id="b2b-selling-price"
-                        inputMode="decimal"
-                        placeholder="Enter B2B selling price."
-                        value={b2bSellingPrice}
-                        onChange={(e) => setB2bSellingPrice(e.target.value)}
-                        className="bg-white"
-                      />
-                      {mrp && b2bSellingPrice && parseFloat(b2bSellingPrice) > parseFloat(mrp) && (
-                        <p className="text-xs text-destructive" role="alert">
-                          B2B Selling Price cannot exceed MRP.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  <div className="space-y-3 sm:col-span-2">
-                    <label htmlFor="qty" className="text-sm font-medium">
-                      Quantity Per Variant
-                    </label>
-                    <Input
-                      id="qty"
-                      inputMode="numeric"
-                      placeholder="Enter available quantity."
-                      value={availableQty}
-                      onChange={(e) => setAvailableQty(e.target.value.replace(/\D/g, ""))}
-                      className="bg-white"
-                    />
-                  </div>
-                </>
-              ) : variantPricing.length > 0 ? (
+              {variantPricing.length > 0 ? (
                 <div className="space-y-3 sm:col-span-2">
                   <p className="text-sm font-medium">
                     Variant Pricing <RequiredMark />
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Uncheck a row to exclude that color/size combination — it won&apos;t be created.
+                    {isEditMode
+                      ? "Unchecked rows are color/size combinations this product doesn't have. Check one to add it; uncheck an existing row to remove that combination."
+                      : "Uncheck a row to exclude that color/size combination — it won't be created."}
                   </p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">

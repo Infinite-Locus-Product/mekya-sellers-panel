@@ -19,6 +19,8 @@ import { InventoryTypeBadge } from "@/components/shared/InventoryTypeBadge";
 import {
   PRODUCT_INVENTORY_TYPE_LABELS,
   TABLE_BADGE_PILL_COLUMN_CLASS,
+  TABLE_CHANNEL_COLUMN_CLASS,
+  TABLE_LISTING_STATUS_COLUMN_CLASS,
   type ProductRow,
 } from "@/lib/tableTypes";
 import { AppSelect } from "@/components/shared/AppSelect";
@@ -396,62 +398,57 @@ export function ProductListingClient({
     setPriceMaxApplied("100000");
   };
 
+  /**
+   * Percentages for the text/action columns; the badge columns instead use the definite rem
+   * widths of the `TABLE_*_COLUMN_CLASS` constants so their pills stay content-sized.
+   *
+   * Tuned so the two together leave only a few percent of slack: `table-fixed` spreads any
+   * shortfall proportionally across every column, so a large shortfall is what stretches the
+   * badge pills — and giving one column no width at all makes it swallow the whole surplus.
+   */
+  const colWidth = isB2B
+    ? {
+        name: "w-[18%]",
+        articleNumber: "w-[14%]",
+        category: "w-[12%]",
+        toggle: "w-[7%]",
+        actions: "w-[9%]",
+      }
+    : {
+        name: "w-[24%]",
+        articleNumber: "w-[17%]",
+        category: "w-[15%]",
+        toggle: "w-[8%]",
+        actions: "w-[10%]",
+      };
+
   // ── Table columns ──────────────────────────────────────────────────────────
   const columns: TableColumn<ProductRow>[] = [
     {
       key: "name",
       header: "Product Name",
       sortable: true,
-      className: "w-[14%]",
+      className: colWidth.name,
       cell: (row) => (
         <span className="line-clamp-2 break-words" title={row.name}>
           {row.name}
         </span>
       ),
     },
-    { key: "articleNumber", header: "Article Number", className: "w-[10%]" },
-    { key: "category", header: "Category", className: "w-[9%]" },
-    ...(isB2B
-      ? []
-      : [
-          {
-            key: "sizes",
-            header: "Size",
-            className: "w-[8%]",
-            cell: (row: ProductRow) => (
-              <span className="break-words">{row.sizes.join(", ")}</span>
-            ),
-          } as TableColumn<ProductRow>,
-          {
-            key: "colors",
-            header: "Color",
-            className: "w-[11%]",
-            cell: (row: ProductRow) => (
-              <div className="flex min-w-0 flex-wrap gap-0.5">
-                {row.colors.map((c) => (
-                  <span
-                    key={c}
-                    className="inline-block max-w-full truncate rounded bg-muted px-1 py-0.5 text-[9px] leading-tight sm:text-[10px]"
-                    title={c}
-                  >
-                    {c}
-                  </span>
-                ))}
-              </div>
-            ),
-          } as TableColumn<ProductRow>,
-        ]),
+    { key: "articleNumber", header: "Article Number", className: colWidth.articleNumber },
+    { key: "category", header: "Category", className: colWidth.category },
     {
       key: "inventoryType",
       header: "Inventory Type",
-      className: `${TABLE_BADGE_PILL_COLUMN_CLASS} w-[10%]`,
+      align: "center" as const,
+      className: TABLE_BADGE_PILL_COLUMN_CLASS,
       cell: (row) => <InventoryTypeBadge type={row.inventoryType} />,
     },
     {
       key: "channels",
       header: "Channel",
       align: "center" as const,
-      className: "w-[8%]",
+      className: TABLE_CHANNEL_COLUMN_CLASS,
       cell: (row: ProductRow) => {
         const ch = row.channels ?? "both";
         const cfg = {
@@ -460,22 +457,34 @@ export function ProductListingClient({
           both: { label: "B2C & B2B", cls: "bg-green-100 text-green-700" },
         } as const;
         return (
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${cfg[ch].cls}`}>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-medium sm:text-[11px] xl:text-xs min-[1920px]:text-sm ${cfg[ch].cls}`}
+          >
             {cfg[ch].label}
           </span>
         );
       },
     },
-    { key: "price", header: isB2B ? "WSP" : "Price", sortable: true, className: "w-[7%]" },
-    {
-      key: "quantity",
-      header: isB2B ? "Inventory" : "Quantity",
-      className: "w-[7%]",
-    },
+    ...(isB2B
+      ? [
+          {
+            key: "price",
+            header: "WSP",
+            sortable: true,
+            className: "w-[7%]",
+          } as TableColumn<ProductRow>,
+          {
+            key: "quantity",
+            header: "Inventory",
+            className: "w-[7%]",
+          } as TableColumn<ProductRow>,
+        ]
+      : []),
     {
       key: "status",
       header: "Status",
-      className: `${TABLE_BADGE_PILL_COLUMN_CLASS} w-[7%]`,
+      align: "center" as const,
+      className: TABLE_LISTING_STATUS_COLUMN_CLASS,
       cell: (row) => {
         const pill =
           "inline-flex h-[22px] w-full min-w-0 max-w-full items-center justify-center whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[9px] font-medium leading-none sm:h-7 sm:px-2 sm:text-[11px] min-[1920px]:h-8 min-[1920px]:text-sm";
@@ -490,7 +499,7 @@ export function ProductListingClient({
       key: "toggle",
       header: "Status Switch",
       align: "center",
-      className: "w-[8%]",
+      className: colWidth.toggle,
       cell: (row) => (
         <StatusToggle
           status={row.status}
@@ -503,7 +512,7 @@ export function ProductListingClient({
       key: "actions",
       header: "Actions",
       align: "center",
-      className: "w-[10%]",
+      className: colWidth.actions,
       cell: (row) => (
         <div className="flex items-center justify-center gap-0.5">
           <Button

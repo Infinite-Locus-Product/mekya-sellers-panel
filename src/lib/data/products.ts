@@ -17,19 +17,15 @@ export interface EditableProductDraft {
   subcategorySlug?: string;
   inventoryType: ProductInventoryType;
   gender?: string;
-  deliveryTimeline?: string;
   setPurchaseMode?: string;
-  /** Read-only display — full color/size matrix editing on an existing
-   * product is not supported in this pass (see AddProductClient). */
+  /** The color/size selection the product was loaded with — AddProductClient diffs
+   * against it to decide whether an edit needs to resubmit the variant matrix. */
   sizes: string[];
   colors: string[];
   /** Editable for non-legacy products only. */
   attributeSelections: Record<string, string[]>;
   tagSlugs: string[];
   mrp: string;
-  sellingPrice: string;
-  b2bSellingPrice?: string;
-  availableQty: number;
   minQty: number;
   maxQty: number;
   /** Channel order limits — business ordering policy, not a stock split. */
