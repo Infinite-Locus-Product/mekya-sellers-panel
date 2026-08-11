@@ -52,6 +52,10 @@ export function WarehouseDetailClient({ warehouseId }: Readonly<WarehouseDetailC
 
     const [items, setItems] = useState<WarehouseInventoryItem[]>([]);
     const [summary, setSummary] = useState<WarehouseInventorySummary | null>(null);
+    /** Bumped after a successful save to re-run the inventory fetch below. `total_quantity` and the
+     *  stock-status summary are server-computed across every warehouse, so they cannot be patched
+     *  locally from the rows we just sent — refetching is what keeps them honest. */
+    const [reloadToken, setReloadToken] = useState(0);
     const [stockStatus, setStockStatus] = useState<WarehouseInventoryStockStatus>("all");
     const [sortBy, setSortBy] = useState<WarehouseInventorySortBy>("sku");
     const [sortOrder, setSortOrder] = useState<WarehouseInventorySortOrder>("asc");
@@ -108,7 +112,7 @@ export function WarehouseDetailClient({ warehouseId }: Readonly<WarehouseDetailC
         return () => {
             cancelled = true;
         };
-    }, [warehouseId, stockStatus, sortBy, sortOrder, debouncedSearch]);
+    }, [warehouseId, stockStatus, sortBy, sortOrder, debouncedSearch, reloadToken]);
 
     const toggleSort = (column: WarehouseInventorySortBy) => {
         if (sortBy === column) {
@@ -227,13 +231,8 @@ export function WarehouseDetailClient({ warehouseId }: Readonly<WarehouseDetailC
             } else {
                 toast.success(`Updated ${res.applied} SKU${res.applied === 1 ? "" : "s"}`);
             }
-            setItems((prev) =>
-                prev.map((item) => {
-                    const match = dirtyRows.find((row) => row.sku === item.sku);
-                    return match ? { ...item, quantity: match.new_quantity } : item;
-                }),
-            );
             setEdits({});
+            setReloadToken((token) => token + 1);
         } catch (err) {
             toast.error("Could not update inventory", {
                 description: err instanceof Error ? err.message : "Please try again.",
@@ -342,10 +341,14 @@ export function WarehouseDetailClient({ warehouseId }: Readonly<WarehouseDetailC
                             />
                         </div>
 
+                        {/* nowrap + shrinkable tiles: at ~1024-1300px the three fixed-width tiles
+                            plus the search box and Save button overflowed the row, so "Out of Stock"
+                            wrapped to a second line. Letting them shrink keeps all three on one row
+                            at every breakpoint instead of re-flowing as the viewport narrows. */}
                         <div
                             role="radiogroup"
                             aria-label="Filter by stock status"
-                            className="flex flex-wrap items-center gap-1.5"
+                            className="flex min-w-0 flex-nowrap items-center gap-1.5"
                         >
                             {KPI_OPTIONS.map((opt) => {
                                 const selected = stockStatus === opt.value;
@@ -353,7 +356,7 @@ export function WarehouseDetailClient({ warehouseId }: Readonly<WarehouseDetailC
                                     <label
                                         key={opt.value}
                                         className={cn(
-                                            "flex h-8 w-[154px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 transition-colors min-[1920px]:h-10",
+                                            "flex h-8 w-[154px] min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-md border px-2 transition-colors min-[1920px]:h-10",
                                             selected
                                                 ? "border-[#E8E9E8] bg-[#E8E9E8]"
                                                 : "border-[#E8E9E8] bg-white hover:bg-[#F2F2F2]",
@@ -376,7 +379,11 @@ export function WarehouseDetailClient({ warehouseId }: Readonly<WarehouseDetailC
                         </div>
 
                         <div className="flex items-center gap-2 lg:ml-auto">
-                            <p className="text-[11px] text-muted-foreground">
+                            {/* Fixed width: this text appears and changes length as rows are edited, and
+                                the stat tiles to its left sit in the same flex-wrap row. Letting it size
+                                to its content re-wrapped that row mid-edit, so "Out of Stock" jumped
+                                onto a second line the moment a quantity was touched. */}
+                            <p className="w-24 shrink-0 text-right text-[11px] text-muted-foreground min-[1920px]:w-28">
                                 {dirtyRows.length > 0
                                     ? `${dirtyRows.length} unsaved change${dirtyRows.length === 1 ? "" : "s"}`
                                     : ""}

@@ -12,8 +12,8 @@ import {
     returnReasonCodeLabel,
 } from "@/lib/tableTypes";
 import { OrderViewIcon, OrderInvoiceIcon } from "@/assets/icons";
-import { InventoryTypeBadge } from "@/components/shared/InventoryTypeBadge";
 import { StatusBadge, type StatusVariant } from "@/components/shared/StatusBadge";
+import { OrderStatusBadge } from "@/components/shared/OrderStatusBadge";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 import type {
     CancelledItemRow,
@@ -30,31 +30,6 @@ import { ExchangeStatusActions } from "./ExchangeStatusActions";
 import { CancellationReceivedAction } from "./CancellationReceivedAction";
 import { MarkDemandFulfilledAction } from "./MarkDemandFulfilledAction";
 
-/** The Orders tab's own "Order Status" badge is driven by order_status.code (currentStatus) — the
- * same pipeline stage the subtabs and the row's action button key off — not the raw Saleor
- * `status`. Computed backend-side from all of the order's shipments; "partially_*" appears when
- * they're not all at the same stage. */
-type CurrentStatusKey = NonNullable<AllOrder["currentStatus"]> | "none";
-
-const CURRENT_STATUS_LABEL: Record<CurrentStatusKey, string> = {
-    none: "Pending",
-    pending: "Pending",
-    processing: "Processing",
-    ready_for_dispatch: "Ready for Pickup",
-    ready: "Ready",
-    shipped: "Shipped",
-    delivered: "Delivered",
-    returned: "Returned",
-    cancelled: "Cancelled",
-    partially_processing: "Partially Processing",
-    partially_ready_for_dispatch: "Partially Ready for Pickup",
-    partially_ready: "Partially Ready",
-    partially_shipped: "Partially Shipped",
-    partially_delivered: "Partially Delivered",
-    partially_returned: "Partially Returned",
-    partially_cancelled: "Partially Cancelled",
-};
-
 const CANCELLED_ITEM_SETTLEMENT_LABEL: Record<CancelledItemSettlementStatus, string> = {
     not_applicable: "No refund due",
     refund_pending: "Refund pending",
@@ -67,34 +42,8 @@ const CANCELLED_ITEM_SETTLEMENT_VARIANT: Record<CancelledItemSettlementStatus, S
     refunded: "completed",
 };
 
-const CURRENT_STATUS_VARIANT: Record<CurrentStatusKey, StatusVariant> = {
-    none: "pending",
-    pending: "pending",
-    processing: "processing",
-    ready_for_dispatch: "pending",
-    ready: "pending",
-    shipped: "shipped",
-    delivered: "delivered",
-    returned: "returned",
-    cancelled: "canceled",
-    partially_processing: "partial",
-    partially_ready_for_dispatch: "partial",
-    partially_ready: "partial",
-    partially_shipped: "partial",
-    partially_delivered: "partial",
-    partially_returned: "partial",
-    partially_cancelled: "partial",
-};
-
 function renderOrderStatusCell(row: AllOrder) {
-    // currentStatus (order_status.code) is authoritative for the badge — it's the only field
-    // that correctly tracks partial state ("partially_returned", "partially_cancelled", …) via
-    // derive_order_status(). mekyaStatus (OrderFulfillmentCurrent.current_status) is just the
-    // last recorded fulfillment action and has no partial concept at all — using it as primary
-    // silently drops "partially_" information, so it's only a fallback for orders with no
-    // order_status cache yet (e.g. brand new, never recomputed).
-    const key: CurrentStatusKey = row.currentStatus ?? row.mekyaStatus ?? "none";
-    return <StatusBadge variant={CURRENT_STATUS_VARIANT[key]}>{CURRENT_STATUS_LABEL[key]}</StatusBadge>;
+    return <OrderStatusBadge order={row} />;
 }
 
 const EXCHANGE_STATUS_VARIANT: Record<ExchangeOrderStatus, StatusVariant> = {
@@ -448,12 +397,6 @@ export function useOrderManagementSegmentColumns({
 
     const b2bAllOrdersColumns: TableColumn<AllOrder>[] = useMemo(
         () => [
-            {
-                key: "select",
-                header: "",
-                checkbox: true,
-                className: "w-11",
-            },
             expandColumn,
             {
                 key: "id",
@@ -468,7 +411,7 @@ export function useOrderManagementSegmentColumns({
                     </button>
                 ),
             },
-            { key: "vendor", header: "Vendor Name" },
+            { key: "vendor", header: "Customer Name" },
             {
                 // sort_by=created — server-driven via DataTable's controlled sort, see OrderManagementSegmentClient.
                 key: "date",
@@ -481,12 +424,6 @@ export function useOrderManagementSegmentColumns({
                 header: "Order Total",
                 sortable: true,
                 cell: (row) => formatOrderAmount(row),
-            },
-            {
-                key: "inventoryType",
-                header: "Inventory Type",
-                className: TABLE_BADGE_PILL_COLUMN_CLASS,
-                cell: (row) => <InventoryTypeBadge type={row.inventoryType} />,
             },
             {
                 key: "status",

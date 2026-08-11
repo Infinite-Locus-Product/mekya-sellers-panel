@@ -27,24 +27,27 @@ import {
 import type { HeatmapDataPoint } from "@/components/analytics"
 import { CustomerTypeAnalyticsModal, type CustomerTypeDataPoint } from "@/components/modals/average-order-value/tabs/CustomerTypeAnalyticsModal"
 import { HistoricalTrendsAnalyticsModal } from "@/components/modals/average-order-value/tabs/HistoricalTrendsAnalyticsModal"
-import { OrderTypeAnalyticsModal } from "@/components/modals/average-order-value/tabs/OrderTypeAnalyticsModal"
+import { OrderTypeAnalyticsModal, type OrderTypeDataPoint } from "@/components/modals/average-order-value/tabs/OrderTypeAnalyticsModal"
 import { ImpactOfPromotionsAnalyticsModal } from "@/components/modals/average-order-value/tabs/ImpactOfPromotionsAnalyticsModal"
 
 import { HistoricalTrendsTab as TOHistoricalTrendsTab } from "@/components/modals/total-orders/tabs/HistoricalTrendsTab"
 import { OrderTypeTab as TOOrderTypeTab } from "@/components/modals/total-orders/tabs/OrderTypeTab"
-import { OrderStatusTab as TOOrderStatusTab } from "@/components/modals/total-orders/tabs/OrderStatusTab"
 import { CustomerTypeTab as TOCustomerTypeTab } from "@/components/modals/total-orders/tabs/CustomerTypeTab"
 
 import { HistoricalTrendsTab as ROHistoricalTrendsTab } from "@/components/modals/return-orders/tabs/HistoricalTrendsTab"
-import { ReturnReasonsTab as ROReturnReasonsTab } from "@/components/modals/return-orders/tabs/ReturnReasonsTab"
-import { ProductCategoriesTab as ROProductCategoriesTab } from "@/components/modals/return-orders/tabs/ProductCategoriesTab"
-import { ReturnRateTab as ROReturnRateTab } from "@/components/modals/return-orders/tabs/ReturnRateTab"
+import { ReturnReasonsTab as ROReturnReasonsTab, type ReturnReasonDataPoint } from "@/components/modals/return-orders/tabs/ReturnReasonsTab"
+import { ProductCategoriesTab as ROProductCategoriesTab, type ReturnGenderDataPoint } from "@/components/modals/return-orders/tabs/ProductCategoriesTab"
+import { ReturnRateTab as ROReturnRateTab, type ReturnRateDataPoint } from "@/components/modals/return-orders/tabs/ReturnRateTab"
 import { BarChart3, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TabList } from "@/components/shared/TabList"
-import { Filter, DEFAULT_FILTER_VALUES } from "@/components/shared/Filter"
-import type { FilterValues, FilterOption } from "@/components/shared/FilterPanel"
-import { ExportDropdown } from "@/components/shared/ExportDropdown"
+import { CustomDateRangeSelector } from "./custom-date-range/CustomDateRangeSelector"
+import {
+  getDefaultDateRange,
+  normalizeRange,
+  toDateRangePayload,
+} from "./custom-date-range/utils"
+import type { DateRangeApiPayload, DateRangeValue } from "./custom-date-range/types"
 
 export type { TimeRange } from "@/components/shared/TimeRangeSelector"
 
@@ -93,6 +96,12 @@ export interface AnalyticsModalConfig {
     percentage: number
     color: string
   }>
+  /** Drives the "Sales by Gender" pie alongside the category list. */
+  genderBreakdownData?: Array<{
+    gender: string
+    value: number
+    percentage: number
+  }>
   regionalPerformanceData?: Array<{
     region: string
     sales?: number
@@ -116,68 +125,60 @@ export interface AnalyticsModalConfig {
   engagementData?: UserGrowthDataPoint[]
   userSegmentData?: { buyersCount: number; sellersCount: number }
   customerTypeData?: CustomerTypeDataPoint[]
+  /** Disclaimer shown under the Customer Type chart, e.g. clarifying it's a
+   *  within-selected-period proxy rather than lifetime order history. */
+  customerTypeNote?: string | null
+  orderTypeData?: OrderTypeDataPoint[]
+  returnReasonsData?: ReturnReasonDataPoint[]
+  returnGenderData?: ReturnGenderDataPoint[]
+  returnRateData?: ReturnRateDataPoint[]
   contentClassName?: string
 }
 
-const ANALYTICS_TIME_RANGE_OPTIONS: FilterOption[] = [
-  { value: "today", label: "Today" },
-  { value: "yesterday", label: "Yesterday" },
-  { value: "last_7_days", label: "Last 7 Days" },
-  { value: "last_30_days", label: "Last 30 Days" },
-  { value: "this_month", label: "This Month" },
-  { value: "last_month", label: "Last Month" },
-  { value: "last_3_months", label: "Last 3 Months" },
-  { value: "custom_range", label: "Custom Range" },
-]
 
-const ANALYTICS_FILTER_CONFIG = {
-  timeRange: ANALYTICS_TIME_RANGE_OPTIONS,
+function dateRangeValueFromPayload(payload: DateRangeApiPayload): DateRangeValue {
+  const start = new Date(payload.start_date)
+  const end = new Date(payload.end_date)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return getDefaultDateRange()
+  }
+  return normalizeRange(start, end)
 }
 
 interface AnalyticsModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   config: AnalyticsModalConfig
+  /** Seed the modal date picker (e.g. dashboard KPI row range). */
+  initialDateRangePayload?: DateRangeApiPayload
+  /** Fired when the user changes the modal date range — use to refetch analytics. */
+  onDateRangePayloadChange?: (payload: DateRangeApiPayload) => void
 }
 
-export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalProps) {
+export function AnalyticsModal({
+  open,
+  onOpenChange,
+  config,
+  initialDateRangePayload,
+  onDateRangePayloadChange,
+}: AnalyticsModalProps) {
   const initialTab = config.defaultTab || config.tabs[0]?.id || ""
   const [activeTab, setActiveTab] = useState<string>(initialTab)
-  const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTER_VALUES)
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() =>
+    initialDateRangePayload
+      ? dateRangeValueFromPayload(initialDateRangePayload)
+      : getDefaultDateRange()
+  )
+  const [dateRangePayload, setDateRangePayload] = useState<DateRangeApiPayload>(() =>
+    initialDateRangePayload ?? toDateRangePayload(getDefaultDateRange())
+  )
 
   const ChartIcon = config.chartIcon || BarChart3
 
-  const handleFilterChange = (newFilters: Partial<FilterValues>) => {
-    setFilters((prev) => ({ ...prev, ...newFilters }))
-  }
-  const handleFilterReset = () => setFilters(DEFAULT_FILTER_VALUES)
-  const handleFilterApply = () => {
-  }
-
-  const downloadFile = (filename: string, mimeType: string, content: string) => {
-    const blob = new Blob([content], { type: mimeType })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
-  }
-
-  const handleExportPDF = () => {
-    window.print()
-  }
-
-  const handleExportCSV = () => {
-    const rows: Array<[string, string]> = [
-      ["title", config.title],
-      ["tab", activeTab],
-      ["filters", JSON.stringify(filters)],
-    ]
-    const csv = ["key,value", ...rows.map(([k, v]) => `${JSON.stringify(k)},${JSON.stringify(v)}`)].join("\n")
-    downloadFile("analytics-export.csv", "text/csv;charset=utf-8", csv)
+  const handleDateRangeChange = (range: DateRangeValue, payload: DateRangeApiPayload) => {
+    setDateRange(range)
+    setDateRangePayload(payload)
+    onDateRangePayloadChange?.(payload)
   }
 
   const renderTabContent = () => {
@@ -200,7 +201,10 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
           />
         )
       case "category-breakdown":
-        return <CategoryBreakdownTab data={config.categoryBreakdownData} />
+        return <CategoryBreakdownTab
+            data={config.categoryBreakdownData}
+            genderData={config.genderBreakdownData}
+          />
       case "regional-performance":
         return (
           <RegionalPerformanceTab
@@ -211,9 +215,14 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
       case "sales-channel":
         return <SalesChannelTab data={config.salesChannelData} />
       case "customer-type":
-        return <CustomerTypeAnalyticsModal data={config.customerTypeData} />
+        return (
+          <CustomerTypeAnalyticsModal
+            data={config.customerTypeData}
+            note={config.customerTypeNote}
+          />
+        )
       case "order-type":
-        return <OrderTypeAnalyticsModal />
+        return <OrderTypeAnalyticsModal data={config.orderTypeData} />
       case "impact-of-promotions":
         return <ImpactOfPromotionsAnalyticsModal />
 
@@ -227,11 +236,9 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
           />
         )
       case "to-order-type":
-        return <TOOrderTypeTab />
-      case "to-order-status":
-        return <TOOrderStatusTab />
+        return <TOOrderTypeTab data={config.orderTypeData} />
       case "to-customer-type":
-        return <TOCustomerTypeTab />
+        return <TOCustomerTypeTab data={config.customerTypeData} />
 
       // Return Orders Tabs
       case "ro-historical-trends":
@@ -243,11 +250,11 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
           />
         )
       case "ro-return-reasons":
-        return <ROReturnReasonsTab />
+        return <ROReturnReasonsTab data={config.returnReasonsData} />
       case "ro-product-categories":
-        return <ROProductCategoriesTab />
+        return <ROProductCategoriesTab data={config.returnGenderData} />
       case "ro-return-rate":
-        return <ROReturnRateTab />
+        return <ROReturnRateTab data={config.returnRateData} />
       case "color-trends":
         return <ColorTrendsTab data={config.colorTrendsData} chartData={config.chartData} />
       case "device-heatmap":
@@ -270,7 +277,10 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
       case "user-segment":
         return <UserSegmentTab data={config.userSegmentData} />
       case "categories":
-        return <CategoryBreakdownTab data={config.categoryBreakdownData} />
+        return <CategoryBreakdownTab
+            data={config.categoryBreakdownData}
+            genderData={config.genderBreakdownData}
+          />
       case "regions":
         return (
           <RegionalPerformanceTab
@@ -307,13 +317,6 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
           <div className="flex items-center justify-between">
             <DialogTitle className="text-2xl font-bold">{config.title}</DialogTitle>
             <div className="flex items-center gap-2">
-              <ExportDropdown
-                onExportPDF={handleExportPDF}
-                onExportCSV={handleExportCSV}
-                variant="outline"
-                size="sm"
-                className="bg-[#F2F2F2] hover:bg-[#E5E5E5] border-0"
-              />
               <DialogCloseButton />
             </div>
           </div>
@@ -412,13 +415,13 @@ export function AnalyticsModal({ open, onOpenChange, config }: AnalyticsModalPro
               onValueChange={setActiveTab}
               variant="pill"
             />
-            <Filter
-              filters={filters}
-              onFilterChange={handleFilterChange}
-              onReset={handleFilterReset}
-              onApply={handleFilterApply}
-              config={ANALYTICS_FILTER_CONFIG}
-            />
+            <div
+              className="flex items-center gap-3"
+              data-start-date={dateRangePayload.start_date}
+              data-end-date={dateRangePayload.end_date}
+            >
+              <CustomDateRangeSelector value={dateRange} onChange={handleDateRangeChange} />
+            </div>
           </div>
 
           {renderTabContent()}

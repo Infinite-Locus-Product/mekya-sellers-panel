@@ -4,7 +4,6 @@ export {
     ORDER_TAB_LIST_CLASS,
     ORDER_TAB_ITEM_CLASS,
     ORDER_SUBTAB_LIST_CLASS,
-    B2B_INVENTORY_TYPE_FILTER_OPTIONS,
     ORDER_STATUS_FILTER_OPTIONS,
     DATE_FILTER_OPTIONS,
     PAGE_TITLE_ORDER_MANAGEMENT,
@@ -13,6 +12,7 @@ export {
     RETURN_TYPE_FILTER_OPTIONS,
     CANCELLATION_TYPE_FILTER_OPTIONS,
     CUSTOM_ORDER_STATUS_FILTER_OPTIONS,
+    getCustomOrderStatusFilterOptions,
     RETURN_SUBTABS_WITH_PAYMENT_FILTER,
     getOrderStatusFilterOptions,
     getExchangeStatusFilterOptions,
@@ -42,7 +42,7 @@ export { useBulkActionExecuteHandler } from "./useBulkActionExecuteHandler";
 export { OrdersCardToolbar, type OrdersCardToolbarProps } from "./OrdersCardToolbar";
 export { OrderStatusMultiSelect } from "./OrderStatusMultiSelect";
 export { CustomOrdersKpiGrid, type CustomOrdersKpiGridProps, type CustomOrderRequestKpis } from "./CustomOrdersKpiGrid";
-export { CursorPager } from "./CursorPager";
+export { CursorPager } from "@/components/shared/CursorPager";
 export { SegmentOrderModals, type SegmentOrderModalsProps } from "./SegmentOrderModals";
 export {
     CUSTOM_ORDER_REQUEST_STATUS_LABEL,

@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { getOrderDetail } from "@/lib/api/orders";
-import type { OrderDetailUnfulfilledLine, ShipmentDisplay } from "@/components/shared/order-details/types";
+import type {
+    OrderCustomOrderLink,
+    OrderDetailUnfulfilledLine,
+    ShipmentDisplay,
+} from "@/components/shared/order-details/types";
 import { ShipmentsSection } from "@/components/shared/order-details/ShipmentsSection";
 import { mapApiOrderDetailToOrderDetailsData } from "@/app/(pages)/order-management/[orderId]/mapOrderDetail";
 
@@ -11,6 +15,7 @@ interface ExpandedRowShipmentData {
     shipments: ShipmentDisplay[];
     unfulfilledLines: OrderDetailUnfulfilledLine[];
     deliveryPincode: string | null;
+    customOrder: OrderCustomOrderLink | null;
     orderStatus: string;
 }
 
@@ -20,10 +25,17 @@ const shipmentsCache = new Map<string, ExpandedRowShipmentData>();
 
 export interface OrderShipmentsExpandedRowProps {
     readonly orderId: string;
+    /** Called after a shipment action here changes the order's status — lets the parent
+     * table refetch so the (collapsed) row's own Order Status/Payment Status columns don't
+     * stay stale, since this component only refreshes its own local shipment data. */
+    readonly onOrderChanged?: () => void;
 }
 
 /** Lazily fetches order detail on first expand and renders its shipments inline in the list. */
-export function OrderShipmentsExpandedRow({ orderId }: Readonly<OrderShipmentsExpandedRowProps>) {
+export function OrderShipmentsExpandedRow({
+    orderId,
+    onOrderChanged,
+}: Readonly<OrderShipmentsExpandedRowProps>) {
     const [data, setData] = useState<ExpandedRowShipmentData | null>(shipmentsCache.get(orderId) ?? null);
     const [loading, setLoading] = useState(!shipmentsCache.has(orderId));
     const [error, setError] = useState(false);
@@ -47,6 +59,7 @@ export function OrderShipmentsExpandedRow({ orderId }: Readonly<OrderShipmentsEx
                     shipments: mapped.shipments ?? [],
                     unfulfilledLines: mapped.unfulfilledLines ?? [],
                     deliveryPincode: mapped.deliveryPincode ?? null,
+                    customOrder: mapped.customOrder ?? null,
                     orderStatus: mapped.status,
                 };
                 shipmentsCache.set(orderId, next);
@@ -84,8 +97,12 @@ export function OrderShipmentsExpandedRow({ orderId }: Readonly<OrderShipmentsEx
                 orderId={orderId}
                 unfulfilledLines={data.unfulfilledLines}
                 deliveryPincode={data.deliveryPincode}
+                customOrder={data.customOrder}
                 orderStatus={data.orderStatus}
-                onRefresh={() => setRefreshToken((t) => t + 1)}
+                onRefresh={() => {
+                    setRefreshToken((t) => t + 1);
+                    onOrderChanged?.();
+                }}
             />
         </div>
     );

@@ -106,8 +106,11 @@ export function mapApiOrder(r: ApiOrder): AllOrder {
 }
 
 /** Base (non-"partially_") pipeline status — the only values `pipeline_status` accepts. The
- * backend matches both this exact code and its "partially_" counterpart server-side. */
-export type PipelineStatusFilter = Exclude<MekyaOrderStatus, `partially_${string}`>;
+ * backend matches both this exact code and its "partially_" counterpart server-side.
+ * "completed" is a separate sentinel, not a real order_status code: it means *nothing* is
+ * left pending or actively moving, which the dominant-bucket label alone can't express — see
+ * find_ids_for_completed_orders backend-side. */
+export type PipelineStatusFilter = Exclude<MekyaOrderStatus, `partially_${string}`> | "completed";
 
 export interface ListOrdersParams {
   channel?: "b2b" | "b2c";
@@ -190,12 +193,120 @@ export interface OrderKpis {
    */
   ready_for_dispatch: number;
   shipped: number;
-  returns_initiated: number;
-  returns_in_process: number;
+  /** Open return requests only (pending/approved/received/defect-check/QC-failed) — a to-do
+   *  count, not a lifetime total. Replaces the old returns_initiated + returns_in_process pair. */
+  returns: number;
+  /** Line-level cancellations recorded against this seller. */
+  cancellations: number;
 }
 
 export async function getOrderKpis(): Promise<OrderKpis> {
   const res = await authService.api.get<OrderKpis>(`/seller/orders/kpis`);
+  return res.data;
+}
+
+// ─── GET /seller/orders/returns/kpis ──────────────────────────────────────────
+
+export interface ReturnsKpis {
+  total_returns: number;
+  pending_review: number;
+  completed: number;
+  total_refund: { amount: number; currency: string };
+}
+
+export interface GetReturnsKpisParams {
+  channel?: "b2b" | "b2c";
+  date_from?: string;
+  date_to?: string;
+}
+
+const EMPTY_RETURNS_KPIS: ReturnsKpis = {
+  total_returns: 0,
+  pending_review: 0,
+  completed: 0,
+  total_refund: { amount: 0, currency: "INR" },
+};
+
+export async function getReturnsKpis(params?: GetReturnsKpisParams): Promise<ReturnsKpis> {
+  const query = new URLSearchParams();
+  if (params?.channel) query.set("channel", params.channel);
+  if (params?.date_from) query.set("date_from", params.date_from);
+  if (params?.date_to) query.set("date_to", params.date_to);
+  const qs = query.toString();
+  const res = await authService.api.get<ReturnsKpis>(
+    `/seller/orders/returns/kpis${qs ? `?${qs}` : ""}`,
+  );
+  return res.data ?? EMPTY_RETURNS_KPIS;
+}
+
+// ─── GET /seller/orders/returns/analytics ─────────────────────────────────────
+
+export interface ReturnsAnalyticsSummaryPoint {
+  label: string;
+  date_from: string;
+  date_to: string;
+  value: number;
+  display_value: string;
+}
+
+export interface ReturnsAnalyticsSummary {
+  current: ReturnsAnalyticsSummaryPoint;
+  previous: ReturnsAnalyticsSummaryPoint;
+  change_percent: number | null;
+  change_direction: "positive" | "negative" | "neutral";
+  display_change: string;
+}
+
+export interface ReturnsTrendPoint {
+  label: string;
+  value: number;
+}
+
+export interface ReturnsSnapshotItem {
+  type: string;
+  label: string;
+  count: number;
+  percentage: number;
+  color: string;
+}
+
+export interface ReturnsAnalytics {
+  period: { date_from: string; date_to: string };
+  summary: ReturnsAnalyticsSummary;
+  historical_trends: {
+    granularity: "hour" | "day" | "month";
+    series: ReturnsTrendPoint[];
+    note: string | null;
+  };
+  reasons: { available: boolean; items: ReturnsSnapshotItem[] };
+  /** Gender breakdown of the returned products — not product category. */
+  gender: { available: boolean; items: ReturnsSnapshotItem[] };
+  return_rate: { available: boolean; items: ReturnsSnapshotItem[] };
+  meta: {
+    returns_in_period: number;
+    returns_scanned: number;
+    returns_truncated: boolean;
+  };
+}
+
+export interface GetReturnsAnalyticsParams {
+  /** Inclusive, YYYY-MM-DD. */
+  date_from: string;
+  /** Inclusive, YYYY-MM-DD. */
+  date_to: string;
+  channel?: "b2b" | "b2c";
+}
+
+export async function getReturnsAnalytics(
+  params: GetReturnsAnalyticsParams,
+): Promise<ReturnsAnalytics> {
+  const query = new URLSearchParams();
+  query.set("date_from", params.date_from);
+  query.set("date_to", params.date_to);
+  if (params.channel) query.set("channel", params.channel);
+  const res = await authService.api.get<ReturnsAnalytics>(
+    `/seller/orders/returns/analytics?${query.toString()}`,
+  );
   return res.data;
 }
 
@@ -334,6 +445,16 @@ export interface ApiOrderDetail {
   lines: ApiOrderLineItem[];
   /** Saleor order-history log, not a fulfillment stepper — shipments[].stepper drives the tracking UI instead. */
   timeline?: ApiOrderEvent[];
+  /** Set only when this order was created by a buyer confirming a custom-order request.
+   *  Null for ordinary orders, which is what keeps the fulfilment confirmation off them. */
+  custom_order?: ApiOrderCustomOrderLink | null;
+}
+
+export interface ApiOrderCustomOrderLink {
+  id: string;
+  custom_status: string;
+  contact_person: string | null;
+  customer_email: string | null;
 }
 
 export async function getOrderDetail(orderId: string): Promise<ApiOrderDetail> {

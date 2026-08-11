@@ -4,20 +4,21 @@ import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { OrderDetailFulfillmentTimelineTitleIcon } from "@/assets/icons/order-management"
 import {
   createShipment,
-  fulfillOrder,
   getWarehouseCandidates,
   type FulfillmentStatus,
   type WarehouseCandidate,
 } from "@/lib/api/orders"
 import { StatusBadge, type StatusVariant } from "@/components/shared/StatusBadge"
-import type { OrderDetailUnfulfilledLine, ShipmentDisplay } from "./types"
+import type { OrderDetailUnfulfilledLine, ShipmentDisplay , OrderCustomOrderLink } from "./types"
 import { ShipmentActions } from "./ShipmentActions"
 import { CancelShipmentItemAction } from "./CancelShipmentItemAction"
+import { ConfirmCustomOrderFulfilledModal } from "./ConfirmCustomOrderFulfilledModal"
+import { CustomOrderRequestReadOnlyModal } from "./CustomOrderRequestReadOnlyModal"
+import { CancelLineItemAction } from "./CancelLineItemAction"
 import { canEditShipmentItems } from "./utils"
 import { formatOrderDate } from "@/lib/utils"
 
@@ -39,84 +40,6 @@ function shipmentStatusVariant(shipment: ShipmentDisplay): StatusVariant {
     (s) => s.label.toLowerCase() === shipment.stepper.currentStep.toLowerCase()
   )?.key
   return key ? STEP_KEY_VARIANT[key] : "processing"
-}
-
-/** Shown when an order has no shipments yet — creates the first one via POST .../fulfill. */
-function CreateShipmentPrompt({ orderId, onDone }: Readonly<{ orderId: string; onDone?: () => void }>) {
-  const [open, setOpen] = useState(false)
-  const [trackingNumber, setTrackingNumber] = useState("")
-  const [courier, setCourier] = useState("")
-  const [trackingUrl, setTrackingUrl] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const submit = async () => {
-    setIsSubmitting(true)
-    try {
-      await fulfillOrder(orderId, {
-        ...(trackingNumber.trim() ? { tracking_number: trackingNumber.trim() } : {}),
-        ...(courier.trim() ? { courier: courier.trim() } : {}),
-        ...(trackingUrl.trim() ? { tracking_url: trackingUrl.trim() } : {}),
-      })
-      toast.success("Shipment created")
-      setOpen(false)
-      setTrackingNumber("")
-      setCourier("")
-      setTrackingUrl("")
-      onDone?.()
-    } catch (err) {
-      toast.error("Could not create shipment", {
-        description: err instanceof Error ? err.message : "Please try again.",
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  if (!open) {
-    return (
-      <Button type="button" size="sm" onClick={() => setOpen(true)} className="h-8 text-xs">
-        Create Shipment
-      </Button>
-    )
-  }
-
-  return (
-    <div className="max-w-xs space-y-2">
-      <Input
-        placeholder="Courier (optional)"
-        value={courier}
-        onChange={(e) => setCourier(e.target.value)}
-        className="h-8 text-sm"
-      />
-      <Input
-        placeholder="Tracking number (optional)"
-        value={trackingNumber}
-        onChange={(e) => setTrackingNumber(e.target.value)}
-        className="h-8 text-sm"
-      />
-      <Input
-        placeholder="Tracking URL (optional)"
-        value={trackingUrl}
-        onChange={(e) => setTrackingUrl(e.target.value)}
-        className="h-8 text-sm"
-      />
-      <div className="flex gap-2">
-        <Button type="button" size="sm" disabled={isSubmitting} onClick={submit} className="h-7 text-xs">
-          {isSubmitting ? "Creating…" : "Create Shipment"}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={isSubmitting}
-          onClick={() => setOpen(false)}
-          className="h-7 text-xs"
-        >
-          Cancel
-        </Button>
-      </div>
-    </div>
-  )
 }
 
 /** Warehouse picker for a new shipment covering the caller's selected lines — fetches candidates
@@ -246,15 +169,22 @@ function MakeShipmentPanel({
   orderId,
   deliveryPincode,
   unfulfilledLines,
+  customOrder,
   onDone,
 }: Readonly<{
   orderId: string
   deliveryPincode: string | null | undefined
   unfulfilledLines: OrderDetailUnfulfilledLine[]
+  /** Set only for orders created from a custom request — gates fulfilment behind an
+   *  "is the bespoke work actually done?" confirmation. Null for ordinary orders, which
+   *  go straight to the warehouse picker exactly as before. */
+  customOrder?: OrderCustomOrderLink | null
   onDone?: () => void
 }>) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [viewingCustomOrderId, setViewingCustomOrderId] = useState<string | null>(null)
 
   const toggle = (id: string) => {
     setSelectedIds((prev) => {
@@ -274,28 +204,65 @@ function MakeShipmentPanel({
       </p>
       <div className="mb-3 space-y-1.5">
         {unfulfilledLines.map((line) => (
-          <label key={line.orderLineId} className="flex items-center gap-2 text-xs sm:text-sm">
-            <input
-              type="checkbox"
-              checked={selectedIds.has(line.orderLineId)}
-              onChange={() => toggle(line.orderLineId)}
-              className="size-3.5"
+          // The cancel button sits outside the <label> on purpose: nested inside it, clicking
+          // Cancel would also toggle the fulfil checkbox.
+          <div
+            key={line.orderLineId}
+            className="flex items-center justify-between gap-2 text-xs sm:text-sm"
+          >
+            <label className="flex min-w-0 flex-1 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(line.orderLineId)}
+                onChange={() => toggle(line.orderLineId)}
+                className="size-3.5 shrink-0"
+              />
+              <span className="truncate">
+                {line.productName} × {line.quantity}
+              </span>
+            </label>
+            {/* Nothing is packed yet, so the whole line is cancellable — the backend caps at
+                quantityToFulfill minus anything already cancelled, which is this quantity. */}
+            <CancelLineItemAction
+              orderId={orderId}
+              orderLineId={line.orderLineId}
+              productName={line.productName}
+              quantity={line.quantity}
+              onDone={onDone}
             />
-            <span>
-              {line.productName} × {line.quantity}
-            </span>
-          </label>
+          </div>
         ))}
       </div>
       <Button
         type="button"
         size="sm"
         disabled={selectedLines.length === 0}
-        onClick={() => setPickerOpen(true)}
+        onClick={() => (customOrder ? setConfirmOpen(true) : setPickerOpen(true))}
         className="h-8 text-xs"
       >
         Make Shipment with Selected Items
       </Button>
+      {customOrder ? (
+        <>
+          <ConfirmCustomOrderFulfilledModal
+            open={confirmOpen}
+            onOpenChange={setConfirmOpen}
+            customOrder={customOrder}
+            itemCount={selectedLines.length}
+            onViewCustomOrder={() => setViewingCustomOrderId(customOrder.id)}
+            onConfirm={() => {
+              setConfirmOpen(false)
+              setPickerOpen(true)
+            }}
+          />
+          <CustomOrderRequestReadOnlyModal
+            customOrderId={viewingCustomOrderId}
+            onOpenChange={(open) => {
+              if (!open) setViewingCustomOrderId(null)
+            }}
+          />
+        </>
+      ) : null}
       <WarehousePickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -320,6 +287,7 @@ export function ShipmentsSection({
   orderId,
   unfulfilledLines,
   deliveryPincode,
+  customOrder,
   orderStatus,
   onRefresh,
 }: Readonly<{
@@ -327,14 +295,19 @@ export function ShipmentsSection({
   orderId: string
   unfulfilledLines?: OrderDetailUnfulfilledLine[]
   deliveryPincode?: string | null
-  /** Raw order status label (e.g. "Cancelled") — a fully cancelled order with no shipments
-   *  has nothing left to fulfill, so the "create a shipment" prompt below is suppressed
-   *  rather than offered for an action that can't do anything. */
+  /** Origin custom request, when the order came from one — forwarded to the fulfil panel. */
+  customOrder?: OrderCustomOrderLink | null
+  /** Raw order status label (e.g. "Cancelled") — only used to word the empty state; whether a
+   *  shipment can be created is decided by `unfulfilledLines`, not by this. */
   orderStatus?: string
   onRefresh?: () => void
 }>) {
   if (shipments.length === 0) {
-    const isCancelled = orderStatus === "Cancelled"
+    // `unfulfilledLines` is the only thing that decides whether fulfilment is possible: it is
+    // already net of cancelled quantities, so an empty list means there is genuinely nothing to
+    // pack. Gating on the status string instead let a fully cancelled order whose label wasn't
+    // exactly "Cancelled" (partially cancelled, fully returned) still offer a shipment that would
+    // have contained no items.
     return (
       <section aria-label="Fulfill this order" className="contents">
         {unfulfilledLines && unfulfilledLines.length > 0 ? (
@@ -342,20 +315,16 @@ export function ShipmentsSection({
             orderId={orderId}
             deliveryPincode={deliveryPincode}
             unfulfilledLines={unfulfilledLines}
+            customOrder={customOrder}
             onDone={onRefresh}
           />
-        ) : isCancelled ? (
-          <div className="rounded-md border border-dashed border-border bg-white p-4">
-            <p className="text-xs text-muted-foreground sm:text-sm">
-              This order was cancelled — no shipment is needed.
-            </p>
-          </div>
         ) : (
           <div className="rounded-md border border-dashed border-border bg-white p-4">
-            <p className="mb-3 text-xs text-muted-foreground sm:text-sm">
-              No shipments yet — create one to start fulfilling this order.
+            <p className="text-xs text-muted-foreground sm:text-sm">
+              {orderStatus === "Cancelled"
+                ? "This order was cancelled — no shipment is needed."
+                : "Nothing left to fulfil on this order."}
             </p>
-            <CreateShipmentPrompt orderId={orderId} onDone={onRefresh} />
           </div>
         )}
       </section>
@@ -469,6 +438,7 @@ export function ShipmentsSection({
               orderId={orderId}
               deliveryPincode={deliveryPincode}
               unfulfilledLines={unfulfilledLines}
+              customOrder={customOrder}
               onDone={onRefresh}
             />
           ) : null}

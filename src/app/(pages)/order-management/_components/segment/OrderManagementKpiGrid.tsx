@@ -1,3 +1,4 @@
+import { XCircle } from "lucide-react";
 import { KPICard } from "@/components/shared/KPICard";
 import {
     KpiOrdersBagIcon,
@@ -12,15 +13,17 @@ export interface OrderManagementKpiGridProps {
     readonly stats: OrderKpis | null;
 }
 
-/** Tiles mirror GET /seller/orders/kpis exactly — no client-side derivation. */
+/** Tiles mirror GET /seller/orders/kpis exactly — no client-side derivation. Returns and
+ *  Cancellations get one tile each; they used to be two return tiles (initiated / in process)
+ *  split across the same lifecycle, which left cancellations with no tile at all. */
 export function OrderManagementKpiGrid({ stats }: Readonly<OrderManagementKpiGridProps>) {
     const s = stats ?? {
         pending: 0,
         processing: 0,
         ready_for_dispatch: 0,
         shipped: 0,
-        returns_initiated: 0,
-        returns_in_process: 0,
+        returns: 0,
+        cancellations: 0,
     };
 
     return (
@@ -35,16 +38,16 @@ export function OrderManagementKpiGrid({ stats }: Readonly<OrderManagementKpiGri
             />
             <KPICard title="Shipped" value={String(s.shipped)} icon={<KpiTotalRevenueIcon />} kpiType={4} />
             <KPICard
-                title="Returns Initiated"
-                value={String(s.returns_initiated)}
+                title="Returns"
+                value={String(s.returns)}
                 icon={<KpiReturnUndoIcon />}
                 kpiType={5}
             />
             <KPICard
-                title="Returns In Process"
-                value={String(s.returns_in_process)}
-                icon={<KpiReturnUndoIcon />}
-                kpiType={1}
+                title="Cancellations"
+                value={String(s.cancellations)}
+                icon={<XCircle aria-hidden />}
+                kpiType={3}
             />
         </div>
     );

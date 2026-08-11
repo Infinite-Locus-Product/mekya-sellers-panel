@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { getPaginationRange, PAGINATION_WINDOW_SIZE } from "@/lib/paginationRange";
 
 export const DEFAULT_PAGE_SIZE_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
@@ -43,16 +44,13 @@ export function Pagination({
   const safeTotalPages = Math.max(1, totalPages);
   const safeCurrentPage = Math.min(Math.max(1, currentPage), safeTotalPages);
 
-  const half = Math.floor(maxVisible / 2);
-  let start = Math.max(1, safeCurrentPage - half);
-  const end = Math.min(safeTotalPages, start + maxVisible - 1);
-  if (end - start + 1 < maxVisible) {
-    start = Math.max(1, end - maxVisible + 1);
-  }
-  const pages: number[] = [];
-  for (let i = start; i <= end; i++) {
-    pages.push(i);
-  }
+  // Page 1 and the last page are always pinned, with a 3-page sliding window between them.
+  // `maxVisible` is honoured as the window size for callers that set it explicitly.
+  const slots = getPaginationRange(
+    safeCurrentPage,
+    safeTotalPages,
+    maxVisible === 5 ? PAGINATION_WINDOW_SIZE : maxVisible
+  );
 
   const pageButtons =
     safeTotalPages > 1 ? (
@@ -66,57 +64,29 @@ export function Pagination({
         >
           &lt;
         </Button>
-        {start > 1 && (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(1)}
-              aria-label="Go to page 1"
+        {slots.map((slot, index) =>
+          slot === "ellipsis" ? (
+            <span
+              // Index is a stable key here: slot lists are regenerated wholesale on every
+              // page change and never reordered in place.
+              key={`gap-${index}`}
+              className="inline-flex h-8 items-center px-2 text-sm text-muted-foreground"
+              aria-hidden
             >
-              1
-            </Button>
-            {start > 2 && (
-              <span
-                className="inline-flex h-8 items-center px-2 text-sm text-muted-foreground"
-                aria-hidden
-              >
-                ...
-              </span>
-            )}
-          </>
-        )}
-        {pages.map((page) => (
-          <Button
-            key={page}
-            variant={page === safeCurrentPage ? "default" : "outline"}
-            size="sm"
-            onClick={() => onPageChange(page)}
-            aria-label={`Page ${page}`}
-            aria-current={page === safeCurrentPage ? "page" : undefined}
-          >
-            {page}
-          </Button>
-        ))}
-        {end < safeTotalPages && (
-          <>
-            {end < safeTotalPages - 1 && (
-              <span
-                className="inline-flex h-8 items-center px-2 text-sm text-muted-foreground"
-                aria-hidden
-              >
-                ...
-              </span>
-            )}
+              ...
+            </span>
+          ) : (
             <Button
-              variant="outline"
+              key={slot}
+              variant={slot === safeCurrentPage ? "default" : "outline"}
               size="sm"
-              onClick={() => onPageChange(safeTotalPages)}
-              aria-label={`Go to page ${safeTotalPages}`}
+              onClick={() => onPageChange(slot)}
+              aria-label={`Page ${slot}`}
+              aria-current={slot === safeCurrentPage ? "page" : undefined}
             >
-              {safeTotalPages}
+              {slot}
             </Button>
-          </>
+          )
         )}
         <Button
           variant="outline"

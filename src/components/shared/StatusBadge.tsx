@@ -52,11 +52,15 @@ const statusStyles: Record<StatusVariant, string> = {
   expired: "bg-[#F5F5F4] text-[#78716C]",
 }
 
+// `leading-none` (line-height: 1) clips descenders (g, y, p, q, j) in several fonts once
+// combined with `overflow-hidden` — the glyph's descender falls outside the 1x line box.
+// `leading-normal` gives it room while `overflow-hidden` + `truncate` on the inner span
+// still handle long labels the same way.
 const BADGE_LAYOUT =
-  "inline-flex min-h-[22px] w-full min-w-0 max-w-full items-center justify-center gap-x-0.5 overflow-hidden rounded-full px-1 py-0.5 text-center text-[9px] font-medium leading-none whitespace-nowrap sm:min-h-7 sm:px-2 sm:text-[11px] xl:text-xs min-[1920px]:px-2.5 min-[1920px]:text-sm"
+  "inline-flex min-h-[22px] w-full min-w-0 max-w-full items-center justify-center gap-x-0.5 overflow-hidden rounded-full px-1 py-0.5 text-center text-[9px] font-medium leading-normal whitespace-nowrap sm:min-h-7 sm:px-2 sm:text-[11px] xl:text-xs min-[1920px]:px-2.5 min-[1920px]:text-sm"
 
 const BADGE_LAYOUT_WRAP_LONG =
-  "inline-flex min-h-[22px] w-full min-w-0 max-w-full items-center justify-center gap-x-0.5 rounded-full px-1 py-0.5 text-center text-[8px] font-medium leading-tight sm:min-h-7 sm:px-2 sm:text-[10px] xl:text-[11px] min-[1920px]:px-2.5 min-[1920px]:text-xs"
+  "inline-flex min-h-[22px] w-full min-w-0 max-w-full items-center justify-center gap-x-0.5 rounded-full px-1 py-0.5 text-center text-[8px] font-medium leading-normal sm:min-h-7 sm:px-2 sm:text-[10px] xl:text-[11px] min-[1920px]:px-2.5 min-[1920px]:text-xs"
 
 export function StatusBadge({
   children,

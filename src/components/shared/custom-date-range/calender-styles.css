@@ -1,0 +1,115 @@
+.mekya-date-range .rdrCalendarWrapper {
+  width: 100%;
+  max-width: 228px;
+  font-size: 11px;
+  background: transparent;
+}
+
+.mekya-date-range .rdrMonths {
+  justify-content: center;
+}
+
+.mekya-date-range .rdrMonth {
+  width: 100%;
+  max-width: 228px;
+  padding: 0 2px;
+}
+
+.mekya-date-range .rdrWeekDays {
+  color: #000;
+  font-weight: 500;
+}
+
+.mekya-date-range .rdrDay {
+  height: 28px;
+  width: 28px;
+}
+
+.mekya-date-range .rdrDayNumber {
+  font-weight: 500;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mekya-date-range .rdrDayNumber span {
+  font-size: 12px;
+}
+
+.mekya-date-range .rdrDayToday .rdrDayNumber span::after {
+  background: #004b5e;
+}
+
+.mekya-date-range .rdrStartEdge,
+.mekya-date-range .rdrEndEdge {
+  background: #004b5e !important;
+  color: #fff !important;
+}
+
+.mekya-date-range .rdrInRange {
+  background: #e6f2f4 !important;
+  color: #004b5e !important;
+}
+
+.mekya-date-range .rdrDayHovered .rdrDayNumber span {
+  border-color: #004b5e;
+}
+
+.mekya-date-range .rdrMonthAndYearPickers {
+  display: none;
+}
+
+.mekya-date-range .rdrDefinedRangesWrapper {
+  display: none;
+}
+
+.mekya-date-range .rdrMonthAndYearWrapper {
+  position: relative;
+  z-index: 2;
+}
+
+.mekya-date-range .rdrNextPrevButton {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  margin: 0 2px;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
+.mekya-date-range .rdrNextPrevButton i {
+  display: none;
+}
+
+.mekya-date-range .rdrPprevButton::before,
+.mekya-date-range .rdrNextButton::before {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid #121212;
+  border-left: 2px solid #121212;
+  margin: auto;
+}
+
+.mekya-date-range .rdrPprevButton::before {
+  transform: rotate(-45deg);
+}
+
+.mekya-date-range .rdrNextButton::before {
+  transform: rotate(135deg);
+}
+
+.mekya-date-range .rdrMonthName {
+  font-weight: 700;
+  font-size: 12px;
+  color: #121212;
+  padding: 8px 0;
+}

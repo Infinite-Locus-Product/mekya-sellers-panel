@@ -62,11 +62,17 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
 
   // Sum what every existing shipment already claims per line, then subtract from each line's
   // total quantity — never by array index, since a line can be split across shipments.
+  // Voided/cancelled fulfillments are excluded: Saleor returns their units to
+  // quantityToFulfill when a parcel is cancelled pre-dispatch, so counting them here would
+  // double-subtract units that are actually still sitting unshipped — silently making a
+  // genuinely pending unit invisible to both the cancel action and the create-shipment
+  // picker (it looked "already accounted for" when it wasn't accounted for at all).
   const shippedQtyByLine = new Map<string, number>();
-  for (const shipment of detail.shipments) {
+  for (const shipment of shipments) {
+    if (shipment.kind === "cancelled") continue;
     for (const item of shipment.items) {
-      if (!item.order_line_id) continue;
-      shippedQtyByLine.set(item.order_line_id, (shippedQtyByLine.get(item.order_line_id) ?? 0) + item.quantity);
+      if (!item.orderLineId) continue;
+      shippedQtyByLine.set(item.orderLineId, (shippedQtyByLine.get(item.orderLineId) ?? 0) + item.quantity);
     }
   }
 
@@ -74,6 +80,10 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
     const total = line.total_price?.amount ?? line.unit_price.amount * line.quantity;
     const cancelledQuantity = line.cancelled_quantity ?? 0;
     const shipped = line.id ? (shippedQtyByLine.get(line.id) ?? 0) : 0;
+    // Neither shipped (in an active parcel) nor cancelled — a genuinely orphaned unit that
+    // still needs someone to either ship or cancel it. Surfaced separately from
+    // cancellableQuantity so the UI can flag it instead of silently folding it into "pending".
+    const pendingQuantity = Math.max(0, line.quantity - shipped - cancelledQuantity);
     return {
       product: line.variant_name ? `${line.product_name} (${line.variant_name})` : line.product_name,
       sku: line.sku ?? "—",
@@ -83,9 +93,10 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
       imageUrl: line.thumbnail?.url,
       orderLineId: line.id,
       cancelledQuantity,
+      pendingQuantity,
       // Only unshipped, not-already-cancelled units can be cancelled. Mirrors the
       // backend's own NOTHING_TO_CANCEL guard.
-      cancellableQuantity: Math.max(0, line.quantity - shipped - cancelledQuantity),
+      cancellableQuantity: pendingQuantity,
     };
   });
   const computedSubtotal = items.reduce((sum, item) => sum + item.total, 0);
@@ -148,6 +159,14 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
     shipments,
     unfulfilledLines,
     deliveryPincode: detail.customer.shipping_address?.postal_code ?? null,
+    customOrder: detail.custom_order
+      ? {
+          id: detail.custom_order.id,
+          customStatus: detail.custom_order.custom_status,
+          contactPerson: detail.custom_order.contact_person,
+          customerEmail: detail.custom_order.customer_email,
+        }
+      : null,
     invoiceNumber: detail.invoice_number,
     orderNumber: detail.order_number,
     channel: isB2B ? "b2b" : "b2c",

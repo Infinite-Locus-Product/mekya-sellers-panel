@@ -32,13 +32,22 @@ function SelectTrigger({
       data-size={size}
       className={cn(
         "group flex w-fit cursor-pointer items-center justify-between gap-2  rounded-[4px] border border-border px-3 py-2 text-sm text-muted-foreground whitespace-nowrap shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        // A long selected label (e.g. "Any size, any color (custom mix & match)") can't
+        // wrap because of `whitespace-nowrap`, so without clipping it renders at full
+        // width and spills past the border and over the chevron. Truncating the value slot
+        // keeps every select inside its container regardless of option length — callers
+        // used to have to repeat this themselves per instance.
+        // No `flex-1` on the value: the trigger defaults to `w-fit`, where a zero flex-basis
+        // combined with `min-w-0` can collapse the label entirely. Shrink-to-fit plus
+        // truncate clips only when an explicit width actually constrains it.
+        "overflow-hidden [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left",
         className
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <span className="relative inline-flex size-4 items-center justify-center min-[1920px]:size-5">
+        <span className="relative inline-flex size-4 shrink-0 items-center justify-center min-[1920px]:size-5">
           <svg
             viewBox="0 0 20 20"
             fill="none"

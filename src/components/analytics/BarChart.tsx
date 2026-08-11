@@ -18,34 +18,20 @@ export type ChartDataPoint = {
 
 interface BarChartProps {
   data: ChartDataPoint[]
+  /** Accepted so callers can keep passing their range selector's value, but no longer used
+   *  for labelling — bar labels come from `data[].label`. See chartData below. */
   timeRange?: "1D" | "1W" | "1M" | "1Y"
   className?: string
   color?: string
 }
 
-export function BarChart({ data, timeRange, className, color = "#76B7FF" }: BarChartProps) {
-  const chartData = (() => {
-    switch (timeRange) {
-      case "1D": {
-        const hours = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
-        return data.slice(0, hours.length).map((item, index) => ({ name: hours[index], value: item.value }))
-      }
-      case "1W": {
-        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-        return data.slice(0, days.length).map((item, index) => ({ name: days[index], value: item.value }))
-      }
-      case "1M": {
-        const dates = ["05", "10", "15", "20", "25", "30"]
-        return data.slice(0, dates.length).map((item, index) => ({ name: dates[index], value: item.value }))
-      }
-      case "1Y": {
-        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        return data.slice(0, months.length).map((item, index) => ({ name: months[index], value: item.value }))
-      }
-      default:
-        return data.map(item => ({ name: item.label, value: item.value }))
-    }
-  })()
+export function BarChart({ data, className, color = "#76B7FF" }: BarChartProps) {
+  // Labels come from the API, which already knows its own granularity (hour/day/month) and
+  // labels each point accordingly. This used to overwrite them positionally from a fixed
+  // list keyed off `timeRange` — scaffolding from the mock-data era that assumed the series
+  // was always exactly 12 months / 7 weekdays / 12 hours. Against real data of any other
+  // length it silently mislabels every point (10 daily points became "Jan".."Oct").
+  const chartData = data.map((item) => ({ name: item.label, value: item.value }))
 
   return (
     <div className={cn("flex flex-col gap-3 rounded-lg w-full", className)}>

@@ -1,20 +1,10 @@
 "use client"
 
-import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { BarChart, LineChart, PieChart, type ChartDataPoint } from "@/components/analytics"
-import { LoadingSpinner, TimeRangeSelector } from "@/components/shared"
-import type { TimeRange } from "@/components/shared/TimeRangeSelector"
+import { LineChart, type ChartDataPoint } from "@/components/analytics"
 import { BarChart3 } from "lucide-react"
-import { SalesTrendsTitleIcon, CHART_TYPE_OPTIONS } from "@/assets/icons"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { SalesTrendsTitleIcon } from "@/assets/icons"
 
 interface SalesTrendsTabProps {
   chartData?: ChartDataPoint[]
@@ -29,27 +19,14 @@ export function SalesTrendsTab({
 }: SalesTrendsTabProps) {
   const isSalesTrends = chartTitle === "Sales Trends Over Time"
   const ChartIcon = isSalesTrends ? SalesTrendsTitleIcon : (ChartIconProp ?? BarChart3)
-  const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>("1Y")
-  const [isChartLoading, setIsChartLoading] = useState(false)
-  const [activeChartType, setActiveChartType] = useState<string>("Line Chart")
 
+  // Line only, and no local range control: the chart type was a cosmetic switch (a pie of a
+  // time series is meaningless), and the 1D/1W/1M/1Y buttons only relabelled points without
+  // refetching. The date range now lives in the modal's CustomDateRangeSelector, which does
+  // drive the query.
   const renderChart = () => {
     if (!chartData) return null
-
-    const chartProps = {
-      data: chartData,
-      timeRange: activeTimeRange,
-    }
-
-    switch (activeChartType) {
-      case "Bar Chart":
-        return <BarChart {...chartProps} />
-      case "Pie Chart":
-        return <PieChart {...chartProps} />
-      case "Line Chart":
-      default:
-        return <LineChart {...chartProps} />
-    }
+    return <LineChart data={chartData} />
   }
 
   return (
@@ -64,58 +41,18 @@ export function SalesTrendsTab({
             ) : null}
             {chartTitle}
           </CardTitle>
-          <div className="flex items-center gap-2">
-            <Select
-              value={activeChartType}
-              onValueChange={(value) => {
-                setActiveChartType(value)
-                setIsChartLoading(true)
-                setTimeout(() => setIsChartLoading(false), 600)
-              }}
-            >
-              <SelectTrigger className="w-[140px] bg-white border-border px-3" size="sm">
-                <SelectValue />
-                <div className="h-4 w-px bg-gray-300" aria-hidden />
-              </SelectTrigger>
-              <SelectContent>
-                {CHART_TYPE_OPTIONS.map(({ value, Icon }) => (
-                  <SelectItem key={value} value={value}>
-                    <span className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 shrink-0" />
-                      {value}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <TimeRangeSelector
-              value={activeTimeRange}
-              onValueChange={(range) => {
-                setActiveTimeRange(range)
-                setIsChartLoading(true)
-                setTimeout(() => setIsChartLoading(false), 600)
-              }}
-            />
-          </div>
         </div>
       </CardHeader>
       <CardContent>
         <div className="relative h-96">
-          {isChartLoading ? (
-            <div className="flex h-96 items-center justify-center rounded-lg bg-muted/30">
-              <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                <LoadingSpinner />
-                <p className="text-sm font-medium">Loading...</p>
-              </div>
-            </div>
-          ) : chartData ? (
+          {chartData ? (
             renderChart()
           ) : (
             <div className="flex h-96 flex-col items-center justify-center rounded-lg bg-muted/30 text-center space-y-3">
               <ChartIcon className="h-12 w-12 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Sales Trends (placeholder)</p>
+              <p className="text-sm text-muted-foreground">No sales data for this period</p>
               <p className="text-xs text-muted-foreground">
-                Data range: Jan - Dec ({activeTimeRange} view)
+                Pick a different date range to see trends.
               </p>
             </div>
           )}

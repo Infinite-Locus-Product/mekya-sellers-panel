@@ -1,248 +1,62 @@
 "use client"
 
-import { useState, useEffect, useId } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp } from "lucide-react"
-import { LoadingSpinner, TimeRangeSelector } from "@/components/shared"
-import type { TimeRange } from "@/components/shared/TimeRangeSelector"
-import { LineChartIcon } from "@/assets/icons"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  ComposedChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-  Area,
-  Tooltip,
-  type TooltipProps,
-} from "recharts"
-import { LineChartAreaGradient } from "@/components/analytics"
-import { cn, formatNumber } from "@/lib/utils"
+import { TwoSeriesLineChart } from "@/components/analytics"
 
 const RETURNING_STROKE = "#38BDF8"
-const NEW_CUSTOMERS_STROKE = "#D97706"
+const NEW_STROKE = "#D97706"
 
-export interface CustomerTrendDataPoint {
+export interface CustomerTypeDataPoint {
   label: string
   returning: number
-  newCustomers: number
+  new: number
 }
 
 interface CustomerTypeTabProps {
-  data?: CustomerTrendDataPoint[]
+  data?: CustomerTypeDataPoint[]
 }
 
-function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
-        <p className="font-medium mb-2 text-sm text-foreground">{String(label ?? "").toUpperCase()}</p>
-        {payload.map((entry) => (
-          <div key={`${entry.name ?? "series"}-${entry.dataKey ?? "value"}`} className="flex items-center gap-2 mb-1">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-            <span className="text-sm text-muted-foreground">
-              {String(entry.name ?? entry.dataKey ?? "Value")} :{" "}
-              <span className="text-foreground">
-                {formatNumber(typeof entry.value === "number" ? entry.value : Number(entry.value ?? 0))} Orders
-              </span>
-            </span>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  return null
-}
-
-export function CustomerTypeTab({ data }: CustomerTypeTabProps) {
-  const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>("1Y")
-  const [isChartLoading, setIsChartLoading] = useState(false)
-  const [activeChartType, setActiveChartType] = useState<string>("Line Chart")
-  const chartAreaSuffix = useId().replace(/[^a-zA-Z0-9-_]/g, "")
-  const gReturning = `ct-returning-${chartAreaSuffix || "r"}`
-  const gNewCustomers = `ct-new-${chartAreaSuffix || "n"}`
-
-  const defaultData: CustomerTrendDataPoint[] = [
-    { label: "Jan", returning: 3300, newCustomers: 2500 },
-    { label: "Feb", returning: 3700, newCustomers: 2600 },
-    { label: "Mar", returning: 3900, newCustomers: 2600 },
-    { label: "Apr", returning: 3800, newCustomers: 2700 },
-    { label: "May", returning: 4300, newCustomers: 2900 },
-    { label: "Jun", returning: 4200, newCustomers: 3100 },
-    { label: "Jul", returning: 4500, newCustomers: 3000 },
-    { label: "Aug", returning: 4600, newCustomers: 3700 },
-    { label: "Sep", returning: 4700, newCustomers: 3800 },
-    { label: "Oct", returning: 4600, newCustomers: 3700 },
-    { label: "Nov", returning: 4700, newCustomers: 3800 },
-    { label: "Dec", returning: 4900, newCustomers: 4100 },
-  ]
-
-  const dataToUse = data || defaultData
-
-  const chartData = dataToUse.map((item, index) => {
-    let newLabel = item.label
-    switch (activeTimeRange) {
-      case "1D": {
-        const hours = ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"]
-        newLabel = hours[index % hours.length] || item.label
-        break
-      }
-      case "1W": {
-        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-        newLabel = days[index % days.length] || item.label
-        break
-      }
-      case "1M": {
-        const dates = ["00", "10", "20", "30"]
-        newLabel = dates[index % dates.length] || item.label
-        break
-      }
-      case "1Y": {
-        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        newLabel = months[index % months.length] || item.label
-        break
-      }
-    }
-    return {
-      name: newLabel,
-      "Returning Customers": item.returning,
-      "New Customers": item.newCustomers,
-    }
-  })
-
-  // Defer setState to next tick to avoid synchronous setState in effect
-  useEffect(() => {
-    const startId = setTimeout(() => setIsChartLoading(true), 0)
-    const endId = setTimeout(() => setIsChartLoading(false), 600)
-    return () => {
-      clearTimeout(startId)
-      clearTimeout(endId)
-    }
-  }, [activeTimeRange, activeChartType])
+/**
+ * Orders split by whether the buyer had ordered from this seller before.
+ *
+ * "New" means the order is that customer's first ever with this seller — the backend
+ * scans the seller's full history to decide, so a long-standing customer ordering inside
+ * the selected window is correctly counted as returning.
+ */
+export function CustomerTypeTab({ data }: Readonly<CustomerTypeTabProps>) {
+  const points = data ?? []
+  const hasData = points.some((point) => point.returning > 0 || point.new > 0)
 
   return (
     <Card className="bg-transparent border-0 shadow-none">
       <CardHeader className="px-0 pt-0">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-foreground font-medium text-lg">
-            <TrendingUp className="h-5 w-5" />
-            Customer Type
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Select
-              value={activeChartType}
-              onValueChange={(value) => {
-                setActiveChartType(value)
-                setIsChartLoading(true)
-                setTimeout(() => setIsChartLoading(false), 600)
-              }}
-            >
-              <SelectTrigger className="w-[140px] bg-white border-border px-3" size="sm">
-                <SelectValue />
-                <div className="h-4 w-px bg-gray-300 flex-shrink-0" aria-hidden />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Line Chart">
-                  <span className="flex items-center gap-2 text-sm text-foreground">
-                    <LineChartIcon className="h-4 w-4 shrink-0" />
-                    Line Chart
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <TimeRangeSelector
-              value={activeTimeRange}
-              onValueChange={(range) => {
-                setActiveTimeRange(range)
-                setIsChartLoading(true)
-                setTimeout(() => setIsChartLoading(false), 600)
-              }}
-            />
-          </div>
-        </div>
+        <CardTitle className="flex items-center gap-2 text-lg font-medium text-foreground">
+          <TrendingUp className="h-5 w-5" />
+          Customer Type
+        </CardTitle>
       </CardHeader>
       <CardContent className="px-0 pb-0">
         <div className="relative h-96 w-full">
-          {isChartLoading ? (
-            <div className="flex h-full items-center justify-center rounded-lg bg-muted/30">
-              <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                <LoadingSpinner />
-                <p className="text-sm font-medium">Loading...</p>
-              </div>
-            </div>
+          {hasData ? (
+            <TwoSeriesLineChart
+              data={points.map((point) => ({
+                label: point.label,
+                a: point.returning,
+                b: point.new,
+              }))}
+              seriesALabel="Returning Customers"
+              seriesBLabel="New Customers"
+              seriesAColor={RETURNING_STROKE}
+              seriesBColor={NEW_STROKE}
+              valuePrefix=""
+              valueSuffix=" Orders"
+              compactAxis={false}
+            />
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--muted))"
-                  vertical={true}
-                  horizontal={true}
-                />
-                <XAxis
-                  dataKey="name"
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={{ stroke: "gray", strokeWidth: 1 }}
-                  tickMargin={10}
-                />
-                <YAxis
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={{ stroke: "gray", strokeWidth: 1 }}
-                  ticks={[1000, 2000, 3000, 4000, 5000]}
-                  tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
-                />
-                <Tooltip cursor={{ stroke: '#52525b', strokeWidth: 1, strokeDasharray: '3 3' }} content={CustomTooltip} />
-                <defs>
-                  <LineChartAreaGradient id={gReturning} lineColor={RETURNING_STROKE} />
-                  <LineChartAreaGradient id={gNewCustomers} lineColor={NEW_CUSTOMERS_STROKE} />
-                </defs>
-                <Area
-                  type="monotone"
-                  dataKey="Returning Customers"
-                  stroke="none"
-                  fill={`url(#${gReturning})`}
-                  fillOpacity={1}
-                  baseValue={0}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="New Customers"
-                  stroke="none"
-                  fill={`url(#${gNewCustomers})`}
-                  fillOpacity={1}
-                  baseValue={0}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Returning Customers"
-                  stroke={RETURNING_STROKE}
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: "white", stroke: RETURNING_STROKE, strokeWidth: 2 }}
-                  activeDot={{ r: 6, fill: "#f1f5f9", stroke: "#334155", strokeWidth: 4 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="New Customers"
-                  stroke={NEW_CUSTOMERS_STROKE}
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: "white", stroke: NEW_CUSTOMERS_STROKE, strokeWidth: 2 }}
-                  activeDot={{ r: 6, fill: "#f1f5f9", stroke: "#334155", strokeWidth: 4 }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
+            <div className="flex h-full items-center justify-center rounded-lg bg-muted/30 text-sm text-muted-foreground">
+              No orders in this period
+            </div>
           )}
         </div>
       </CardContent>

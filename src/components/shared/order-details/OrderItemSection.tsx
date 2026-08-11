@@ -74,6 +74,12 @@ export function OrderItemSection({
                 {items.map((item) => {
                   const cancelledQty = item.cancelledQuantity ?? 0
                   const cancellableQty = item.cancellableQuantity ?? 0
+                  // Neither shipped nor cancelled — e.g. a packed parcel for this line was
+                  // voided and only part of it was subsequently cancelled, so a remainder is
+                  // still sitting unaddressed. Unlike the cancelled count, nothing else on this
+                  // page hints at this, so it's called out here rather than left invisible.
+                  const pendingQty = item.pendingQuantity ?? 0
+                  const hasStrayPending = pendingQty > 0 && pendingQty < item.quantity
                   return (
                   <tr key={item.orderLineId ?? item.sku} className="border-b">
                     <td className="p-3 text-sm text-foreground">
@@ -92,11 +98,14 @@ export function OrderItemSection({
                       </div>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">{item.sku}</td>
+                    {/* Quantity only. The cancelled count is deliberately not repeated here —
+                        the order's own status badge at the top of the page already carries it.
+                        A stray pending remainder gets its own callout since nothing else does. */}
                     <td className="p-3 text-sm text-muted-foreground">
                       {item.quantity}
-                      {cancelledQty > 0 ? (
-                        <span className="ml-1.5 whitespace-nowrap rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                          ({cancelledQty} cancelled)
+                      {hasStrayPending ? (
+                        <span className="ml-1.5 whitespace-nowrap rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          ({pendingQty} needs action)
                         </span>
                       ) : null}
                     </td>

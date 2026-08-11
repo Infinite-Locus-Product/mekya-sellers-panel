@@ -1,17 +1,16 @@
 import type {
     OrderStatus,
     OrderSubtabId,
-    ProductInventoryType,
     ReturnStatus,
     ReturnSubtabId,
 } from "@/lib/tableTypes";
 import {
-    PRODUCT_INVENTORY_TYPE_LABELS,
-    SELECTABLE_PRODUCT_INVENTORY_TYPES,
+    PIPELINE_STATUS_LABELS,
     REAL_ORDER_STATUSES,
     REAL_RETURN_STATUSES,
 } from "@/lib/tableTypes";
 import type { CustomOrderRequestStatus, ExchangeOrderStatus } from "@/lib/api/orders";
+import { CUSTOM_ORDER_REQUEST_STATUS_LABEL } from "./customOrderTypes";
 
 /** Shared table cell styling for payment pills */
 export const ORDER_PAYMENT_PILL_BASE =
@@ -56,17 +55,6 @@ export const DATE_FILTER_OPTIONS = [
     { label: "This Month", value: "this_month" },
 ] as const;
 
-export const B2B_INVENTORY_TYPE_FILTER_OPTIONS: ReadonlyArray<{
-    label: string;
-    value: "all" | ProductInventoryType;
-}> = [
-    { label: "All Inventory Types", value: "all" },
-    ...SELECTABLE_PRODUCT_INVENTORY_TYPES.map((value) => ({
-        label: PRODUCT_INVENTORY_TYPE_LABELS[value],
-        value,
-    })),
-];
-
 export const PAGE_TITLE_ORDER_MANAGEMENT = "Order Management System";
 
 // ─── Payment Status filter — same 3-option single-select everywhere it appears ─────────────
@@ -95,21 +83,9 @@ function orderStatusOption(realLabel: string): { label: string; value: string } 
     return { label: ORDER_STATUS_DISPLAY_LABEL[realLabel] ?? realLabel, value: realLabel };
 }
 
-const ALL_ORDER_STATUS_LABELS: readonly string[] = [
-    "Pending",
-    "Processing",
-    "Ready for Pickup",
-    "Shipped",
-    "Delivered",
-    "Partially Processing",
-    "Partially Ready for Pickup",
-    "Partially Shipped",
-    "Partially Delivered",
-    "Partially Returned",
-    "Partially Cancelled",
-    "Returned",
-    "Cancelled",
-];
+/** Single source of truth lives in tableTypes so the dashboard's own status filter and
+ *  this one can't drift apart. */
+const ALL_ORDER_STATUS_LABELS: readonly string[] = PIPELINE_STATUS_LABELS;
 
 /** Per sub-tab, only the statuses reachable from that stage onward — matches the backend's own
  * `pipeline_status` forward-matching semantics (see ORDER_SUBTAB_TO_PIPELINE_STATUS). */
@@ -234,20 +210,25 @@ export const CANCELLATION_TYPE_FILTER_OPTIONS = [
     { label: "RTO", value: "rto" },
 ] as const;
 
-// ─── Custom Orders Status filter — same 5 real values as CUSTOM_ORDER_SUBTABS, with the ────
-// filter-spec's own wording (kept local to this filter, not renamed app-wide in the KPI tiles/
-// table/detail modal, which keep their existing CUSTOM_ORDER_REQUEST_STATUS_LABEL wording).
-export const CUSTOM_ORDER_STATUS_FILTER_LABEL: Record<CustomOrderRequestStatus, string> = {
-    pending_review: "Pending Review",
-    awaiting_buyer_confirmation: "Awaiting Buyer Confirmation",
-    buyer_confirmed: "Confirmed",
-    buyer_declined: "Declined by Buyer",
-    rejected: "Rejected by Seller",
-};
-
+// ─── Custom Orders Status filter ─────────────────────────────────────────────────────────────
+// Options come straight from CUSTOM_ORDER_REQUEST_STATUS_LABEL so the dropdown can never word a
+// status differently from the sub-tab or badge showing the same state.
 export const CUSTOM_ORDER_STATUS_FILTER_OPTIONS: ReadonlyArray<{
     label: string;
     value: CustomOrderRequestStatus;
 }> = (
-    Object.keys(CUSTOM_ORDER_STATUS_FILTER_LABEL) as CustomOrderRequestStatus[]
-).map((value) => ({ label: CUSTOM_ORDER_STATUS_FILTER_LABEL[value], value }));
+    Object.keys(CUSTOM_ORDER_REQUEST_STATUS_LABEL) as CustomOrderRequestStatus[]
+).map((value) => ({ label: CUSTOM_ORDER_REQUEST_STATUS_LABEL[value], value }));
+
+/**
+ * Status options for the Custom Orders toolbar, scoped to the active sub-tab.
+ *
+ * Every custom-order sub-tab except "All" *is* a single status, so a Status filter there could
+ * only ever agree with the sub-tab (a no-op) or contradict it (guaranteed empty list). Returning
+ * `undefined` hides the control, which is why only "All" gets options.
+ */
+export function getCustomOrderStatusFilterOptions(
+    subtab: string
+): ReadonlyArray<{ label: string; value: string }> | undefined {
+    return subtab === "all" ? CUSTOM_ORDER_STATUS_FILTER_OPTIONS : undefined;
+}
