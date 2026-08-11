@@ -5,12 +5,9 @@ import { CardTitle } from "@/components/ui/card";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { MultiSelectFilter } from "@/components/shared/MultiSelectFilter";
 import { Button } from "@/components/ui/button";
-import { OrderBulkActionToolbarIcon, OrderManagementTableCardIcon } from "@/assets/icons/order-management";
-import type { ProductInventoryType } from "@/lib/tableTypes";
+import { OrderManagementTableCardIcon } from "@/assets/icons/order-management";
 import type { SegmentViewCopy } from "./viewCopy";
-import type { OrderManagementTabId } from "./constants";
 import {
-    B2B_INVENTORY_TYPE_FILTER_OPTIONS,
     DATE_FILTER_OPTIONS,
     ORDER_FILTER_SELECT_TRIGGER_CLASS,
     PAYMENT_STATUS_FILTER_OPTIONS,
@@ -18,17 +15,11 @@ import {
 } from "./constants";
 
 export interface OrdersCardToolbarProps {
-    readonly segment: "b2c" | "b2b";
-    readonly activeTab: OrderManagementTabId;
     readonly viewCopy: SegmentViewCopy;
     readonly searchQuery: string;
     readonly onSearchQueryChange: (value: string) => void;
     readonly dateFilter: string;
     readonly onDateFilterChange: (value: string) => void;
-    readonly inventoryTypeFilter: "all" | ProductInventoryType;
-    readonly onInventoryTypeFilterChange: (value: "all" | ProductInventoryType) => void;
-    readonly selectedRowCount: number;
-    readonly onBulkActionClick: () => void;
     /** Scoped Status multi-select — the parent computes the option list per active tab/sub-tab
      * (pipeline stages for Orders/Exchange, ReturnStatus for Returns, custom-order status for
      * Custom Orders). Omit to hide the control entirely (e.g. Cancellation has no Status filter). */
@@ -48,17 +39,11 @@ export interface OrdersCardToolbarProps {
 }
 
 export function OrdersCardToolbar({
-    segment,
-    activeTab,
     viewCopy,
     searchQuery,
     onSearchQueryChange,
     dateFilter,
     onDateFilterChange,
-    inventoryTypeFilter,
-    onInventoryTypeFilterChange,
-    selectedRowCount,
-    onBulkActionClick,
     statusFilterOptions,
     statusFilter,
     onStatusFilterChange,
@@ -137,37 +122,8 @@ export function OrdersCardToolbar({
                                 className={ORDER_FILTER_SELECT_TRIGGER_CLASS}
                             />
                         ) : null}
-                        {activeTab === "orders" && segment === "b2b" ? (
-                            <AppSelect
-                                placeholder="Inventory Type"
-                                value={inventoryTypeFilter}
-                                onChange={(value: string) =>
-                                    onInventoryTypeFilterChange(
-                                        value === "all" ? "all" : (value as ProductInventoryType)
-                                    )
-                                }
-                                options={Array.from(B2B_INVENTORY_TYPE_FILTER_OPTIONS)}
-                                className={ORDER_FILTER_SELECT_TRIGGER_CLASS}
-                            />
-                        ) : null}
                     </div>
                 </div>
-                {activeTab === "orders" && segment === "b2b" ? (
-                    <div className="flex shrink-0 justify-end lg:pt-0">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={selectedRowCount === 0}
-                            onClick={onBulkActionClick}
-                            className="gap-1.5 border-border bg-black text-xs text-white hover:text-white min-[1920px]:gap-2 min-[1920px]:text-sm disabled:bg-white disabled:text-black disabled:opacity-100"
-                            aria-label="Bulk action"
-                        >
-                            <OrderBulkActionToolbarIcon className="size-3 shrink-0 text-current min-[1920px]:size-4" />
-                            Bulk Action
-                        </Button>
-                    </div>
-                ) : null}
             </div>
         </div>
     );

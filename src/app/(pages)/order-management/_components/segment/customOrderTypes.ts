@@ -8,9 +8,18 @@ import type {
     CustomOrderRequestStatus,
 } from "@/lib/api/orders";
 
+/**
+ * The one wording for each custom-order status, used by the sub-tab row, the Status filter, the
+ * table's status badge and the detail modal alike.
+ *
+ * There used to be three separate maps for these five states, so the same order read
+ * "Awaiting Confirmation" on its tab, "Awaiting Buyer Confirmation" in its badge and
+ * "Confirmed"/"Declined by Buyer"/"Rejected by Seller" in the filter. Matches the admin
+ * portal's labels too, so the two portals describe one status the same way.
+ */
 export const CUSTOM_ORDER_REQUEST_STATUS_LABEL: Record<CustomOrderRequestStatus, string> = {
     pending_review: "Pending Review",
-    awaiting_buyer_confirmation: "Awaiting Buyer Confirmation",
+    awaiting_buyer_confirmation: "Awaiting Confirmation",
     buyer_confirmed: "Buyer Confirmed",
     buyer_declined: "Buyer Declined",
     rejected: "Rejected",

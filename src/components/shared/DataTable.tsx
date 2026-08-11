@@ -235,6 +235,12 @@ export function DataTable<T>({
   const cellWrapClass =
     "min-w-0 whitespace-normal break-words [overflow-wrap:anywhere] align-middle"
 
+  // Headers still wrap between words, but never inside one. `overflow-wrap: anywhere` (which body
+  // cells need, since they carry SKUs and URLs with no break opportunities) was splitting short
+  // single-word titles mid-word in the narrower table-fixed columns — "WSP" rendered as "WS P",
+  // "Inventory" as "Invento ry".
+  const headerWrapClass = "min-w-0 whitespace-normal [overflow-wrap:normal] align-middle"
+
   return (
     <div className="w-full min-w-0">
       <div className="w-full min-w-0 max-w-full overflow-hidden rounded-md">
@@ -246,7 +252,7 @@ export function DataTable<T>({
                 key={String(col.key)}
                 className={cn(
                   "bg-[#E8E9E8] px-2 py-1.5 text-[10px] font-normal leading-tight sm:px-3 sm:py-2 sm:text-[11px] xl:px-4 xl:py-2.5 xl:text-xs min-[1920px]:px-5 min-[1920px]:py-3 min-[1920px]:text-sm min-[1920px]:leading-normal",
-                  cellWrapClass,
+                  headerWrapClass,
                   getAlignClass(col.align),
                   col.className
                 )}

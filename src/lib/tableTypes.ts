@@ -23,6 +23,32 @@ export const REAL_ORDER_STATUSES: readonly OrderStatus[] = [
   "Expired",
 ];
 
+/**
+ * The Mekya pipeline status labels, exactly as the backend spells them
+ * (`BUCKET_LABEL` / `label_for_code`), in pipeline order with each "Partially X" variant
+ * after the base statuses.
+ *
+ * These — not {@link REAL_ORDER_STATUSES} — are what an order's badge actually shows once
+ * it has been synced, and what `listOrders`' `statuses` param is matched against. Any
+ * status filter must be built from this list: the backend compares the label verbatim
+ * (case-insensitively), so a near-miss spelling like "Canceled" silently matches nothing.
+ */
+export const PIPELINE_STATUS_LABELS: readonly string[] = [
+  "Pending",
+  "Processing",
+  "Ready for Pickup",
+  "Shipped",
+  "Delivered",
+  "Partially Processing",
+  "Partially Ready for Pickup",
+  "Partially Shipped",
+  "Partially Delivered",
+  "Partially Returned",
+  "Partially Cancelled",
+  "Returned",
+  "Cancelled",
+];
+
 export type OrderType = "B2B" | "B2C";
 export type PaymentStatus =
   | "Pending"
@@ -78,8 +104,8 @@ export type ReturnSubtabId = (typeof RETURN_SUBTABS)[number]["id"];
 /** Raw reason_code → human label, shared by the Returns list column and the detail modal. */
 export const RETURN_REASON_CODE_LABELS: Record<string, string> = {
   damaged_item: "Damaged item",
-  ordered_by_mistake: "Ordered by mistake",
-  order_by_mistake: "Ordered by mistake",
+  ordered_by_mistake: "Changed my mind",
+  order_by_mistake: "Changed my mind",
   item_not_as_described: "Item not as described",
   not_as_described: "Item not as described",
   wrong_item_received: "Wrong item received",

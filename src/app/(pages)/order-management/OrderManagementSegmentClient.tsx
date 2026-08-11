@@ -11,14 +11,12 @@ import { TabList } from "@/components/shared/TabList";
 import type {
     AllOrder,
     OrderSubtabId,
-    ProductInventoryType,
     ReturnStatus,
     ReturnSubtabId,
 } from "@/lib/tableTypes";
 import { ORDER_SUBTABS, ORDERS_TAB_SUBTABS, RETURN_SUBTABS } from "@/lib/tableTypes";
 import { usePagination } from "@/hooks";
 import { presetToDateRange } from "@/lib/dateRangePreset";
-import { BulkActionModal } from "@/app/(pages)/order-management/_components/BulkActionModal";
 import {
     ExchangeDetailsModal,
     type ExchangeDetailsData,
@@ -41,7 +39,6 @@ import {
     mapApiExchangeOrder,
     mapApiCancellation,
     selectSegmentTableColumns,
-    useBulkActionExecuteHandler,
     useOrderManagementSegmentColumns,
     useOrderManagementSegmentModals,
     getOrderStatusFilterOptions,
@@ -49,7 +46,8 @@ import {
     getReturnStatusFilterOptions,
     RETURN_TYPE_FILTER_OPTIONS,
     CANCELLATION_TYPE_FILTER_OPTIONS,
-    CUSTOM_ORDER_STATUS_FILTER_OPTIONS,
+    getCustomOrderStatusFilterOptions,
+    CUSTOM_ORDER_REQUEST_STATUS_LABEL,
     RETURN_SUBTABS_WITH_PAYMENT_FILTER,
     type CustomOrderRequestKpis,
     type CustomOrderRequestRow,
@@ -102,39 +100,35 @@ const SORT_BY_TO_COLUMN_KEY: Record<NonNullable<ListOrdersParams["sort_by"]>, st
  * omits it). "Buyer Declined" and "Rejected" are kept as separate subtabs for clarity even though
  * the backend's `custom_statuses` (plural) param could combine them into one bucket if desired. */
 const CUSTOM_ORDER_SUBTABS = [
+    // Labels come from CUSTOM_ORDER_REQUEST_STATUS_LABEL, the one source shared with the Status
+    // filter and the table badge — the ids stay literal so CustomOrderSubtabId keeps its type.
     { id: "all", label: "All" },
-    { id: "pending_review", label: "Pending Review" },
-    { id: "awaiting_buyer_confirmation", label: "Awaiting Confirmation" },
-    { id: "buyer_confirmed", label: "Buyer Confirmed" },
-    { id: "buyer_declined", label: "Buyer Declined" },
-    { id: "rejected", label: "Rejected" },
+    { id: "pending_review", label: CUSTOM_ORDER_REQUEST_STATUS_LABEL.pending_review },
+    {
+        id: "awaiting_buyer_confirmation",
+        label: CUSTOM_ORDER_REQUEST_STATUS_LABEL.awaiting_buyer_confirmation,
+    },
+    { id: "buyer_confirmed", label: CUSTOM_ORDER_REQUEST_STATUS_LABEL.buyer_confirmed },
+    { id: "buyer_declined", label: CUSTOM_ORDER_REQUEST_STATUS_LABEL.buyer_declined },
+    { id: "rejected", label: CUSTOM_ORDER_REQUEST_STATUS_LABEL.rejected },
 ] as const;
 type CustomOrderSubtabId = (typeof CUSTOM_ORDER_SUBTABS)[number]["id"];
 
 /** Maps the Orders subtab to the server-side `pipeline_status` filter (GET /seller/orders). "ready"
  * (labeled "Ready for pickup") maps to the `ready_for_dispatch` code — the backend's own naming —
  * not to the later, seller-set "ready" code, which has no dedicated subtab. "all" sends no filter.
- * "delivered" (labeled "Completed") has no single pipeline_status of its own — it aggregates
- * delivered/cancelled/returned (and their partial variants), so it's scoped via the `statuses`
- * post-filter instead (see COMPLETED_SUBTAB_STATUSES below), not this per-shipment-status prefilter. */
+ * "delivered" (labeled "Completed") used to scope via a `statuses` post-filter matching the
+ * order's dominant-bucket label (e.g. "Partially Cancelled") — but that label doesn't say whether
+ * anything is still outstanding: an order with 3 units cancelled and 2 still being packed reads
+ * the exact same "Partially Cancelled" as one that's fully finished. "completed" is a dedicated
+ * pipeline_status the backend computes from the full per-shipment breakdown instead. */
 const ORDER_SUBTAB_TO_PIPELINE_STATUS: Partial<Record<OrderSubtabId, PipelineStatusFilter>> = {
     pending: "pending",
     processing: "processing",
     ready: "ready_for_dispatch",
     shipped: "shipped",
+    delivered: "completed",
 };
-
-/** Default `statuses` filter for the "Completed" subtab (id "delivered") when the seller hasn't
- * narrowed it further via the status filter dropdown — every terminal outcome, not just a clean
- * delivery. Real backend label strings, sent as-is to /seller/orders' `statuses` param. */
-const COMPLETED_SUBTAB_STATUSES = [
-    "Delivered",
-    "Partially Delivered",
-    "Cancelled",
-    "Partially Cancelled",
-    "Returned",
-    "Partially Returned",
-];
 
 
 
@@ -167,14 +161,16 @@ export function OrderManagementSegmentClient({
     const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatusFilterValue>("all");
     const [returnSubtab, setReturnSubtab] = useState<ReturnSubtabId>("all");
     const [dateFilter, setDateFilter] = useState("all_dates");
-    const [inventoryTypeFilter, setInventoryTypeFilter] = useState<"all" | ProductInventoryType>("all");
     const [searchQuery, setSearchQuery] = useState("");
     const [sortBy, setSortBy] = useState<NonNullable<ListOrdersParams["sort_by"]>>("created");
     const [sortDir, setSortDir] = useState<NonNullable<ListOrdersParams["sort_dir"]>>("desc");
-    const [selectedRows, setSelectedRows] = useState<Set<AllOrder>>(() => new Set());
     const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(() => new Set());
-    const [bulkActionOpen, setBulkActionOpen] = useState(false);
     const [orderKpis, setOrderKpis] = useState<OrderKpis | null>(null);
+    // Bumped when a shipment action inside a row's expanded panel (OrderShipmentsExpandedRow)
+    // changes an order's status — that panel only refreshes its own local shipment data, so
+    // without this the outer row's Order Status/Payment Status columns stay stale until the
+    // whole page is reloaded.
+    const [ordersRefreshToken, setOrdersRefreshToken] = useState(0);
 
     // Custom Orders (B2B "Custom Orders" tab) — a distinct API-backed resource (pre-order buyer
     // requests), not AllOrder rows. No search/date query params on this endpoint, so those stay
@@ -243,14 +239,13 @@ export function OrderManagementSegmentClient({
     const showsOrdersList = activeTab === "orders";
     // Memoized (not recomputed as a fresh array every render) so it's a stable useEffect dependency.
     // Real pipeline-label strings (e.g. "Ready for Pickup", "Partially Delivered") straight from
-    // getOrderStatusFilterOptions — sent as-is to /seller/orders' `statuses` param. The "Completed"
-    // subtab has no pipeline_status prefilter (see ORDER_SUBTAB_TO_PIPELINE_STATUS above), so it
-    // falls back to its own fixed status set here when the seller hasn't chosen anything narrower.
+    // getOrderStatusFilterOptions — sent as-is to /seller/orders' `statuses` param, only when the
+    // seller has narrowed further via the status filter dropdown. Every subtab (including
+    // "Completed") now has its own pipeline_status prefilter — see ORDER_SUBTAB_TO_PIPELINE_STATUS.
     const effectiveStatuses: string[] | undefined = useMemo(() => {
         if (!showsOrdersList) return undefined;
-        if (genericStatusFilter.length > 0) return genericStatusFilter;
-        return orderSubtab === "delivered" ? COMPLETED_SUBTAB_STATUSES : undefined;
-    }, [showsOrdersList, genericStatusFilter, orderSubtab]);
+        return genericStatusFilter.length > 0 ? genericStatusFilter : undefined;
+    }, [showsOrdersList, genericStatusFilter]);
     // Server-side pipeline-stage filter for the Orders subtab — each distinct value pages
     // independently, so switching subtabs must reset pagination (see allViewFilterKey below).
     const pipelineStatus: PipelineStatusFilter | undefined =
@@ -282,7 +277,6 @@ export function OrderManagementSegmentClient({
         setPageIndex(0);
         setCursorHistory([undefined]);
         setNextCursor(null);
-        setSelectedRows(new Set());
     }
 
     useEffect(() => {
@@ -333,6 +327,7 @@ export function OrderManagementSegmentClient({
         allViewDateFrom,
         allViewDateTo,
         cursorHistory,
+        ordersRefreshToken,
     ]);
 
     const showsReturnsList = activeTab === "returns";
@@ -839,40 +834,13 @@ export function OrderManagementSegmentClient({
         onCustomOrderChanged: () => setCustomOrdersRefreshToken((t) => t + 1),
     });
 
-    // "Orders" is already filtered/sorted/paginated server-side, including the Orders subtab
-    // (sent as pipeline_status — see ORDER_SUBTAB_TO_PIPELINE_STATUS); inventory type is the only
-    // filter left client-side, since it has no backend param yet.
-    const allViewOrders = useMemo(() => {
-        if (segment === "b2b" && inventoryTypeFilter !== "all") {
-            return orders.filter((o) => o.inventoryType === inventoryTypeFilter);
-        }
-        return orders;
-    }, [orders, segment, inventoryTypeFilter]);
-
-    // Returns is fully server-driven: filters (status/search/date) and pagination (page/limit) are
-    // sent as query params — see the listReturns effect above. Custom Orders/Exchange/Cancellation
-    // are distinct API-backed resources, fetched/rendered via their own dedicated DataTable below,
-    // not routed through this pipeline at all.
-    const displayedOrders = showsReturnsList ? returnOrders : allViewOrders;
-
-    const handleSelectAll = useCallback(
-        (selected: boolean) => {
-            setSelectedRows(selected ? new Set(displayedOrders) : new Set());
-        },
-        [displayedOrders]
-    );
-
-    const handleSelectRow = useCallback((row: AllOrder, selected: boolean) => {
-        setSelectedRows((prev) => {
-            const next = new Set(prev);
-            if (selected) {
-                next.add(row);
-            } else {
-                next.delete(row);
-            }
-            return next;
-        });
-    }, []);
+    // "Orders" is fully filtered/sorted/paginated server-side, including the Orders subtab (sent
+    // as pipeline_status — see ORDER_SUBTAB_TO_PIPELINE_STATUS). Returns is likewise fully
+    // server-driven: filters (status/search/date) and pagination (page/limit) are sent as query
+    // params — see the listReturns effect above. Custom Orders/Exchange/Cancellation are distinct
+    // API-backed resources, fetched/rendered via their own dedicated DataTable below, not routed
+    // through this pipeline at all.
+    const displayedOrders = showsReturnsList ? returnOrders : orders;
 
     const columnSets = useMemo(
         () => ({
@@ -897,9 +865,9 @@ export function OrderManagementSegmentClient({
         if (showsOrdersList) return getOrderStatusFilterOptions(orderSubtab);
         if (isExchangeView) return getExchangeStatusFilterOptions(exchangeSubtab);
         if (showsReturnsList) return getReturnStatusFilterOptions(returnSubtab);
-        if (isCustomOrdersView) return CUSTOM_ORDER_STATUS_FILTER_OPTIONS;
+        if (isCustomOrdersView) return getCustomOrderStatusFilterOptions(customOrderSubtab);
         return undefined;
-    }, [showsOrdersList, isExchangeView, showsReturnsList, isCustomOrdersView, orderSubtab, exchangeSubtab, returnSubtab]);
+    }, [showsOrdersList, isExchangeView, showsReturnsList, isCustomOrdersView, orderSubtab, exchangeSubtab, returnSubtab, customOrderSubtab]);
 
     const toolbarTypeFilterOptions = useMemo(() => {
         if (showsReturnsList) return RETURN_TYPE_FILTER_OPTIONS;
@@ -914,14 +882,7 @@ export function OrderManagementSegmentClient({
         showsCancellationFilters ||
         (showsReturnsList && RETURN_SUBTABS_WITH_PAYMENT_FILTER.has(returnSubtab));
 
-    const clearBulkSelection = useCallback(() => {
-        setSelectedRows(new Set());
-    }, []);
-
-    const handleBulkExecute = useBulkActionExecuteHandler(clearBulkSelection);
-
     const handleTabChange = useCallback((tabId: string) => {
-        setSelectedRows(new Set());
         setExpandedOrderIds(new Set());
         setReturnSubtab("all");
         setCustomOrderSubtab("all");
@@ -937,14 +898,6 @@ export function OrderManagementSegmentClient({
 
     return (
         <div className="min-w-0 max-w-full space-y-3 min-[1920px]:space-y-4">
-            {segment === "b2b" ? (
-                <BulkActionModal
-                    open={bulkActionOpen}
-                    onOpenChange={setBulkActionOpen}
-                    selectedOrderIds={Array.from(selectedRows).map((o) => o.id)}
-                    onExecute={handleBulkExecute}
-                />
-            ) : null}
             <SegmentOrderModals
                 returnDetailsOpen={returnDetailsOpen}
                 onReturnDetailsOpenChange={(open) => {
@@ -1072,17 +1025,11 @@ export function OrderManagementSegmentClient({
 
             <Card className="min-w-0 overflow-hidden">
                 <OrdersCardToolbar
-                    segment={segment}
-                    activeTab={activeTab}
                     viewCopy={viewCopy}
                     searchQuery={searchQuery}
                     onSearchQueryChange={setSearchQuery}
                     dateFilter={dateFilter}
                     onDateFilterChange={setDateFilter}
-                    inventoryTypeFilter={inventoryTypeFilter}
-                    onInventoryTypeFilterChange={setInventoryTypeFilter}
-                    selectedRowCount={selectedRows.size}
-                    onBulkActionClick={() => setBulkActionOpen(true)}
                     statusFilterOptions={toolbarStatusFilterOptions}
                     statusFilter={genericStatusFilter}
                     onStatusFilterChange={setGenericStatusFilter}
@@ -1189,9 +1136,6 @@ export function OrderManagementSegmentClient({
                             data={displayedOrders}
                             striped
                             emptyMessage={viewCopy.emptyMessage}
-                            selectedRows={activeTab === "orders" && segment === "b2b" ? selectedRows : undefined}
-                            onSelectAll={activeTab === "orders" && segment === "b2b" ? handleSelectAll : undefined}
-                            onSelectRow={activeTab === "orders" && segment === "b2b" ? handleSelectRow : undefined}
                             sortConfig={
                                 showsOrdersList ? { key: SORT_BY_TO_COLUMN_KEY[sortBy], direction: sortDir } : undefined
                             }
@@ -1199,7 +1143,14 @@ export function OrderManagementSegmentClient({
                             getRowId={showsOrdersList ? (row) => row.id : undefined}
                             expandedRowIds={showsOrdersList ? expandedOrderIds : undefined}
                             renderExpandedRow={
-                                showsOrdersList ? (row) => <OrderShipmentsExpandedRow orderId={row.id} /> : undefined
+                                showsOrdersList
+                                    ? (row) => (
+                                          <OrderShipmentsExpandedRow
+                                              orderId={row.id}
+                                              onOrderChanged={() => setOrdersRefreshToken((t) => t + 1)}
+                                          />
+                                      )
+                                    : undefined
                             }
                             pagination={
                                 showsReturnsList

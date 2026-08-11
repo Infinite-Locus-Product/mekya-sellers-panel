@@ -1,176 +1,261 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { KPICard } from "@/components/shared/KPICard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
-import { StatusBadge } from "@/components/shared/StatusBadge";
-import { Clock, PackageCheck, XCircle } from "lucide-react";
-import { KpiSaleTrendIcon, KpiOrdersBagIcon, KpiReturnUndoIcon, KpiAverageOrderValueIcon } from "@/assets/icons";
+import { OrderStatusBadge } from "@/components/shared/OrderStatusBadge";
+import { Clock, Eye, Search } from "lucide-react";
+import {
+  ArrowExternalIcon,
+  KpiSaleTrendIcon,
+  KpiOrdersBagIcon,
+  KpiReturnUndoIcon,
+  KpiAverageOrderValueIcon,
+} from "@/assets/icons";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
+import { CursorPager } from "@/components/shared/CursorPager";
 import type { AllOrder } from "@/lib/tableTypes";
-import { orderStatusToBadgeVariant } from "@/lib/orderStatusBadge";
-import { usePagination } from "@/hooks";
+import { PIPELINE_STATUS_LABELS } from "@/lib/tableTypes";
+import { useServerTableSort, type SortColumnBinding } from "@/hooks";
 import { SalesAnalyticsModal } from "@/components/modals/sales/SalesAnalyticsModal";
 import { AverageOrderValueModal } from "@/components/modals/average-order-value/AverageOrderValueModal";
 import { TotalOrdersAnalyticsModal } from "@/components/modals/total-orders/TotalOrdersAnalyticsModal";
 import { ReturnOrdersAnalyticsModal } from "@/components/modals";
 import { AppSelect } from "@/components/shared/AppSelect";
-import { PieChart, type ChartDataPoint } from "@/components/analytics/PieChart";
+import { MultiSelectFilter } from "@/components/shared/MultiSelectFilter";
+import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
+import {
+  CustomDateRangeSelector,
+  getDefaultDateRange,
+  toDateRangePayload,
+  type DateRangeApiPayload,
+  type DateRangeValue,
+} from "@/components/shared/custom-date-range";
 import { getSellerAnalytics, type SellerAnalytics } from "@/lib/api/analytics";
+import { listOrders, getReturnsKpis, type ListOrdersParams, type ReturnsKpis } from "@/lib/api/orders";
 import { formatMoney, formatNumber } from "@/lib/utils";
-import { presetToDateRange } from "@/lib/dateRangePreset";
 
-const INITIAL_PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 400;
 
-/** Pie-slice colors keyed by the exact status strings /seller/analytics returns. */
-const ORDER_STATUS_COLORS: Record<string, string> = {
-  Fulfilled: "#16A34A",
-  Unfulfilled: "#CA8A04",
-  "Partially Fulfilled": "#0F766E",
-  Unconfirmed: "#2C4FBF",
-  Cancelled: "#DC2626",
-  Returned: "#C2650C",
-};
-const FALLBACK_STATUS_COLOR = "#71717A";
+type OrderSortField = "created" | "total";
 
-export interface DashboardClientProps {
-  initialOrders: AllOrder[];
-}
+const ORDER_SORT_BINDINGS: SortColumnBinding[] = [
+  { columnKey: "date", sortField: "created", initialOrder: "DESC" },
+  { columnKey: "amount", sortField: "total", initialOrder: "DESC" },
+];
 
-export function DashboardClient({ initialOrders }: DashboardClientProps) {
+export function DashboardClient() {
+  const router = useRouter();
   const [isSalesModalOpen, setIsSalesModalOpen] = useState(false);
   const [isAverageOrderValueModalOpen, setIsAverageOrderValueModalOpen] = useState(false);
   const [isTotalOrdersModalOpen, setIsTotalOrdersModalOpen] = useState(false);
   const [isReturnOrdersModalOpen, setIsReturnOrdersModalOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [dateRange, setDateRange] = useState("last_30_days");
+  /** Empty = no status filter. Sent as repeated ?statuses= params, which the backend ORs. */
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [channelFilter, setChannelFilter] = useState("all");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateRangeValue>(getDefaultDateRange);
+  const [dateRangePayload, setDateRangePayload] = useState<DateRangeApiPayload>(() =>
+    toDateRangePayload(getDefaultDateRange())
+  );
   const [analytics, setAnalytics] = useState<SellerAnalytics | null>(null);
+  const [returnsKpis, setReturnsKpis] = useState<ReturnsKpis | null>(null);
+  const [orders, setOrders] = useState<AllOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const ordersGenerationRef = useRef(0);
+
+  // Cursor-based pagination for GET /seller/orders — mirrors the pattern in
+  // OrderManagementSegmentClient.tsx. `cursorHistory[i]` is the cursor used to fetch page i.
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [hasNext, setHasNext] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [cursorHistory, setCursorHistory] = useState<(string | undefined)[]>([undefined]);
+
+  const {
+    sortBy,
+    sortOrder,
+    serverSortKey,
+    serverSortDirection,
+    handleServerSortColumn,
+  } = useServerTableSort(ORDER_SORT_BINDINGS, { sortBy: "created", sortOrder: "DESC" });
 
   useEffect(() => {
-    const { date_from, date_to } = presetToDateRange(dateRange);
+    let cancelled = false;
     getSellerAnalytics({
       ...(channelFilter === "b2b" || channelFilter === "b2c" ? { channel: channelFilter } : {}),
-      ...(date_from ? { date_from } : {}),
-      ...(date_to ? { date_to } : {}),
+      date_from: dateRangePayload.start_date,
+      date_to: dateRangePayload.end_date,
     })
-      .then(setAnalytics)
+      .then((data) => {
+        if (!cancelled) setAnalytics(data);
+      })
       .catch(() => {});
-  }, [dateRange, channelFilter]);
+    return () => {
+      cancelled = true;
+    };
+  }, [channelFilter, dateRangePayload]);
+
+  // Real return-request count (not orders whose overall status happens to be "Returned" —
+  // a return can be filed and in progress well before the parent order's own status ever
+  // reflects it), so this matches the same number the expanded Returns modal shows.
+  useEffect(() => {
+    let cancelled = false;
+    getReturnsKpis({
+      ...(channelFilter === "b2b" || channelFilter === "b2c" ? { channel: channelFilter } : {}),
+      date_from: dateRangePayload.start_date,
+      date_to: dateRangePayload.end_date,
+    })
+      .then((data) => {
+        if (!cancelled) setReturnsKpis(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [channelFilter, dateRangePayload]);
 
   const kpis = analytics?.kpis;
-  const orderStatusBreakdown = analytics?.order_status_breakdown ?? [];
-  const returnedOrders = orderStatusBreakdown.find((s) => s.status === "Returned")?.count ?? 0;
   const averageOrderValue =
     kpis && kpis.total_orders > 0
       ? { amount: kpis.total_revenue.amount / kpis.total_orders, currency: kpis.total_revenue.currency }
       : null;
-  const orderStatusChartData: ChartDataPoint[] = orderStatusBreakdown.map((s) => ({
-    label: s.status,
-    value: s.count,
-  }));
-  const orderStatusChartColors = orderStatusBreakdown.map(
-    (s) => ORDER_STATUS_COLORS[s.status] ?? FALLBACK_STATUS_COLOR
-  );
 
-  const filteredOrders = useMemo(() => {
-    if (statusFilter === "all") return initialOrders;
-    return initialOrders.filter((order) => order.status === statusFilter);
-  }, [initialOrders, statusFilter]);
+  const handleDateRangeChange = (range: DateRangeValue, payload: DateRangeApiPayload) => {
+    setDateRange(range);
+    setDateRangePayload(payload);
+  };
 
-  const pagination = usePagination({
-    totalCount: filteredOrders.length,
-    pageSize: INITIAL_PAGE_SIZE,
+  // Debounce search input
+  useEffect(() => {
+    const trimmed = searchInput.trim();
+    if (!trimmed) {
+      queueMicrotask(() => setDebouncedSearch(""));
+      return;
+    }
+    const t = window.setTimeout(() => setDebouncedSearch(trimmed), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [searchInput]);
+
+  // Any filter/sort/date change invalidates the cursor chain — reset pagination during render
+  // (not in an effect), same pattern as OrderManagementSegmentClient.tsx.
+  const filterKey = JSON.stringify({
+    channelFilter,
+    statusFilter,
+    debouncedSearch,
+    sortBy,
+    sortOrder,
+    date_from: dateRangePayload.start_date,
+    date_to: dateRangePayload.end_date,
   });
-  const paginatedOrders = useMemo(
-    () => filteredOrders.slice(pagination.startIndex, pagination.endIndex),
-    [filteredOrders, pagination.startIndex, pagination.endIndex]
-  );
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPageIndex(0);
+    setCursorHistory([undefined]);
+    setNextCursor(null);
+  }
 
+  const listQuery = useMemo((): ListOrdersParams => {
+    const q: ListOrdersParams = {
+      limit: pageSize,
+      cursor: cursorHistory[pageIndex],
+      sort_by: sortBy as OrderSortField,
+      sort_dir: sortOrder.toLowerCase() as "asc" | "desc",
+      date_from: dateRangePayload.start_date,
+      date_to: dateRangePayload.end_date,
+    };
+    if (channelFilter === "b2b" || channelFilter === "b2c") q.channel = channelFilter;
+    if (statusFilter.length > 0) q.statuses = statusFilter;
+    if (debouncedSearch) q.search = debouncedSearch;
+    return q;
+  }, [
+    channelFilter,
+    statusFilter,
+    debouncedSearch,
+    sortBy,
+    sortOrder,
+    dateRangePayload,
+    pageSize,
+    cursorHistory,
+    pageIndex,
+  ]);
+
+  useEffect(() => {
+    ordersGenerationRef.current += 1;
+    const generation = ordersGenerationRef.current;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setOrdersLoading(true);
+    });
+    listOrders(listQuery)
+      .then((res) => {
+        if (cancelled || generation !== ordersGenerationRef.current) return;
+        setOrders(res.orders);
+        setHasNext(res.has_next);
+        setNextCursor(res.next_cursor);
+        setOrdersLoading(false);
+      })
+      .catch(() => {
+        if (cancelled || generation !== ordersGenerationRef.current) return;
+        setOrdersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [listQuery]);
+
+  const handleOrderClick = useCallback(
+    (row: AllOrder) => {
+      router.push(`/order-management/${encodeURIComponent(row.id)}`);
+    },
+    [router]
+  );
 
   const columns: TableColumn<AllOrder>[] = useMemo(
     () => [
-      { key: "id", header: "Order ID" },
-      { key: "vendor", header: "Vendor Name" },
+      {
+        key: "id",
+        header: "Order ID",
+        cell: (row) => (
+          <button
+            type="button"
+            onClick={() => handleOrderClick(row)}
+            className="text-black hover:underline font-medium cursor-pointer"
+          >
+            {row.id}
+          </button>
+        ),
+      },
+      { key: "vendor", header: "Customer Name" },
       { key: "date", header: "Order Date", sortable: true },
       { key: "amount", header: "Total Amount", sortable: true },
       {
         key: "status",
         header: "Order Status",
-        cell: (row) => (
-          <StatusBadge variant={orderStatusToBadgeVariant(row.status)}>{row.status}</StatusBadge>
-        ),
+        // Same badge as the Orders page. This used to key off the raw `status` label via a
+        // map of the 9 Saleor-native strings, so pipeline-derived labels it didn't list —
+        // "Partially Cancelled", "Ready for Pickup", "Processing" — silently fell back to
+        // the "unfulfilled" colour and disagreed with the Orders table for the same order.
+        cell: (row) => <OrderStatusBadge order={row} />,
       },
       {
         key: "actions",
         header: "Actions",
         align: "center",
-        cell: (row, { isRowMuted, toggleRowMute }) => (
-          <Button
-            variant="ghost"
-            size="icon"
-            type="button"
-            aria-label={isRowMuted ? `Restore row for order ${row.id}` : `Dim row for order ${row.id}`}
-            aria-pressed={isRowMuted}
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleRowMute()
-            }}
-          >
-            <span className="relative inline-flex h-6 w-6 items-center justify-center">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="shrink-0"
-                aria-hidden
-              >
-                <path
-                  d="M12.001 5C5.69398 5 2.63398 10.683 2.09098 11.808C2.06195 11.8678 2.04688 11.9335 2.04688 12C2.04688 12.0665 2.06195 12.1322 2.09098 12.192C2.63298 13.317 5.69298 19 12.001 19C18.309 19 21.368 13.317 21.911 12.192C21.94 12.1322 21.9551 12.0665 21.9551 12C21.9551 11.9335 21.94 11.8678 21.911 11.808C21.369 10.683 18.309 5 12.001 5Z"
-                  stroke="#004C5E"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
-                  stroke="#004C5E"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {isRowMuted ? (
-                <svg
-                  className="pointer-events-none absolute inset-0 text-[#004C5E]"
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden
-                >
-                  <line
-                    x1="4"
-                    y1="4"
-                    x2="20"
-                    y2="20"
-                    stroke="currentColor"
-                    strokeWidth="2.25"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              ) : null}
-            </span>
+        cell: (row) => (
+          <Button variant="ghost" size="icon" aria-label="View order" onClick={() => handleOrderClick(row)}>
+            <Eye className="h-4 w-4" />
           </Button>
         ),
       },
     ],
-    []
+    [handleOrderClick]
   );
 
   return (
@@ -196,23 +281,7 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
               ]}
             />
           </div>
-          <div className="flex items-center gap-2">
-            Date range : <AppSelect
-              placeholder="Last 30 days"
-              value={dateRange}
-              onChange={(value: string) => setDateRange(value)}
-              options={[
-                { label: "Today", value: "today" },
-                { label: "Yesterday", value: "yesterday" },
-                { label: "Last 7 days", value: "last_7_days" },
-                { label: "Last 30 days", value: "last_30_days" },
-                { label: "This Week", value: "this_week" },
-                { label: "Last Week", value: "last_week" },
-                { label: "This Month", value: "this_month" },
-                { label: "Last Month", value: "last_month" },
-              ]}
-            />
-          </div>
+          <CustomDateRangeSelector value={dateRange} onChange={handleDateRangeChange} />
         </div>
       </div>
 
@@ -239,8 +308,8 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
           kpiType={3}
         />
         <KPICard
-          title="Return Orders"
-          value={analytics ? formatNumber(returnedOrders) : "—"}
+          title="Returns"
+          value={returnsKpis ? formatNumber(returnsKpis.total_returns) : "—"}
           icon={<KpiReturnUndoIcon />}
           onClick={() => setIsReturnOrdersModalOpen(true)}
           kpiType={4}
@@ -248,111 +317,124 @@ export function DashboardClient({ initialOrders }: DashboardClientProps) {
       </div>
 
       <Card className="overflow-hidden">
-        <CardContent className="p-4 sm:p-6">
-          <div className="mb-4">
-            <CardTitle className="text-base">Order Status Overview</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Breakdown of orders by fulfillment status for the selected period
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr] lg:items-center">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <KPICard
-                title="Pending Orders"
-                value={kpis ? formatNumber(kpis.pending_orders) : "—"}
-                icon={<Clock className="text-[#854D0E]" />}
-                variant="warning"
-              />
-              <KPICard
-                title="Delivered Orders"
-                value={kpis ? formatNumber(kpis.delivered_orders) : "—"}
-                icon={<PackageCheck className="text-[#016630]" />}
-                variant="success"
-              />
-              <KPICard
-                title="Cancelled Orders"
-                value={kpis ? formatNumber(kpis.cancelled_orders) : "—"}
-                icon={<XCircle className="text-[#660101]" />}
-                variant="error"
-              />
-            </div>
-            {orderStatusChartData.length > 0 ? (
-              <PieChart
-                data={orderStatusChartData}
-                colors={orderStatusChartColors}
-                layout="chart-left"
-                labelPosition="right"
-                showFooter={false}
-                showTitle={false}
-                compact
-                fluid
-              />
-            ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No orders in the selected period.
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="overflow-hidden">
         <div className="bg-[#F9FAF9] px-6 pt-6">
           <div className="flex items-start justify-between">
-            <div className="flex gap-1">
-              <div className="mt-0.5">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M11.2526 6.66667H10.0026V10.8333L13.5693 12.95L14.1693 11.9417L11.2526 10.2083V6.66667ZM10.8359 2.5C8.84681 2.5 6.93916 3.29018 5.53264 4.6967C4.12611 6.10322 3.33594 8.01088 3.33594 10H0.835938L4.13594 13.3583L7.5026 10H5.0026C5.0026 8.4529 5.61719 6.96917 6.71115 5.87521C7.80511 4.78125 9.28884 4.16667 10.8359 4.16667C12.383 4.16667 13.8668 4.78125 14.9607 5.87521C16.0547 6.96917 16.6693 8.4529 16.6693 10C16.6693 11.5471 16.0547 13.0308 14.9607 14.1248C13.8668 15.2188 12.383 15.8333 10.8359 15.8333C9.2276 15.8333 7.76927 15.175 6.71927 14.1167L5.53594 15.3C6.22894 16.0004 7.05455 16.5556 7.96454 16.9334C8.87453 17.3111 9.85067 17.5037 10.8359 17.5C12.8251 17.5 14.7327 16.7098 16.1392 15.3033C17.5458 13.8968 18.3359 11.9891 18.3359 10C18.3359 8.01088 17.5458 6.10322 16.1392 4.6967C14.7327 3.29018 12.8251 2.5 10.8359 2.5Z" fill="#2A2A2A" />
-                </svg>
-              </div>
-              <div className="flex flex-col gap-1"><CardTitle className="text-base">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
                 Recent Orders
               </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  View and manage your recent orders with sorting and filtering options
-                </p></div>
+              <p className="text-sm text-muted-foreground mt-1">
+                Monitor your incoming orders in real-time
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 my-4">
-            Filter by Status  <AppSelect
-              placeholder="All Status"
-              value={statusFilter}
-              onChange={(value: string) => setStatusFilter(value)}
-              options={[
-                { label: "All Status", value: "all" },
-                { label: "Delivered", value: "Delivered" },
-                { label: "Pending", value: "Pending" },
-                { label: "Canceled", value: "Canceled" },
-              ]}
-            />
+          <div className="relative flex items-center gap-3 mt-4 pb-4">
+            <div className="relative min-w-[220px] flex-1 max-w-xl">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden />
+              <input
+                type="search"
+                placeholder="Search by order ID or vendor name"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full rounded-md border border-input bg-[#E8E9E8] px-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label="Search orders"
+              />
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-auto">
+              <span className="shrink-0">Filter by Status</span>
+              {/* Built from the shared pipeline vocabulary rather than a hand-written subset:
+                  the original list offered only 3 of the 13 real statuses, and spelled one of
+                  them "Canceled" — the backend label is "Cancelled", so that option matched
+                  nothing and always returned an empty table.
+
+                  Multi-select, matching the Orders page. There's no explicit "All Status"
+                  option because an empty selection already means "no status filter" — having
+                  both would let you select "All Status" *and* "Pending" and have to invent a
+                  meaning for it. */}
+              <MultiSelectFilter
+                placeholder="All Status"
+                className="w-44 flex-none"
+                options={PIPELINE_STATUS_LABELS.map((label) => ({ label, value: label }))}
+                selected={statusFilter}
+                onChange={setStatusFilter}
+              />
+              <Button
+                variant="default"
+                size="default"
+                className="bg-primary"
+                onClick={() => router.push("/order-management")}
+              >
+                View All Orders
+                <ArrowExternalIcon className="ml-2 h-[11px] w-[11px] shrink-0 text-white" aria-hidden />
+              </Button>
+            </div>
           </div>
         </div>
         <CardContent className="relative pt-4 bg-[#F9FAF9]">
           <div className="relative">
+            {ordersLoading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 rounded">
+                <LoadingSpinner size="sm" />
+              </div>
+            )}
             <DataTable
               columns={columns}
-              data={paginatedOrders}
+              data={orders}
               bodyRowClassName="bg-white"
-              pagination={{
-                currentPage: pagination.currentPage,
-                totalPages: pagination.totalPages,
-                onPageChange: pagination.setPage,
-                pageSize: pagination.pageSize,
-                onPageSizeChange: pagination.setPageSize,
-                totalRowCount: filteredOrders.length,
-              }}
+              onServerSortColumn={handleServerSortColumn}
+              serverSortKey={serverSortKey}
+              serverSortDirection={serverSortDirection}
             />
           </div>
+          {!ordersLoading && (
+            <CursorPager
+              pageNumber={pageIndex + 1}
+              hasPrev={pageIndex > 0}
+              hasNext={hasNext}
+              onPrev={() => setPageIndex((i) => Math.max(0, i - 1))}
+              onNext={() => {
+                setCursorHistory((prev) =>
+                  prev.length === pageIndex + 1 ? [...prev, nextCursor ?? undefined] : prev
+                );
+                setPageIndex((i) => i + 1);
+              }}
+              pageSize={pageSize}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setPageIndex(0);
+                setCursorHistory([undefined]);
+                setNextCursor(null);
+              }}
+              rowCount={orders.length}
+            />
+          )}
         </CardContent>
       </Card>
 
-      <SalesAnalyticsModal open={isSalesModalOpen} onOpenChange={setIsSalesModalOpen} />
+      <SalesAnalyticsModal
+        open={isSalesModalOpen}
+        onOpenChange={setIsSalesModalOpen}
+        dateRangePayload={dateRangePayload}
+        channel={channelFilter === "b2b" || channelFilter === "b2c" ? channelFilter : undefined}
+      />
       <AverageOrderValueModal
         open={isAverageOrderValueModalOpen}
         onOpenChange={setIsAverageOrderValueModalOpen}
+        dateRangePayload={dateRangePayload}
+        channel={channelFilter === "b2b" || channelFilter === "b2c" ? channelFilter : undefined}
       />
-      <TotalOrdersAnalyticsModal open={isTotalOrdersModalOpen} onOpenChange={setIsTotalOrdersModalOpen} />
-      <ReturnOrdersAnalyticsModal open={isReturnOrdersModalOpen} onOpenChange={setIsReturnOrdersModalOpen} />
+      <TotalOrdersAnalyticsModal
+        open={isTotalOrdersModalOpen}
+        onOpenChange={setIsTotalOrdersModalOpen}
+        dateRangePayload={dateRangePayload}
+      />
+      <ReturnOrdersAnalyticsModal
+        open={isReturnOrdersModalOpen}
+        onOpenChange={setIsReturnOrdersModalOpen}
+        dateRangePayload={dateRangePayload}
+        channel={channelFilter === "b2b" || channelFilter === "b2c" ? channelFilter : undefined}
+      />
     </div>
   );
 }

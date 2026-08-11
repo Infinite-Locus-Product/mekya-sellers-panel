@@ -50,6 +50,11 @@ export interface OrderItem {
   /** Units that can still be cancelled: not yet shipped and not already cancelled.
    *  0 means the Cancel action must be hidden for this line. */
   cancellableQuantity?: number
+  /** Units that are neither in an active shipment nor cancelled — e.g. a shipment attempt
+   *  for this line was voided and only part of it was subsequently cancelled, leaving a
+   *  remainder that still needs someone to ship or cancel it. Surfaced to the seller so an
+   *  order sitting in the Pending filter has a visible reason instead of looking "done". */
+  pendingQuantity?: number
 }
 
 export interface FulfillmentTimelineItem {
@@ -178,6 +183,14 @@ export interface B2BOrderLineDisplay {
   isCustomOrder?: boolean
 }
 
+/** Origin custom-order request for an order created via buyer-confirm. */
+export interface OrderCustomOrderLink {
+  id: string
+  customStatus: string
+  contactPerson: string | null
+  customerEmail: string | null
+}
+
 export interface OrderDetailsData {
   id: string
   placedDate: string
@@ -200,6 +213,9 @@ export interface OrderDetailsData {
   unfulfilledLines?: OrderDetailUnfulfilledLine[]
   /** Shipping address postal code — looks up warehouse candidates for a new shipment. */
   deliveryPincode?: string | null
+  /** The custom-order request this order came from, when it came from one. Undefined for
+   *  ordinary orders, which fulfil in one click with no confirmation. */
+  customOrder?: OrderCustomOrderLink | null
   invoiceNumber?: string
   orderNumber?: string
   channel?: "b2b" | "b2c"

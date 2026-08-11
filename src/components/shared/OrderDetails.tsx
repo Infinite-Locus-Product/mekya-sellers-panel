@@ -119,6 +119,7 @@ export function OrderDetails({
           orderId={order.id}
           unfulfilledLines={order.unfulfilledLines}
           deliveryPincode={order.deliveryPincode}
+          customOrder={order.customOrder}
           orderStatus={order.status}
           onRefresh={onRefresh}
         />
