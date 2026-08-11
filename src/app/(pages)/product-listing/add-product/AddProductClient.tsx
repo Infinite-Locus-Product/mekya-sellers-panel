@@ -701,7 +701,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       !qtyRangeInvalid &&
       !b2bOrderQtyRangeInvalid &&
       !b2cOrderQtyRangeInvalid,
-    [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, channels, selectedColors, selectedSizes, includedVariantRows, images, existingImages, isEditMode, description, qtyRangeInvalid, b2bOrderQtyRangeInvalid, b2cOrderQtyRangeInvalid, variantPricingValid, requiredAttributesFilled]
+    [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, selectedColors, selectedSizes, includedVariantRows, images, existingImages, isEditMode, description, qtyRangeInvalid, b2bOrderQtyRangeInvalid, b2cOrderQtyRangeInvalid, variantPricingValid, requiredAttributesFilled]
   );
 
   /** Builds the ProductDefinitionUpdate section — never includes
