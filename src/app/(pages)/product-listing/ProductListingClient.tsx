@@ -5,19 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  ChevronDown,
-  Eye,
-  FileText,
-  Plus,
-  RotateCcw,
-  Search,
-  SlidersHorizontal,
-} from "lucide-react";
+import { Eye, FileText, Loader2, Plus, RotateCcw, Search } from "lucide-react";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import { InventoryTypeBadge } from "@/components/shared/InventoryTypeBadge";
 import {
   PRODUCT_INVENTORY_TYPE_LABELS,
+  SELECTABLE_PRODUCT_INVENTORY_TYPES,
   TABLE_BADGE_PILL_COLUMN_CLASS,
   TABLE_CHANNEL_COLUMN_CLASS,
   TABLE_LISTING_STATUS_COLUMN_CLASS,
@@ -38,6 +31,7 @@ import {
   toProductRow,
   unpublishProduct,
   type Category,
+  type ProductChannel,
   type ProductSortField,
 } from "@/lib/api/products";
 
@@ -48,7 +42,7 @@ type PageSlice = {
 };
 
 type FetchPageParams = {
-  channel: "b2c" | "b2b";
+  channels?: ProductChannel[];
   status?: string;
   sortBy: ProductSortField;
   sortOrder: "ASC" | "DESC";
@@ -71,7 +65,7 @@ async function fetchFullPage(params: FetchPageParams): Promise<PageSlice> {
   const MAX_FETCHES = 20; // safety cap against a pathological all-filtered-out backend response
   for (let i = 0; i < MAX_FETCHES && merged.length < params.pageSize && hasNext; i++) {
     const res = await listProducts({
-      channel: params.channel,
+      channels: params.channels,
       status: params.status,
       sort_by: params.sortBy,
       sort_order: params.sortOrder,
@@ -87,13 +81,7 @@ async function fetchFullPage(params: FetchPageParams): Promise<PageSlice> {
   return { products: merged, nextCursor: hasNext ? (cursor ?? null) : null, hasNext };
 }
 
-export interface ProductListingClientProps {
-  listingVariant?: "b2b" | "b2c";
-}
-
-export function ProductListingClient({
-  listingVariant = "b2c",
-}: Readonly<ProductListingClientProps>) {
+export function ProductListingClient() {
   const router = useRouter();
 
   // ── Pagination stack ──────────────────────────────────────────────────────
@@ -110,23 +98,23 @@ export function ProductListingClient({
   const [searchInput, setSearchInput] = useState("");
   const [searchPage, setSearchPage] = useState(1);
   const [listingStatus, setListingStatus] = useState("all");
+  /**
+   * Multi-select. An empty selection sends no `channel` query param, so the listing shows
+   * everything; each picked value maps straight to a backend `channel` value and they're
+   * sent as repeated params. Note "both" is its own assignment, not the union of the other
+   * two: it means products listed on B2C *and* B2B, so the three options are disjoint and
+   * selecting several returns exactly their union.
+   */
+  const [channelFilter, setChannelFilter] = useState<ProductChannel[]>([]);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
 
   // ── Client-side filters (applied to current page only) ────────────────────
   const [selectedInventoryTypes, setSelectedInventoryTypes] = useState<string[]>([]);
-  const [isPriceFilterOpen, setIsPriceFilterOpen] = useState(false);
-  const [priceMinDraft, setPriceMinDraft] = useState("0");
-  const [priceMaxDraft, setPriceMaxDraft] = useState("100000");
-  const [priceMinApplied, setPriceMinApplied] = useState("0");
-  const [priceMaxApplied, setPriceMaxApplied] = useState("100000");
 
   // ── Modals ────────────────────────────────────────────────────────────────
   const [productToDelete, setProductToDelete] = useState<ProductRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [toggleLoadingIds, setToggleLoadingIds] = useState<Set<string>>(new Set());
-
-  const priceFilterRef = useRef<HTMLDivElement>(null);
-  const isB2B = listingVariant === "b2b";
 
   // ── Server sort ────────────────────────────────────────────────────────────
   const { sortBy, sortOrder, serverSortKey, serverSortDirection, handleServerSortColumn } =
@@ -148,7 +136,7 @@ export function ProductListingClient({
     const gen = ++fetchGenRef.current;
     setIsLoading(true);
     fetchFullPage({
-      channel: listingVariant,
+      channels: channelFilter.length > 0 ? channelFilter : undefined,
       status: listingStatus !== "all" ? listingStatus : undefined,
       sortBy: sortBy as ProductSortField,
       sortOrder,
@@ -164,7 +152,7 @@ export function ProductListingClient({
       .finally(() => {
         if (gen === fetchGenRef.current) setIsLoading(false);
       });
-  }, [listingVariant, listingStatus, sortBy, sortOrder, pageSize, selectedCategoryIds]);
+  }, [channelFilter, listingStatus, sortBy, sortOrder, pageSize, selectedCategoryIds]);
 
   // ── Pagination helpers ─────────────────────────────────────────────────────
   const currentSlice = stack[pageIndex];
@@ -183,7 +171,7 @@ export function ProductListingClient({
     setIsLoading(true);
     try {
       const newSlice = await fetchFullPage({
-        channel: listingVariant,
+        channels: channelFilter.length > 0 ? channelFilter : undefined,
         status: listingStatus !== "all" ? listingStatus : undefined,
         sortBy: sortBy as ProductSortField,
         sortOrder,
@@ -203,7 +191,7 @@ export function ProductListingClient({
     isLoading,
     pageIndex,
     stack,
-    listingVariant,
+    channelFilter,
     listingStatus,
     sortBy,
     sortOrder,
@@ -233,8 +221,6 @@ export function ProductListingClient({
   const filteredSearchProducts = useMemo(() => {
     if (!isSearching) return [];
     const q = searchInput.toLowerCase().trim();
-    const minPrice = Number(priceMinApplied) || 0;
-    const maxPrice = Number(priceMaxApplied) || Number.MAX_SAFE_INTEGER;
     return allStackProducts.filter((p) => {
       const nameOk =
         p.name.toLowerCase().includes(q) ||
@@ -246,11 +232,9 @@ export function ProductListingClient({
       const invOk =
         selectedInventoryTypes.length === 0 ||
         selectedInventoryTypes.includes(p.inventoryType);
-      const price = Number(p.price.replaceAll(/[^\d.]/g, "")) || 0;
-      const rangeOk = !isB2B || (price >= minPrice && price <= maxPrice);
-      return nameOk && invOk && rangeOk;
+      return nameOk && invOk;
     });
-  }, [isSearching, searchInput, allStackProducts, selectedInventoryTypes, isB2B, priceMinApplied, priceMaxApplied]);
+  }, [isSearching, searchInput, allStackProducts, selectedInventoryTypes]);
 
   // ── Search pagination ──────────────────────────────────────────────────────
   const searchTotalPages = Math.max(1, Math.ceil(filteredSearchProducts.length / pageSize));
@@ -270,16 +254,11 @@ export function ProductListingClient({
     }
     // Cursor mode: apply non-search client-side filters on current page
     const currentProducts = currentSlice?.products ?? [];
-    const minPrice = Number(priceMinApplied) || 0;
-    const maxPrice = Number(priceMaxApplied) || Number.MAX_SAFE_INTEGER;
-    return currentProducts.filter((p) => {
-      const invOk =
+    return currentProducts.filter(
+      (p) =>
         selectedInventoryTypes.length === 0 ||
-        selectedInventoryTypes.includes(p.inventoryType);
-      const price = Number(p.price.replaceAll(/[^\d.]/g, "")) || 0;
-      const rangeOk = !isB2B || (price >= minPrice && price <= maxPrice);
-      return invOk && rangeOk;
-    });
+        selectedInventoryTypes.includes(p.inventoryType)
+    );
   }, [
     isSearching,
     filteredSearchProducts,
@@ -287,22 +266,7 @@ export function ProductListingClient({
     pageSize,
     currentSlice,
     selectedInventoryTypes,
-    isB2B,
-    priceMinApplied,
-    priceMaxApplied,
   ]);
-
-  // ── Outside-click for price filter ────────────────────────────────────────
-  useEffect(() => {
-    if (!isPriceFilterOpen) return;
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (priceFilterRef.current && !priceFilterRef.current.contains(event.target as Node)) {
-        setIsPriceFilterOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [isPriceFilterOpen]);
 
   // ── Status toggle ─────────────────────────────────────────────────────────
   const handleListingToggle = (row: ProductRow, newStatus: "active" | "inactive") => {
@@ -389,13 +353,10 @@ export function ProductListingClient({
   const handleReset = () => {
     setSelectedCategoryIds([]);
     setListingStatus("all");
+    setChannelFilter([]);
     setSelectedInventoryTypes([]);
     setSearchInput("");
     setSearchPage(1);
-    setPriceMinDraft("0");
-    setPriceMaxDraft("100000");
-    setPriceMinApplied("0");
-    setPriceMaxApplied("100000");
   };
 
   /**
@@ -406,21 +367,13 @@ export function ProductListingClient({
    * shortfall proportionally across every column, so a large shortfall is what stretches the
    * badge pills — and giving one column no width at all makes it swallow the whole surplus.
    */
-  const colWidth = isB2B
-    ? {
-        name: "w-[18%]",
-        articleNumber: "w-[14%]",
-        category: "w-[12%]",
-        toggle: "w-[7%]",
-        actions: "w-[9%]",
-      }
-    : {
-        name: "w-[24%]",
-        articleNumber: "w-[17%]",
-        category: "w-[15%]",
-        toggle: "w-[8%]",
-        actions: "w-[10%]",
-      };
+  const colWidth = {
+    name: "w-[24%]",
+    articleNumber: "w-[17%]",
+    category: "w-[15%]",
+    toggle: "w-[8%]",
+    actions: "w-[10%]",
+  };
 
   // ── Table columns ──────────────────────────────────────────────────────────
   const columns: TableColumn<ProductRow>[] = [
@@ -465,21 +418,6 @@ export function ProductListingClient({
         );
       },
     },
-    ...(isB2B
-      ? [
-          {
-            key: "price",
-            header: "WSP",
-            sortable: true,
-            className: "w-[7%]",
-          } as TableColumn<ProductRow>,
-          {
-            key: "quantity",
-            header: "Inventory",
-            className: "w-[7%]",
-          } as TableColumn<ProductRow>,
-        ]
-      : []),
     {
       key: "status",
       header: "Status",
@@ -599,11 +537,9 @@ export function ProductListingClient({
           Seller Dashboard &gt; Product Listing
         </nav>
         <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-xl font-semibold text-foreground">
-            {isB2B ? "B2B Product Listing" : "B2C Product Listing"}
-          </h1>
+          <h1 className="text-xl font-semibold text-foreground">Product Listing</h1>
           <Link
-            href={`/product-listing/add-product${isB2B ? "?defaultChannel=b2b" : ""}`}
+            href="/product-listing/add-product"
             className={cn(buttonVariants({ variant: "default", size: "lg" }))}
           >
             <Plus className="h-4 w-4" aria-hidden />
@@ -611,9 +547,7 @@ export function ProductListingClient({
           </Link>
         </div>
         <p className="text-gray-700">
-          {isB2B
-            ? "Manage your business-to-business products"
-            : "Manage your business-to-consumer products"}
+          Manage your B2C and B2B products
         </p>
       </div>
 
@@ -666,31 +600,25 @@ export function ProductListingClient({
                 className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
               />
 
+              {/* Channel — backend filter; selecting none sends no `channel` param */}
+              <MultiSelectFilter
+                placeholder="All Channels"
+                options={[
+                  { label: "B2C", value: "b2c" },
+                  { label: "B2B", value: "b2b" },
+                  { label: "B2C & B2B", value: "both" },
+                ]}
+                selected={channelFilter}
+                onChange={(values) => setChannelFilter(values as ProductChannel[])}
+              />
+
               {/* Inventory type — client-side filter on current page */}
               <MultiSelectFilter
                 placeholder="All Inventory Types"
-                options={[
-                  {
-                    label: PRODUCT_INVENTORY_TYPE_LABELS.ready_to_ship,
-                    value: "ready_to_ship",
-                  },
-                  {
-                    label: PRODUCT_INVENTORY_TYPE_LABELS.pre_booking,
-                    value: "pre_booking",
-                  },
-                  {
-                    label: PRODUCT_INVENTORY_TYPE_LABELS.stock_clearance,
-                    value: "stock_clearance",
-                  },
-                  ...(isB2B
-                    ? [
-                        {
-                          label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return,
-                          value: "sale_or_return",
-                        },
-                      ]
-                    : []),
-                ]}
+                options={SELECTABLE_PRODUCT_INVENTORY_TYPES.map((value) => ({
+                  label: PRODUCT_INVENTORY_TYPE_LABELS[value],
+                  value,
+                }))}
                 selected={selectedInventoryTypes}
                 onChange={setSelectedInventoryTypes}
               />
@@ -705,149 +633,67 @@ export function ProductListingClient({
                 <RotateCcw className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
                 Reset
               </button>
-
-              {/* Price range (B2B only, client-side on current page) */}
-              {isB2B && (
-                <div
-                  className="relative ml-1 shrink-0 min-[1920px]:ml-2"
-                  ref={priceFilterRef}
-                >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-7 max-w-[min(100%,9rem)] min-w-0 justify-between gap-1 border-0 bg-[#E8E9E8] px-2 text-[10px] font-medium shadow-none hover:bg-[#dde0dd] sm:h-8 sm:max-w-[10.5rem] sm:gap-1.5 sm:text-xs min-[1920px]:h-10 min-[1920px]:min-w-[170px] min-[1920px]:max-w-none min-[1920px]:gap-2 min-[1920px]:px-3 min-[1920px]:text-sm"
-                    onClick={() => setIsPriceFilterOpen((prev) => !prev)}
-                  >
-                    <span className="inline-flex min-w-0 items-center gap-1 truncate sm:gap-1.5 min-[1920px]:gap-2">
-                      <SlidersHorizontal
-                        className="size-3 shrink-0 sm:size-3.5 min-[1920px]:size-4"
-                        aria-hidden
-                      />
-                      <span className="truncate">Price Range</span>
-                    </span>
-                    <ChevronDown
-                      className="size-3 shrink-0 sm:size-3.5 min-[1920px]:size-4"
-                      aria-hidden
-                    />
-                  </Button>
-                  {isPriceFilterOpen && (
-                    <div className="absolute right-0 top-12 z-30 h-[210px] w-[315px] rounded-[5px] border border-border bg-white p-4 opacity-100 shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
-                      <div className="flex items-center justify-between">
-                        <h3 className="inline-flex items-center gap-2 text-base font-semibold leading-none text-[#131313]">
-                          <SlidersHorizontal className="h-4 w-4" />
-                          Price Range Filter
-                        </h3>
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1.5 text-sm underline underline-offset-2"
-                          onClick={() => {
-                            setPriceMinDraft("0");
-                            setPriceMaxDraft("100000");
-                            setPriceMinApplied("0");
-                            setPriceMaxApplied("100000");
-                          }}
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                          Reset
-                        </button>
-                      </div>
-                      <p className="mt-4 text-md font-medium text-muted-foreground">
-                        Price Range
-                      </p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <div>
-                          <label
-                            htmlFor="price-range-min"
-                            className="mb-1.5 block text-sm font-medium leading-none"
-                          >
-                            Min
-                          </label>
-                          <input
-                            id="price-range-min"
-                            type="text"
-                            inputMode="numeric"
-                            value={priceMinDraft}
-                            onChange={(e) =>
-                              setPriceMinDraft(e.target.value.replaceAll(/\D/g, ""))
-                            }
-                            className="h-8 w-full rounded-md border-0 bg-[#E8E9E8] px-2 text-lg text-[#6b6b6b] outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label
-                            htmlFor="price-range-max"
-                            className="mb-1.5 block text-sm font-medium leading-none"
-                          >
-                            Max
-                          </label>
-                          <input
-                            id="price-range-max"
-                            type="text"
-                            inputMode="numeric"
-                            value={priceMaxDraft}
-                            onChange={(e) =>
-                              setPriceMaxDraft(e.target.value.replaceAll(/\D/g, ""))
-                            }
-                            className="h-8 w-full rounded-md border-0 bg-[#E8E9E8] px-3 text-lg text-[#6b6b6b] outline-none"
-                          />
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        className="mt-4 h-10 w-full rounded-md bg-[#122130] text-base text-white hover:bg-[#0d1a28]"
-                        onClick={() => {
-                          setPriceMinApplied(priceMinDraft || "0");
-                          setPriceMaxApplied(priceMaxDraft || "100000");
-                          setIsPriceFilterOpen(false);
-                        }}
-                      >
-                        Apply
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </div>
 
           {/* Table */}
           {isLoading && stack.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Loading products…
-            </p>
+            <div className="flex flex-col items-center justify-center gap-3 py-12">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden />
+              <p className="text-sm text-muted-foreground">Loading products…</p>
+            </div>
           ) : (
-            <DataTable
-              columns={columns}
-              data={displayProducts}
-              striped
-              emptyMessage={
-                isLoading ? "Loading…" : "No products match your filters"
-              }
-              onServerSortColumn={handleServerSortColumn}
-              serverSortKey={serverSortKey}
-              serverSortDirection={serverSortDirection}
-              pagination={
-                isSearching
-                  ? {
-                      currentPage: searchEffectivePage,
-                      totalPages: searchTotalPages,
-                      onPageChange: setSearchPage,
-                      pageSize,
-                      onPageSizeChange: setPageSize,
-                      totalRowCount: filteredSearchProducts.length,
-                      pageSizeOptions: [10, 20, 50] as const,
-                    }
-                  : {
-                      currentPage: pageIndex + 1,
-                      totalPages: cursorTotalPages,
-                      onPageChange: goToPage,
-                      pageSize,
-                      onPageSizeChange: setPageSize,
-                      totalRowCount: displayProducts.length,
-                      pageSizeOptions: [10, 20, 50] as const,
-                    }
-              }
-            />
+            /* Refetches triggered by a filter, sort or page change keep the previous rows
+             * mounted under this overlay — replacing the table outright would collapse the
+             * card and drop the pagination controls on every filter change. */
+            <div className="relative">
+              {isLoading && (
+                <div
+                  className="absolute inset-0 z-20 flex items-center justify-center rounded-md bg-white/75"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-5 animate-spin" aria-hidden />
+                    Loading products…
+                  </span>
+                </div>
+              )}
+              <div aria-busy={isLoading} className={cn(isLoading && "pointer-events-none")}>
+                <DataTable
+                  columns={columns}
+                  data={displayProducts}
+                  striped
+                  emptyMessage={
+                    isLoading ? "Loading…" : "No products match your filters"
+                  }
+                  onServerSortColumn={handleServerSortColumn}
+                  serverSortKey={serverSortKey}
+                  serverSortDirection={serverSortDirection}
+                  pagination={
+                    isSearching
+                      ? {
+                          currentPage: searchEffectivePage,
+                          totalPages: searchTotalPages,
+                          onPageChange: setSearchPage,
+                          pageSize,
+                          onPageSizeChange: setPageSize,
+                          totalRowCount: filteredSearchProducts.length,
+                          pageSizeOptions: [10, 20, 50] as const,
+                        }
+                      : {
+                          currentPage: pageIndex + 1,
+                          totalPages: cursorTotalPages,
+                          onPageChange: goToPage,
+                          pageSize,
+                          onPageSizeChange: setPageSize,
+                          totalRowCount: displayProducts.length,
+                          pageSizeOptions: [10, 20, 50] as const,
+                        }
+                  }
+                />
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

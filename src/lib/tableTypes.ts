@@ -126,11 +126,26 @@ export const CUSTOM_ORDER_STATUS_TRANSITIONS: Record<CustomOrderStatus, readonly
   Cancelled: [],
 };
 
+/** Every inventory type the backend can return. `sale_or_return` is retired: it
+ * is no longer offered when creating/editing a product or in any filter, but
+ * stays in the union (and in the labels below) so products and orders already
+ * carrying it still render with a proper label instead of a raw slug. */
 export type ProductInventoryType =
   | "ready_to_ship"
   | "pre_booking"
   | "stock_clearance"
   | "sale_or_return";
+
+/** The subset a seller can actually pick — the source for the add/edit product
+ * dropdown and every inventory-type filter. Add new types here, not just above. */
+export const SELECTABLE_PRODUCT_INVENTORY_TYPES = [
+  "ready_to_ship",
+  "stock_clearance",
+  "pre_booking",
+] as const satisfies readonly ProductInventoryType[];
+
+export type SelectableProductInventoryType =
+  (typeof SELECTABLE_PRODUCT_INVENTORY_TYPES)[number];
 
 /** B2B + `pre_booking` only: fulfillment sub-state when order `status` is Partial Fulfillment. */
 export type B2BPartialFulfillmentStatus =

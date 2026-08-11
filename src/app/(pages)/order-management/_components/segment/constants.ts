@@ -7,6 +7,7 @@ import type {
 } from "@/lib/tableTypes";
 import {
     PRODUCT_INVENTORY_TYPE_LABELS,
+    SELECTABLE_PRODUCT_INVENTORY_TYPES,
     REAL_ORDER_STATUSES,
     REAL_RETURN_STATUSES,
 } from "@/lib/tableTypes";
@@ -60,10 +61,10 @@ export const B2B_INVENTORY_TYPE_FILTER_OPTIONS: ReadonlyArray<{
     value: "all" | ProductInventoryType;
 }> = [
     { label: "All Inventory Types", value: "all" },
-    { label: PRODUCT_INVENTORY_TYPE_LABELS.ready_to_ship, value: "ready_to_ship" },
-    { label: PRODUCT_INVENTORY_TYPE_LABELS.sale_or_return, value: "sale_or_return" },
-    { label: PRODUCT_INVENTORY_TYPE_LABELS.stock_clearance, value: "stock_clearance" },
-    { label: PRODUCT_INVENTORY_TYPE_LABELS.pre_booking, value: "pre_booking" },
+    ...SELECTABLE_PRODUCT_INVENTORY_TYPES.map((value) => ({
+        label: PRODUCT_INVENTORY_TYPE_LABELS[value],
+        value,
+    })),
 ];
 
 export const PAGE_TITLE_ORDER_MANAGEMENT = "Order Management System";

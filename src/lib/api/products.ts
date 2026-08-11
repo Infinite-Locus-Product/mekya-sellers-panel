@@ -10,6 +10,10 @@ export interface Category {
   slug: string;
 }
 
+/** A product's channel assignment. The three values are disjoint: "both" means
+ * dual-listed, not "either", so they partition the catalog. */
+export type ProductChannel = "b2c" | "b2b" | "both";
+
 export interface ProductListItem {
   id: string;
   name: string;
@@ -23,7 +27,7 @@ export interface ProductListItem {
   inventory_type: string;
   price: string;
   quantity: number;
-  channels?: "b2c" | "b2b" | "both";
+  channels?: ProductChannel;
 }
 
 export interface ProductListResponse {
@@ -155,7 +159,7 @@ export interface PricingInput {
   selling_price?: number;
   b2b_selling_price?: number;
   mrp?: number;
-  channels?: "b2c" | "b2b" | "both";
+  channels?: ProductChannel;
   overrides?: PriceOverrideInput[];
 }
 
@@ -274,7 +278,9 @@ export async function listProducts(params?: {
   status?: string;
   cursor?: string;
   limit?: number;
-  channel?: "b2c" | "b2b" | "both";
+  /** Repeatable — the backend's channel values are disjoint, so several
+   * selected channels come back as their union. Omit for "all channels". */
+  channels?: ProductChannel[];
   search?: string;
   sort_by?: ProductSortField;
   sort_order?: "ASC" | "DESC";
@@ -284,7 +290,9 @@ export async function listProducts(params?: {
   if (params?.status) qs.set("status", params.status);
   if (params?.cursor) qs.set("cursor", params.cursor);
   if (params?.limit) qs.set("limit", String(params.limit));
-  if (params?.channel) qs.set("channel", params.channel);
+  for (const channel of params?.channels ?? []) {
+    qs.append("channel", channel);
+  }
   if (params?.search) qs.set("search", params.search);
   if (params?.sort_by) qs.set("sort_by", params.sort_by);
   if (params?.sort_order) qs.set("sort_order", params.sort_order);

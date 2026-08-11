@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import type { EditableProductDraft } from "@/lib/data";
 import {
   PRODUCT_INVENTORY_TYPE_LABELS,
+  SELECTABLE_PRODUCT_INVENTORY_TYPES,
   type ProductInventoryType,
 } from "@/lib/tableTypes";
 import {
@@ -512,9 +513,10 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     ? colorAttributeValues(manifest).map((v) => ({ label: v.name, value: v.name }))
     : [];
   const tagGroups = manifest ? tagsByGroup(manifest) : {};
-  const inventorySelectOptions = (
-    Object.entries(PRODUCT_INVENTORY_TYPE_LABELS) as [ProductInventoryType, string][]
-  ).map(([value, label]) => ({ label, value }));
+  const inventorySelectOptions = SELECTABLE_PRODUCT_INVENTORY_TYPES.map((value) => ({
+    label: PRODUCT_INVENTORY_TYPE_LABELS[value],
+    value,
+  }));
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const list = Array.from(files);
