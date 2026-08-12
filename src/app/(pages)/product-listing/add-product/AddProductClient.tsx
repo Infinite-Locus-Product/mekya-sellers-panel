@@ -1016,6 +1016,8 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     }
 
     setIsSubmitting(true);
+    // Publishing lands on the new product's detail page; editing returns to the list.
+    let redirectTo = "/product-listing";
     try {
       const imageUrls = images.length > 0
         ? await uploadImagesToStorage(images.map((i) => i.file))
@@ -1067,10 +1069,11 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         }
         await publishProduct(productIdToPublish);
         toast.success("Product published successfully.");
+        redirectTo = `/product-listing/${encodeURIComponent(productIdToPublish)}`;
       }
       submittedRef.current = true;
       try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
-      router.push("/product-listing");
+      router.push(redirectTo);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save product");
     } finally {
@@ -1529,7 +1532,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                           <th className="pb-2 pr-3 font-medium">Size</th>
                           {channels !== "b2b" && <th className="pb-2 pr-3 font-medium">B2C Price (₹)</th>}
                           {channels !== "b2c" && <th className="pb-2 pr-3 font-medium">B2B Price (₹)</th>}
-                          <th className="pb-2 font-medium">Qty</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1583,20 +1585,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                                 />
                               </td>
                             )}
-                            <td className="py-2">
-                              <Input
-                                inputMode="numeric"
-                                placeholder="0"
-                                disabled={excluded}
-                                value={row.qty}
-                                onChange={(e) =>
-                                  setVariantPricing((prev) =>
-                                    prev.map((r, i) => i === idx ? { ...r, qty: e.target.value.replace(/\D/g, "") } : r)
-                                  )
-                                }
-                                className="h-8 w-20 bg-white"
-                              />
-                            </td>
                           </tr>
                           );
                         })}
@@ -1851,7 +1839,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                     <th className="pb-2 pr-4 font-medium">Size</th>
                     <th className="pb-2 pr-4 font-medium">B2C Price (₹)</th>
                     <th className="pb-2 pr-4 font-medium">B2B Price (₹)</th>
-                    <th className="pb-2 pr-4 font-medium">Stock</th>
                     <th className="pb-2 font-medium" />
                   </tr>
                 </thead>
@@ -1886,19 +1873,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                               }))
                             }
                             className="h-8 w-24 bg-white"
-                          />
-                        </td>
-                        <td className="py-2 pr-4">
-                          <Input
-                            inputMode="numeric"
-                            value={edit.quantity}
-                            onChange={(e) =>
-                              setVariantEdits((prev) => ({
-                                ...prev,
-                                [variant.id]: { ...edit, quantity: e.target.value.replace(/\D/g, "") },
-                              }))
-                            }
-                            className="h-8 w-20 bg-white"
                           />
                         </td>
                         <td className="py-2">

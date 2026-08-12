@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus } from "lucide-react";
+import { Eye, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -65,9 +65,6 @@ export function WarehousesTab({ warehouses, loading, onChanged }: Readonly<Wareh
                         <StatusBadge variant={WAREHOUSE_STATUS_VARIANT[row.status]} className="w-auto px-3">
                             {WAREHOUSE_STATUS_LABEL[row.status]}
                         </StatusBadge>
-                        {row.status === "rejected" && row.rejection_reason ? (
-                            <p className="mt-1 text-[11px] text-destructive">{row.rejection_reason}</p>
-                        ) : null}
                         {row.status === "pending_approval" ? (
                             <p className="mt-1 text-[11px] text-muted-foreground">
                                 {row.dry_run_completed_at
@@ -98,18 +95,20 @@ export function WarehousesTab({ warehouses, loading, onChanged }: Readonly<Wareh
                             size="sm"
                             variant="outline"
                             className="h-7 text-xs"
-                            onClick={() => router.push(`/inventory/${row.id}`)}
-                        >
-                            View
-                        </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
                             onClick={() => setZonesWarehouse(row)}
                         >
                             Manage zones
+                        </Button>
+                        <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            aria-label={`View ${row.name}`}
+                            title="View warehouse details"
+                            onClick={() => router.push(`/inventory/${row.id}`)}
+                        >
+                            <Eye className="h-4 w-4" aria-hidden />
                         </Button>
                     </div>
                 ),

@@ -295,9 +295,14 @@ export function WarehouseDetailClient({ warehouseId }: Readonly<WarehouseDetailC
                                         {WAREHOUSE_STATUS_LABEL[warehouse.status]}
                                     </StatusBadge>
                                     {warehouse.status === "rejected" && warehouse.rejection_reason ? (
-                                        <p className="mt-1 text-[11px] text-destructive">
-                                            {warehouse.rejection_reason}
-                                        </p>
+                                        <div className="mt-2">
+                                            <p className="text-[11px] text-muted-foreground">
+                                                Rejection reason
+                                            </p>
+                                            <p className="mt-0.5 text-[11px] text-destructive">
+                                                {warehouse.rejection_reason}
+                                            </p>
+                                        </div>
                                     ) : null}
                                     {warehouse.status === "pending_approval" ? (
                                         <p className="mt-1 text-[11px] text-muted-foreground">
