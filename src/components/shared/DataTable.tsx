@@ -111,10 +111,14 @@ export function DataTable<T>({
     })
   }, [])
 
+  // Centred by default, for headers and body cells alike. `table-fixed` splits whatever width
+  // the sized columns (status pills, actions) don't claim equally between the rest, so a short
+  // value like an amount used to sit hard left in a column far wider than itself and read as an
+  // empty column rather than as padding. A column opts out with align: "left" | "right".
   const getAlignClass = (align: TableColumn<T>["align"]) => {
-    if (align === "center") return "text-center"
+    if (align === "left") return "text-left"
     if (align === "right") return "text-right"
-    return "text-left"
+    return "text-center"
   }
 
   const handleSort = (key: string | keyof T) => {
@@ -186,9 +190,12 @@ export function DataTable<T>({
           // scale so sortable and non-sortable headers always match.
           "inline-flex w-full min-w-0 items-center gap-1 text-foreground transition-colors min-[1920px]:gap-2",
           "rounded-sm px-0.5 py-0.5 -my-1 min-[1920px]:py-1 hover:bg-black/[0.06] hover:text-foreground",
+          // This button is the <th>'s whole content and is `inline-flex`, so the cell's own
+          // text-align can't position it — it has to mirror getAlignClass's default itself,
+          // otherwise sortable headers stay left while every other header centres.
           col.align === "right" && "justify-end text-right",
-          col.align === "center" && "justify-center text-center",
-          (col.align === "left" || !col.align) && "justify-start text-left"
+          col.align === "left" && "justify-start text-left",
+          (col.align === "center" || !col.align) && "justify-center text-center"
         )}
         aria-label={`Sort by ${String(col.header)} ${sortDirection === "asc" ? "ascending" : sortDirection === "desc" ? "descending" : ""}`.trim()}
       >

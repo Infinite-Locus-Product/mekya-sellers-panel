@@ -35,6 +35,13 @@ import {
   type DateRangeValue,
 } from "@/components/shared/custom-date-range";
 import { getSellerAnalytics, type SellerAnalytics } from "@/lib/api/analytics";
+import {
+  formatTrend,
+  percentChange,
+  periodKey,
+  previousPeriod,
+  trendChangeType,
+} from "@/lib/kpiTrend";
 import { listOrders, getReturnsKpis, type ListOrdersParams, type ReturnsKpis } from "@/lib/api/orders";
 import { formatMoney, formatNumber } from "@/lib/utils";
 
@@ -64,6 +71,16 @@ export function DashboardClient() {
   );
   const [analytics, setAnalytics] = useState<SellerAnalytics | null>(null);
   const [returnsKpis, setReturnsKpis] = useState<ReturnsKpis | null>(null);
+  // Same two endpoints, fetched for the preceding equal-length window, so the KPI cards can
+  // show a period-over-period trend. Both are already date-range scoped, so this needs no new
+  // API surface — see lib/kpiTrend.ts.
+  // Each baseline is stored with the period key it was fetched for. A trend is only derived when
+  // that key matches the current previous-period — so a range change can't briefly pair the new
+  // value against the old baseline, and no state has to be cleared inside the effect.
+  const [prevAnalytics, setPrevAnalytics] =
+    useState<{ key: string; data: SellerAnalytics } | null>(null);
+  const [prevReturnsKpis, setPrevReturnsKpis] =
+    useState<{ key: string; data: ReturnsKpis } | null>(null);
   const [orders, setOrders] = useState<AllOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const ordersGenerationRef = useRef(0);
@@ -86,8 +103,12 @@ export function DashboardClient() {
 
   useEffect(() => {
     let cancelled = false;
+    // Annotated: without it the extracted object widens `channel` to plain `string`, which the
+    // endpoint params reject.
+    const channelParam: { channel?: "b2b" | "b2c" } =
+      channelFilter === "b2b" || channelFilter === "b2c" ? { channel: channelFilter } : {};
     getSellerAnalytics({
-      ...(channelFilter === "b2b" || channelFilter === "b2c" ? { channel: channelFilter } : {}),
+      ...channelParam,
       date_from: dateRangePayload.start_date,
       date_to: dateRangePayload.end_date,
     })
@@ -95,6 +116,16 @@ export function DashboardClient() {
         if (!cancelled) setAnalytics(data);
       })
       .catch(() => {});
+    const prev = previousPeriod(dateRangePayload);
+    if (prev) {
+      const key = periodKey(prev, channelFilter);
+      getSellerAnalytics({ ...channelParam, date_from: prev.start_date, date_to: prev.end_date })
+        .then((data) => {
+          if (!cancelled) setPrevAnalytics({ key, data });
+        })
+        // A missing baseline just means no trend pill — never block the card's own value.
+        .catch(() => {});
+    }
     return () => {
       cancelled = true;
     };
@@ -105,8 +136,12 @@ export function DashboardClient() {
   // reflects it), so this matches the same number the expanded Returns modal shows.
   useEffect(() => {
     let cancelled = false;
+    // Annotated: without it the extracted object widens `channel` to plain `string`, which the
+    // endpoint params reject.
+    const channelParam: { channel?: "b2b" | "b2c" } =
+      channelFilter === "b2b" || channelFilter === "b2c" ? { channel: channelFilter } : {};
     getReturnsKpis({
-      ...(channelFilter === "b2b" || channelFilter === "b2c" ? { channel: channelFilter } : {}),
+      ...channelParam,
       date_from: dateRangePayload.start_date,
       date_to: dateRangePayload.end_date,
     })
@@ -114,12 +149,45 @@ export function DashboardClient() {
         if (!cancelled) setReturnsKpis(data);
       })
       .catch(() => {});
+    const prev = previousPeriod(dateRangePayload);
+    if (prev) {
+      const key = periodKey(prev, channelFilter);
+      getReturnsKpis({ ...channelParam, date_from: prev.start_date, date_to: prev.end_date })
+        .then((data) => {
+          if (!cancelled) setPrevReturnsKpis({ key, data });
+        })
+        .catch(() => {});
+    }
     return () => {
       cancelled = true;
     };
   }, [channelFilter, dateRangePayload]);
 
   const kpis = analytics?.kpis;
+  const expectedPrevKey = (() => {
+    const prev = previousPeriod(dateRangePayload);
+    return prev ? periodKey(prev, channelFilter) : null;
+  })();
+  const prevKpis =
+    expectedPrevKey && prevAnalytics?.key === expectedPrevKey ? prevAnalytics.data.kpis : undefined;
+  const matchedPrevReturns =
+    expectedPrevKey && prevReturnsKpis?.key === expectedPrevKey ? prevReturnsKpis.data : undefined;
+  /** Average order value for a period, or null when it had no orders to divide by. */
+  const aovAmount = (k: typeof kpis) =>
+    k && k.total_orders > 0 ? k.total_revenue.amount / k.total_orders : null;
+  const salesTrend = kpis && prevKpis
+    ? percentChange(kpis.total_revenue.amount, prevKpis.total_revenue.amount)
+    : null;
+  const ordersTrend = kpis && prevKpis
+    ? percentChange(kpis.total_orders, prevKpis.total_orders)
+    : null;
+  const currentAov = aovAmount(kpis);
+  const previousAov = aovAmount(prevKpis);
+  const aovTrend =
+    currentAov !== null && previousAov !== null ? percentChange(currentAov, previousAov) : null;
+  const returnsTrend = returnsKpis && matchedPrevReturns
+    ? percentChange(returnsKpis.total_returns, matchedPrevReturns.total_returns)
+    : null;
   const averageOrderValue =
     kpis && kpis.total_orders > 0
       ? { amount: kpis.total_revenue.amount / kpis.total_orders, currency: kpis.total_revenue.currency }
@@ -217,6 +285,8 @@ export function DashboardClient() {
     [router]
   );
 
+  // No `align` on most columns: DataTable centres headers and cells by default, so setting it
+  // here too would just be a second copy of the same decision.
   const columns: TableColumn<AllOrder>[] = useMemo(
     () => [
       {
@@ -268,19 +338,17 @@ export function DashboardClient() {
       />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-medium text-foreground mb-2">Key Performance Summary</h1>
-        <div className="flex items-center gap-4 whitespace-nowrap">
-          <div className="flex items-center gap-2">
-            Channel : <AppSelect
-              placeholder="All Channels"
-              value={channelFilter}
-              onChange={(value: string) => setChannelFilter(value)}
-              options={[
-                { label: "All Channels", value: "all" },
-                { label: "B2B", value: "b2b" },
-                { label: "B2C", value: "b2c" },
-              ]}
-            />
-          </div>
+        <div className="flex items-center gap-3 whitespace-nowrap">
+          <AppSelect
+            placeholder="All Channels"
+            value={channelFilter}
+            onChange={(value: string) => setChannelFilter(value)}
+            options={[
+              { label: "All Channels", value: "all" },
+              { label: "B2B", value: "b2b" },
+              { label: "B2C", value: "b2c" },
+            ]}
+          />
           <CustomDateRangeSelector value={dateRange} onChange={handleDateRangeChange} />
         </div>
       </div>
@@ -292,6 +360,10 @@ export function DashboardClient() {
           icon={<KpiSaleTrendIcon />}
           onClick={() => setIsSalesModalOpen(true)}
           kpiType={1}
+          {...(formatTrend(salesTrend) ? {
+            change: formatTrend(salesTrend) as string,
+            changeType: trendChangeType(salesTrend),
+          } : {})}
         />
         <KPICard
           title="Average Order Value"
@@ -299,6 +371,10 @@ export function DashboardClient() {
           icon={<KpiAverageOrderValueIcon />}
           onClick={() => setIsAverageOrderValueModalOpen(true)}
           kpiType={2}
+          {...(formatTrend(aovTrend) ? {
+            change: formatTrend(aovTrend) as string,
+            changeType: trendChangeType(aovTrend),
+          } : {})}
         />
         <KPICard
           title="Total Orders"
@@ -306,6 +382,10 @@ export function DashboardClient() {
           icon={<KpiOrdersBagIcon />}
           onClick={() => setIsTotalOrdersModalOpen(true)}
           kpiType={3}
+          {...(formatTrend(ordersTrend) ? {
+            change: formatTrend(ordersTrend) as string,
+            changeType: trendChangeType(ordersTrend),
+          } : {})}
         />
         <KPICard
           title="Returns"
@@ -313,6 +393,10 @@ export function DashboardClient() {
           icon={<KpiReturnUndoIcon />}
           onClick={() => setIsReturnOrdersModalOpen(true)}
           kpiType={4}
+          {...(formatTrend(returnsTrend) ? {
+            change: formatTrend(returnsTrend) as string,
+            changeType: trendChangeType(returnsTrend),
+          } : {})}
         />
       </div>
 
@@ -334,41 +418,47 @@ export function DashboardClient() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden />
               <input
                 type="search"
-                placeholder="Search by order ID or vendor name"
+                placeholder="Search by order ID or customer name"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full rounded-md border border-input bg-[#E8E9E8] px-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                // Explicit `h-10` rather than vertical padding, so the status filter beside it
+                // can match this height exactly instead of having to re-derive it from
+                // padding + line-height.
+                className="h-10 w-full rounded-md border border-input bg-[#E8E9E8] px-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 aria-label="Search orders"
               />
             </div>
-            <div className="flex items-center gap-2 shrink-0 ml-auto">
-              <span className="shrink-0">Filter by Status</span>
-              {/* Built from the shared pipeline vocabulary rather than a hand-written subset:
-                  the original list offered only 3 of the 13 real statuses, and spelled one of
-                  them "Canceled" — the backend label is "Cancelled", so that option matched
-                  nothing and always returned an empty table.
+            {/* Built from the shared pipeline vocabulary rather than a hand-written subset:
+                the original list offered only 3 of the 13 real statuses, and spelled one of
+                them "Canceled" — the backend label is "Cancelled", so that option matched
+                nothing and always returned an empty table.
 
-                  Multi-select, matching the Orders page. There's no explicit "All Status"
-                  option because an empty selection already means "no status filter" — having
-                  both would let you select "All Status" *and* "Pending" and have to invent a
-                  meaning for it. */}
-              <MultiSelectFilter
-                placeholder="All Status"
-                className="w-44 flex-none"
-                options={PIPELINE_STATUS_LABELS.map((label) => ({ label, value: label }))}
-                selected={statusFilter}
-                onChange={setStatusFilter}
-              />
-              <Button
-                variant="default"
-                size="default"
-                className="bg-primary"
-                onClick={() => router.push("/order-management")}
-              >
-                View All Orders
-                <ArrowExternalIcon className="ml-2 h-[11px] w-[11px] shrink-0 text-white" aria-hidden />
-              </Button>
-            </div>
+                Multi-select, matching the Orders page. There's no explicit "All Status"
+                option because an empty selection already means "no status filter" — having
+                both would let you select "All Status" *and* "Pending" and have to invent a
+                meaning for it.
+
+                Sits directly beside the search box with no "Filter by Status" caption — the
+                "All Status" placeholder already says what it filters. `sm:h-10` is needed as
+                well as `h-10`: the trigger sets its own `sm:h-8`, and a bare `h-10` would
+                only win at the base breakpoint, leaving it shorter than the search box on
+                every real viewport. */}
+            <MultiSelectFilter
+              placeholder="All Status"
+              className="h-10 w-44 flex-none sm:h-10"
+              options={PIPELINE_STATUS_LABELS.map((label) => ({ label, value: label }))}
+              selected={statusFilter}
+              onChange={setStatusFilter}
+            />
+            <Button
+              variant="default"
+              size="default"
+              className="ml-auto shrink-0 bg-primary"
+              onClick={() => router.push("/order-management")}
+            >
+              View All Orders
+              <ArrowExternalIcon className="ml-2 h-[11px] w-[11px] shrink-0 text-white" aria-hidden />
+            </Button>
           </div>
         </div>
         <CardContent className="relative pt-4 bg-[#F9FAF9]">

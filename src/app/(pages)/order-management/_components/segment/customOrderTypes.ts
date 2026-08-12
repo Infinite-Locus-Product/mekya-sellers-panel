@@ -36,7 +36,10 @@ export interface CustomOrderRequestRow {
     totalAmount: number | null;
     currency: string | null;
     requirementsPreview: string | null;
+    /** Saleor global ID — opaque base64. Keyed on by the API, never shown to the user. */
     linkedSaleorOrderId: string | null;
+    /** Human order number ("ORD-20260811-AFQPMY") of the linked order — what we display. */
+    linkedDisplayOrderId: string | null;
     createdAt: string;
     updatedAt: string;
 }
@@ -54,6 +57,7 @@ export function mapApiCustomOrderRequest(r: ApiCustomOrderRequest): CustomOrderR
         currency: r.currency ?? null,
         requirementsPreview: r.requirements_preview ?? null,
         linkedSaleorOrderId: r.linked_saleor_order_id ?? null,
+        linkedDisplayOrderId: r.linked_display_order_id ?? null,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
     };

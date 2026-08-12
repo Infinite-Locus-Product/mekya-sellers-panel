@@ -230,9 +230,11 @@ export function useOrderManagementSegmentColumns({
             {
                 key: "linkedSaleorOrderId",
                 header: "Linked Order",
+                // The stored link is a Saleor global ID (opaque base64 that wrapped over three
+                // lines here); the readable order number is what the seller recognises.
                 cell: (row) => (
                     <span className="text-[11px] text-muted-foreground min-[1920px]:text-sm">
-                        {row.linkedSaleorOrderId ?? "—"}
+                        {row.linkedDisplayOrderId ?? "—"}
                     </span>
                 ),
             },

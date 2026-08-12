@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FILTER_CONTROL_CLASS } from "../filterControlClass";
 import { CustomDateRangePicker } from "./CustomDateRangePicker";
 import { DATE_RANGE_BRAND } from "./colors";
 import type { CustomDateRangeSelectorProps, DateRangeValue } from "./types";
@@ -148,10 +149,12 @@ export function CustomDateRangeSelector({
         aria-expanded={open}
         aria-haspopup="dialog"
         className={cn(
-          "flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm font-medium shadow-sm transition-all",
-          "border-[#B8B8B8]/25 bg-[#F2F2F2] text-[#4E4E4E]",
-          "hover:border-[#004B5E]/40 hover:bg-white hover:shadow-md",
-          open && "border-[#004B5E]/50 bg-white"
+          "flex cursor-pointer items-center gap-2 whitespace-nowrap transition-all",
+          // Height, background and typography are shared with the channel select so the
+          // two controls line up wherever they sit side by side.
+          FILTER_CONTROL_CLASS,
+          "hover:border-[#004B5E]/40 hover:shadow-md",
+          open && "border-[#004B5E]/50"
         )}
       >
         <span>{formatRangeLabel(value)}</span>

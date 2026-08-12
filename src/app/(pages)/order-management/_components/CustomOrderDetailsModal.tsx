@@ -163,11 +163,11 @@ function CustomOrderDetailsModalInner({
                     <span className="font-medium text-foreground">{data.id}</span>
                     {" · Saleor order "}
                     <span className="font-medium text-foreground">{data.saleorOrderNumber ?? data.saleorOrderId}</span>
-                    {data.linkedSaleorOrderId ? (
+                    {data.linkedDisplayOrderId ? (
                         <>
                             {" "}
                             · Linked order{" "}
-                            <span className="font-medium text-foreground">{data.linkedSaleorOrderId}</span>
+                            <span className="font-medium text-foreground">{data.linkedDisplayOrderId}</span>
                         </>
                     ) : null}
                 </p>

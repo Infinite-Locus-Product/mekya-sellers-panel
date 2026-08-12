@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { FILTER_CONTROL_CLASS } from "./filterControlClass"
 
 type Option = {
   label: string
@@ -27,7 +28,8 @@ export function AppSelect({ options, value, placeholder, onChange, className }: 
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger
         className={cn(
-          "h-8 max-w-full bg-[#E8E9E8] px-2 py-1 text-xs text-[#000000] data-[placeholder]:text-[#000000] min-[1920px]:h-10 min-[1920px]:w-[180px] min-[1920px]:px-3 min-[1920px]:py-2 min-[1920px]:text-sm",
+          FILTER_CONTROL_CLASS,
+          "max-w-full data-[placeholder]:text-[#000000] min-[1920px]:w-[180px]",
           "w-[min(100%,9.5rem)] min-[1920px]:max-w-none",
           className
         )}

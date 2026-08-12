@@ -1550,6 +1550,9 @@ export interface ApiCustomOrderRequest {
   currency?: string | null;
   requirements_preview?: string | null;
   linked_saleor_order_id?: string | null;
+  /** Human order number ("ORD-20260811-AFQPMY") for `linked_saleor_order_id`, which is itself
+   * an opaque Saleor global ID. Null when the linked order has no metadata row yet. */
+  linked_display_order_id?: string | null;
   /** Bucketed payment status of the linked Saleor order — null until buyer-confirm creates one
    * (pending_review/awaiting_buyer_confirmation/rejected/buyer_declined rows never have it). */
   payment_status?: "pending" | "completed" | null;
