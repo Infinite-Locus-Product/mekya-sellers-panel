@@ -200,6 +200,8 @@ export interface CreateProductPayload {
   variants: VariantConfigurationInput;
   pricing?: PricingInput;
   inventory?: InventoryInput;
+  /** Generic/legacy image path — attaches without linking to a color. */
+  images?: string[];
 }
 
 export interface ProductDefinitionUpdateInput {
@@ -285,6 +287,7 @@ export async function listProducts(params?: {
   sort_by?: ProductSortField;
   sort_order?: "ASC" | "DESC";
   category_ids?: string[];
+  inventory_types?: string[];
 }): Promise<ProductListResponse> {
   const qs = new URLSearchParams();
   if (params?.status) qs.set("status", params.status);
@@ -299,6 +302,11 @@ export async function listProducts(params?: {
   if (params?.category_ids?.length) {
     for (const id of params.category_ids) {
       qs.append("category_id", id);
+    }
+  }
+  if (params?.inventory_types?.length) {
+    for (const t of params.inventory_types) {
+      qs.append("inventory_type", t);
     }
   }
   const query = qs.toString() ? `?${qs.toString()}` : "";
