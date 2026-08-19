@@ -18,8 +18,9 @@ export interface EditableProductDraft {
   inventoryType: ProductInventoryType;
   gender?: string;
   setPurchaseMode?: string;
-  /** The color/size selection the product was loaded with — AddProductClient diffs
-   * against it to decide whether an edit needs to resubmit the variant matrix. */
+  /** Legacy-only read-only display (see AddProductClient) — non-legacy
+   * colors/sizes are edited via the color x size VariantMatrixEditor
+   * instead, sourced directly from ProductDetail.variants.colors. */
   sizes: string[];
   colors: string[];
   /** Editable for non-legacy products only. */
@@ -37,6 +38,7 @@ export interface EditableProductDraft {
   moqSets?: number;
   moqUnits?: number;
   shipsFrom?: string;
+  shippingDays?: string;
   description: string;
   images?: Array<{ id: string; url: string }>;
   channels?: "b2c" | "b2b" | "both";

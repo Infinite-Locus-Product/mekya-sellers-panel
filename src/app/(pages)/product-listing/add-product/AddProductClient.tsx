@@ -4,17 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  Lock,
-  Plus,
-} from "lucide-react";
+import { Lock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { MultiSelectFilter } from "@/components/shared/MultiSelectFilter";
-import { ColorSelect } from "@/components/shared/ColorSelect";
 import { ProductImageUploadCard } from "@/components/shared/ProductImageUploadCard";
+import { VariantMatrixEditor } from "@/components/shared/VariantMatrixEditor";
 import { cn } from "@/lib/utils";
 import type { EditableProductDraft } from "@/lib/data";
 import {
@@ -33,6 +30,12 @@ import {
   type FlatVariant,
   type SetPurchaseMode,
 } from "@/lib/api/products";
+import {
+  buildOverridesFromColorBlocks,
+  buildVariantConfigurationColors,
+  colorBlocksFromColorVariants,
+  type ColorBlock,
+} from "@/lib/variantMatrix";
 import {
   getTaxonomyManifest,
   getSizeSystem,
@@ -57,10 +60,11 @@ const ACCEPT_IMAGES = ["image/png", "image/jpeg", "image/jpg"];
 const DESCRIPTION_MAX = 1000;
 
 type ImageItem = { id: string; url: string; file: File };
-/** One (color, size) cell of the create-time pricing/stock matrix — replaces
- * the old "name"-string keyed row so overrides can be built directly by
- * (color, size), matching PriceOverride/StockOverride exactly. */
-type VariantPricingRow = { color: string; size: string; b2c_price: string; b2b_price: string; qty: string };
+/** Draft-persisted subset of ColorBlock — `existingImages`/`newImages` are
+ * dropped (a File can't survive JSON.stringify/localStorage, and pending
+ * uploads were never draft-restored even before this, for the same reason
+ * the top-level `images` list isn't part of ProductDraftState either). */
+type DraftColorBlock = { color: string; sizes: string[]; cells: ColorBlock["cells"] };
 
 type ProductDraftState = {
   productName: string;
@@ -82,20 +86,14 @@ type ProductDraftState = {
   moqSets: string;
   moqUnits: string;
   shipsFrom: string;
+  shippingDays: string;
   setPurchaseMode: SetPurchaseMode;
-  variantPricing?: VariantPricingRow[];
-  excludedCells: string[];
+  colorBlocks: DraftColorBlock[];
   b2bMinOrderQty: string;
   b2bMaxOrderQty: string;
   b2cMinOrderQty: string;
   b2cMaxOrderQty: string;
 };
-
-function computeVariantRows(colors: string[], sizes: string[]): { color: string; size: string }[] {
-  if (colors.length === 0) return [];
-  if (sizes.length === 0) return colors.map((c) => ({ color: c, size: "Default" }));
-  return colors.flatMap((c) => sizes.map((s) => ({ color: c, size: s })));
-}
 
 function RequiredMark() {
   return <span className="text-destructive">*</span>;
@@ -155,21 +153,24 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
   const [selectedSizes, setSelectedSizes] = useState<Set<string>>(
     () => new Set(initialProduct?.sizes ?? [])
   );
+  // selectedColors/selectedSizes now drive ONLY the legacy read-only display
+  // and legacy's free-text size add/remove — non-legacy colors/sizes/prices/
+  // images live entirely in colorBlocks (shared with Create) below.
   const [selectedColors, setSelectedColors] = useState<string[]>(initialProduct?.colors ?? []);
-  const [activeColorSelection, setActiveColorSelection] = useState<string | undefined>(undefined);
-  const [isColorDropdownOpen, setIsColorDropdownOpen] = useState(false);
   const [channels, setChannels] = useState<"b2c" | "b2b" | "both">(initialProduct?.channels ?? defaultChannel ?? "both");
   const [mrp, setMrp] = useState(initialProduct?.mrp ?? "");
+  // Legacy variants have no color attribute, so they can never be targeted by
+  // Pricing/StockOverride (both require `color: str`) — the only backend path
+  // left for editing a legacy variant's price/stock is this single-variant
+  // table, saved immediately per row via updateProductVariant. Non-legacy
+  // products use colorBlocks + the main Update button exclusively instead.
   const [productVariants, setProductVariants] = useState<FlatVariant[]>([]);
   const [variantEdits, setVariantEdits] = useState<
     Record<string, { b2c_price: string; b2b_price: string; quantity: string }>
   >({});
   const [savingVariantId, setSavingVariantId] = useState<string | null>(null);
-  const [variantPricing, setVariantPricing] = useState<VariantPricingRow[]>([]);
-  /** Color × size cells excluded from the variant matrix (keyed `${color} ${size}`).
-   * On create these are combinations the seller unchecked; on edit they additionally
-   * start out covering every cell the product has no saved variant for. */
-  const [excludedCells, setExcludedCells] = useState<Set<string>>(new Set());
+  const [colorBlocks, setColorBlocks] = useState<ColorBlock[]>([]);
+  const [isPublished, setIsPublished] = useState(false);
   const [minQty, setMinQty] = useState(initialProduct?.minQty ?? 0);
   const [maxQty, setMaxQty] = useState(initialProduct?.maxQty ?? 0);
   const [attributeSelections, setAttributeSelections] = useState<Record<string, string[]>>(
@@ -181,6 +182,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
   const [moqSets, setMoqSets] = useState(initialProduct?.moqSets ? String(initialProduct.moqSets) : "");
   const [moqUnits, setMoqUnits] = useState(initialProduct?.moqUnits ? String(initialProduct.moqUnits) : "");
   const [shipsFrom, setShipsFrom] = useState(initialProduct?.shipsFrom ?? "");
+  const [shippingDays, setShippingDays] = useState(initialProduct?.shippingDays ?? "");
   // Channel order limits — business ordering policy, not a stock split; one
   // physical inventory pool stays untouched (see products.ts's ProductDefinitionDto doc).
   const [b2bMinOrderQty, setB2bMinOrderQty] = useState(
@@ -278,6 +280,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
             moqSets: prod.product.moq_sets ?? undefined,
             moqUnits: prod.product.moq_units ?? undefined,
             shipsFrom: prod.product.ships_from ?? "",
+            shippingDays: prod.product.shipping_days ?? "",
             b2bMinOrderQty: prod.product.b2b_min_order_qty ?? undefined,
             b2bMaxOrderQty: prod.product.b2b_max_order_qty ?? undefined,
             b2cMinOrderQty: prod.product.b2c_min_order_qty ?? undefined,
@@ -286,7 +289,14 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
             images: prod.images.map((img) => ({ id: img.id, url: img.url })),
             channels: (prod.metadata.channels as "b2c" | "b2b" | "both") ?? "both",
           });
-          setProductVariants(prod.variant_list);
+          setIsPublished(prod.status === "published");
+          if (legacy) {
+            // Legacy variants have no color attribute — only the flat,
+            // colorless per-row table (below) can edit their price/stock.
+            setProductVariants(prod.variant_list);
+          } else {
+            setColorBlocks(colorBlocksFromColorVariants(prod.variants?.colors ?? []));
+          }
         })
         .catch(() => toast.error("Failed to load product details. Please go back and try again."))
         .finally(() => setIsFetchingProduct(false));
@@ -315,6 +325,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     setMoqSets(initialProduct.moqSets ? String(initialProduct.moqSets) : "");
     setMoqUnits(initialProduct.moqUnits ? String(initialProduct.moqUnits) : "");
     setShipsFrom(initialProduct.shipsFrom ?? "");
+    setShippingDays(initialProduct.shippingDays ?? "");
     setB2bMinOrderQty(initialProduct.b2bMinOrderQty ? String(initialProduct.b2bMinOrderQty) : "");
     setB2bMaxOrderQty(initialProduct.b2bMaxOrderQty ? String(initialProduct.b2bMaxOrderQty) : "");
     setB2cMinOrderQty(initialProduct.b2cMinOrderQty ? String(initialProduct.b2cMinOrderQty) : "");
@@ -334,59 +345,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     }
     setVariantEdits(edits);
   }, [productVariants]);
-
-  /**
-   * Seeds the create-style variant matrix from an existing product so the edit form opens on
-   * its real prices and stock rather than blanks.
-   *
-   * A product's variants can be sparse — the seller may have unchecked cells at create time —
-   * while the matrix below always renders the full color × size grid. Any cell with no saved
-   * variant is therefore pre-excluded, which keeps `includedVariantRows` exactly equal to what
-   * the product already has. Without that, simply opening the form would look like the seller
-   * had added every missing combination.
-   */
-  useEffect(() => {
-    if (!initialProduct || productVariants.length === 0) return;
-    const saved = new Map(
-      productVariants
-        .filter((v) => v.color && v.size)
-        .map((v) => [`${v.color} ${v.size}`, v])
-    );
-    const rows = computeVariantRows(initialProduct.colors, initialProduct.sizes);
-    setVariantPricing(
-      rows.map(({ color, size }) => {
-        const v = saved.get(`${color} ${size}`);
-        return {
-          color,
-          size,
-          b2c_price: v?.b2c_price != null ? String(v.b2c_price) : "",
-          b2b_price: v?.b2b_price != null ? String(v.b2b_price) : "",
-          qty: v?.quantity != null ? String(v.quantity) : "",
-        };
-      })
-    );
-    setExcludedCells(
-      new Set(
-        rows
-          .filter(({ color, size }) => !saved.has(`${color} ${size}`))
-          .map(({ color, size }) => `${color} ${size}`)
-      )
-    );
-  }, [initialProduct, productVariants]);
-
-  useEffect(() => {
-    const sortedSizes = [...selectedSizes].sort((a, b) =>
-      sizeOptions.indexOf(a) - sizeOptions.indexOf(b)
-    );
-    const rows = computeVariantRows(selectedColors, sortedSizes);
-    setVariantPricing((prev) => {
-      const existingMap = new Map(prev.map((r) => [`${r.color} ${r.size}`, r]));
-      return rows.map(
-        ({ color, size }) =>
-          existingMap.get(`${color} ${size}`) ?? { color, size, b2c_price: "", b2b_price: "", qty: "" }
-      );
-    });
-  }, [selectedColors, selectedSizes, sizeOptions]);
 
   const saveDraftToStorage = useCallback(() => {
     if (submittedRef.current) return;
@@ -411,9 +369,12 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         moqSets,
         moqUnits,
         shipsFrom,
+        shippingDays,
         setPurchaseMode,
-        variantPricing: isEditMode ? undefined : variantPricing,
-        excludedCells: [...excludedCells],
+        // Images (existing + pending File uploads) are never draft-persisted —
+        // a File can't survive JSON.stringify, matching the top-level
+        // `images` list, which was never part of this draft either.
+        colorBlocks: colorBlocks.map((b) => ({ color: b.color, sizes: b.sizes, cells: b.cells })),
         b2bMinOrderQty,
         b2bMaxOrderQty,
         b2cMinOrderQty,
@@ -423,7 +384,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     } catch {
       // localStorage unavailable — silent fail
     }
-  }, [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, minQty, maxQty, selectedColors, selectedSizes, attributeSelections, tagSlugs, description, channels, isCustomisable, moqSets, moqUnits, shipsFrom, setPurchaseMode, isEditMode, variantPricing, excludedCells, b2bMinOrderQty, b2bMaxOrderQty, b2cMinOrderQty, b2cMaxOrderQty, draftKey]);
+  }, [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, minQty, maxQty, selectedColors, selectedSizes, attributeSelections, tagSlugs, description, channels, isCustomisable, moqSets, moqUnits, shipsFrom, shippingDays, setPurchaseMode, colorBlocks, b2bMinOrderQty, b2bMaxOrderQty, b2cMinOrderQty, b2cMaxOrderQty, draftKey]);
 
   const saveDraftRef = useRef(saveDraftToStorage);
   useEffect(() => {
@@ -475,9 +436,23 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     setMoqSets(restoredDraft.moqSets ?? "");
     setMoqUnits(restoredDraft.moqUnits ?? "");
     setShipsFrom(restoredDraft.shipsFrom ?? "");
+    setShippingDays(restoredDraft.shippingDays ?? "");
     setSetPurchaseMode(restoredDraft.setPurchaseMode ?? "custom_mix_match");
-    if (restoredDraft.variantPricing) setVariantPricing(restoredDraft.variantPricing);
-    setExcludedCells(new Set(restoredDraft.excludedCells ?? []));
+    if (restoredDraft.colorBlocks) {
+      // Preserve each color's already-loaded existingImages (real, saved
+      // Saleor URLs fetched from getProduct) — the draft itself never
+      // persisted these (see ProductDraftState/DraftColorBlock above), so
+      // restoring from it must not wipe what's already on screen for a
+      // color that still exists in the restored draft.
+      setColorBlocks((prev) => {
+        const existingImagesByColor = new Map(prev.map((b) => [b.color, b.existingImages]));
+        return restoredDraft.colorBlocks.map((b) => ({
+          color: b.color, sizes: b.sizes, cells: b.cells,
+          existingImages: existingImagesByColor.get(b.color) ?? [],
+          newImages: [],
+        }));
+      });
+    }
     setB2bMinOrderQty(restoredDraft.b2bMinOrderQty ?? "");
     setB2bMaxOrderQty(restoredDraft.b2bMaxOrderQty ?? "");
     setB2cMinOrderQty(restoredDraft.b2cMinOrderQty ?? "");
@@ -513,6 +488,10 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     ? colorAttributeValues(manifest).map((v) => ({ label: v.name, value: v.name }))
     : [];
   const tagGroups = manifest ? tagsByGroup(manifest) : {};
+  // "sale_or_return" is intentionally excluded from the offered choices (see
+  // #16); PRODUCT_INVENTORY_TYPE_LABELS keeps the entry so a pre-existing
+  // product already tagged with it still displays its label correctly
+  // elsewhere (e.g. the locked field below, the listing table's badge).
   const inventorySelectOptions = SELECTABLE_PRODUCT_INVENTORY_TYPES.map((value) => ({
     label: PRODUCT_INVENTORY_TYPE_LABELS[value],
     value,
@@ -579,34 +558,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     setLegacySizeInput("");
   };
 
-  const selectColor = (value: string) => {
-    setActiveColorSelection(value);
-    setSelectedColors((prev) => {
-      if (prev.includes(value)) {
-        toast.info("Color already selected");
-        return prev;
-      }
-      return [...prev, value];
-    });
-    setIsColorDropdownOpen(false);
-    setActiveColorSelection(undefined);
-  };
-
-  /** Removing a color drops every variant row for it immediately — the
-   * variant-matrix effect below already rebuilds `variantPricing` from
-   * `selectedColors` × `selectedSizes`, so this just needs to update the
-   * source-of-truth color list and prune any now-orphaned exclusions. */
-  const removeColor = (color: string) => {
-    setSelectedColors((prev) => prev.filter((c) => c !== color));
-    setExcludedCells((prev) => {
-      const next = new Set(prev);
-      for (const key of next) {
-        if (key.startsWith(`${color} `)) next.delete(key);
-      }
-      return next;
-    });
-  };
-
   const handleVariantSave = async (variantId: string) => {
     if (!initialProduct) return;
     setSavingVariantId(variantId);
@@ -635,76 +586,10 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     b2cMinOrderQty !== "" && b2cMaxOrderQty !== "" &&
     parseInt(b2cMaxOrderQty, 10) < parseInt(b2cMinOrderQty, 10);
 
-  const isCellExcluded = useCallback(
-    (color: string, size: string) => excludedCells.has(`${color} ${size}`),
-    [excludedCells]
-  );
-  const toggleCellExclusion = (color: string, size: string) => {
-    setExcludedCells((prev) => {
-      const key = `${color} ${size}`;
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-  const includedVariantRows = useMemo(
-    () => variantPricing.filter((row) => !isCellExcluded(row.color, row.size)),
-    [variantPricing, isCellExcluded]
-  );
-
-  const variantPricingValid = useMemo(() => {
-    if (includedVariantRows.length === 0) return true;
-    return includedVariantRows.every((row) => {
-      const b2cOk = channels === "b2b" || (row.b2c_price.trim() !== "" && !isNaN(parseFloat(row.b2c_price)));
-      const b2bOk = channels === "b2c" || (row.b2b_price.trim() !== "" && !isNaN(parseFloat(row.b2b_price)));
-      return b2cOk && b2bOk;
-    });
-  }, [includedVariantRows, channels]);
-
-  /**
-   * True only once the seller has actually changed which color × size cells exist — by adding
-   * a color or size, or by unchecking a row in the variant matrix. The update payload then
-   * carries a `variants` section; while the included cells still match the product's saved
-   * variants, `variants` is omitted so a routine edit (name, prices, stock, images) never
-   * resubmits — and never rebuilds — the variant matrix. Legacy products are excluded: they
-   * edit sizes through `legacy_sizes` instead.
-   */
-  const variantSelectionChanged = useMemo(() => {
-    if (!isEditMode || isLegacy) return false;
-    const saved = new Set(
-      productVariants.filter((v) => v.color && v.size).map((v) => `${v.color} ${v.size}`)
-    );
-    const current = includedVariantRows.map((r) => `${r.color} ${r.size}`);
-    return current.length !== saved.size || current.some((key) => !saved.has(key));
-  }, [isEditMode, isLegacy, productVariants, includedVariantRows]);
-
   const requiredAttributesFilled = useMemo(() => {
     if (isEditMode || isLegacy) return true;
     return template.required.every((slug) => (attributeSelections[slug]?.length ?? 0) > 0);
   }, [isEditMode, isLegacy, template.required, attributeSelections]);
-
-  const isFormValid = useMemo(
-    () =>
-      productName.trim().length > 0 &&
-      articleNumber.trim().length > 0 &&
-      (isEditMode || Boolean(gender)) &&
-      (isEditMode || Boolean(categorySlug)) &&
-      (isEditMode || Boolean(subcategorySlug)) &&
-      Boolean(inventoryType) &&
-      Boolean(mrp) &&
-      variantPricingValid &&
-      selectedColors.length > 0 &&
-      selectedSizes.size > 0 &&
-      includedVariantRows.length > 0 &&
-      (images.length > 0 || (isEditMode && existingImages.length > 0)) &&
-      description.trim().length > 0 &&
-      requiredAttributesFilled &&
-      !qtyRangeInvalid &&
-      !b2bOrderQtyRangeInvalid &&
-      !b2cOrderQtyRangeInvalid,
-    [productName, articleNumber, gender, categorySlug, subcategorySlug, inventoryType, mrp, selectedColors, selectedSizes, includedVariantRows, images, existingImages, isEditMode, description, qtyRangeInvalid, b2bOrderQtyRangeInvalid, b2cOrderQtyRangeInvalid, variantPricingValid, requiredAttributesFilled]
-  );
 
   /** Builds the ProductDefinitionUpdate section — never includes
    * category_slug/subcategory_slug/gender/inventory_type/set_purchase_mode
@@ -719,6 +604,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       article_number: articleNumber.trim() || undefined,
       is_customisable: isCustomisable,
       ships_from: shipsFrom.trim() || undefined,
+      shipping_days: shippingDays.trim() || undefined,
       moq_sets: moqSets ? parseInt(moqSets, 10) : undefined,
       moq_units: moqUnits ? parseInt(moqUnits, 10) : undefined,
       min_quantity_per_set: minQty > 0 ? minQty : undefined,
@@ -734,27 +620,24 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
   /** Shared pricing/inventory broadcast sections for edit-mode updates —
    * identical between Save Draft and Publish/Update, so both call sites
    * build from here rather than duplicating the same object literal. */
+  /** mrp/channels only — per-variant price now lives entirely in
+   * colorBlocks' overrides (see buildPricingUpdateSection/
+   * buildInventoryUpdateSection below), matching Create's own architecture:
+   * there is no broadcast "set every variant to this price" field in either
+   * mode anymore, only explicit per-(color,size) values. */
   function buildPricingUpdateSection() {
+    const { priceOverrides } = buildOverridesFromColorBlocks(colorBlocks);
     return {
       mrp: mrp ? parseFloat(mrp) : undefined,
       channels,
-      overrides: includedVariantRows
-        .filter((r) => r.b2c_price || r.b2b_price)
-        .map((r) => ({
-          color: r.color,
-          size: r.size,
-          b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
-          b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
-        })),
+      overrides: isLegacy ? undefined : priceOverrides,
     };
   }
 
   function buildInventoryUpdateSection() {
-    return {
-      overrides: includedVariantRows
-        .filter((r) => r.qty)
-        .map((r) => ({ color: r.color, size: r.size, available_qty: parseInt(r.qty, 10) })),
-    };
+    if (isLegacy) return {};
+    const { stockOverrides } = buildOverridesFromColorBlocks(colorBlocks);
+    return { overrides: stockOverrides };
   }
 
   /** Create-time ProductDefinition — shared between Save Draft and Publish,
@@ -772,6 +655,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       moq_sets: moqSets ? parseInt(moqSets, 10) : undefined,
       moq_units: moqUnits ? parseInt(moqUnits, 10) : undefined,
       ships_from: shipsFrom.trim() || undefined,
+      shipping_days: shippingDays.trim() || undefined,
       attributes: attributeSelections,
       tags: tagSlugs,
       set_purchase_mode: setPurchaseMode,
@@ -784,32 +668,24 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     };
   }
 
-  /** Create-time VariantConfiguration — every selected color gets the same
-   * shared image pool and size list (see AddProductClient's color/size
-   * sections: this form doesn't offer per-color sizes/images). */
-  /** Excludes any Color × Size cell the seller unchecked in the variant
-   * matrix — only valid variants are ever submitted. A color left with zero
-   * included sizes after exclusion is dropped entirely (sellers should use
-   * "remove color" for that anyway, but this stays defensive). */
-  function buildCreateVariantConfiguration(imageUrls: string[]) {
-    return {
-      colors: selectedColors
-        .map((color) => ({
-          color,
-          images: imageUrls,
-          sizes: [...selectedSizes].filter((size) => !isCellExcluded(color, size)),
-        }))
-        .filter((c) => c.sizes.length > 0),
-    };
+  /** Shared by Create and Edit — each color owns its own sizes and images
+   * (never a shared cross-product pool), reusing the exact same colorBlocks
+   * state the VariantMatrixEditor renders. `uploadedUrlsByColor` must already
+   * hold real, uploaded URLs (see uploadColorImages) — never a blob: preview URL. */
+  function buildVariantConfiguration(uploadedUrlsByColor: Record<string, string[]>) {
+    return { colors: buildVariantConfigurationColors(colorBlocks, uploadedUrlsByColor) };
   }
 
-  /** Same shape as the create-time configuration, but falls back to the product's
-   * already-saved image URLs when the seller didn't upload new ones — passing an
-   * empty `images` array would detach the existing images from every color. */
-  function buildUpdateVariantConfiguration(newImageUrls: string[]) {
-    return buildCreateVariantConfiguration(
-      newImageUrls.length > 0 ? newImageUrls : existingImages.map((img) => img.url)
-    );
+  /** Uploads every color's pending new images (never its already-saved
+   * existingImages) and returns the resulting real URLs, keyed by color, for
+   * buildVariantConfiguration. A color with nothing pending is omitted. */
+  async function uploadColorImages(): Promise<Record<string, string[]>> {
+    const result: Record<string, string[]> = {};
+    for (const block of colorBlocks) {
+      if (block.newImages.length === 0) continue;
+      result[block.color] = await uploadImagesToStorage(block.newImages.map((img) => img.file));
+    }
+    return result;
   }
 
   const handleSaveDraft = async () => {
@@ -834,21 +710,26 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       toast.error("Inventory type is required to save a draft.");
       return;
     }
-    // Drafts accept blank variant prices — only reject ones already entered above MRP.
-    if (mrp) {
+    if (!isLegacy && colorBlocks.length === 0) {
+      toast.error("Select at least one color");
+      return;
+    }
+    if (mrp && !isLegacy) {
       const mrpNum = parseFloat(mrp);
       if (!isNaN(mrpNum) && mrpNum > 0) {
-        for (const row of includedVariantRows) {
-          const label = `${row.color} / ${row.size}`;
-          const b2c = parseFloat(row.b2c_price);
-          if (channels !== "b2b" && row.b2c_price && !isNaN(b2c) && b2c > mrpNum) {
-            toast.error(`B2C price for "${label}" cannot exceed MRP`);
-            return;
-          }
-          const b2b = parseFloat(row.b2b_price);
-          if (channels !== "b2c" && row.b2b_price && !isNaN(b2b) && b2b > mrpNum) {
-            toast.error(`B2B price for "${label}" cannot exceed MRP`);
-            return;
+        for (const block of colorBlocks) {
+          for (const size of block.sizes) {
+            const cell = block.cells[size];
+            if (!cell) continue;
+            const label = `${block.color} / ${size}`;
+            if (channels !== "b2b" && cell.b2c_price && parseFloat(cell.b2c_price) > mrpNum) {
+              toast.error(`B2C price for "${label}" cannot exceed MRP`);
+              return;
+            }
+            if (channels !== "b2c" && cell.b2b_price && parseFloat(cell.b2b_price) > mrpNum) {
+              toast.error(`B2B price for "${label}" cannot exceed MRP`);
+              return;
+            }
           }
         }
       }
@@ -859,13 +740,12 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       const imageUrls = images.length > 0
         ? await uploadImagesToStorage(images.map((i) => i.file))
         : [];
+      const uploadedColorImages = isLegacy ? {} : await uploadColorImages();
       const draftDescription = description.trim() || productName.trim();
       if (isEditMode && initialProduct) {
         await updateProduct(initialProduct.id, {
           product: { ...buildProductUpdateSection(), description: draftDescription },
-          variants: variantSelectionChanged
-            ? buildUpdateVariantConfiguration(imageUrls)
-            : undefined,
+          variants: isLegacy ? undefined : buildVariantConfiguration(uploadedColorImages),
           pricing: buildPricingUpdateSection(),
           inventory: buildInventoryUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
@@ -874,26 +754,13 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         toast.success("Draft updated successfully.");
       } else {
         if (!pendingProductIdRef.current) {
+          const { priceOverrides, stockOverrides } = buildOverridesFromColorBlocks(colorBlocks);
           const created = await createProduct({
             product: buildCreateProductDefinition(draftDescription),
-            variants: buildCreateVariantConfiguration(imageUrls),
-            pricing: {
-              mrp: mrp ? parseFloat(mrp) : undefined,
-              channels,
-              overrides: includedVariantRows
-                .filter((r) => r.b2c_price || r.b2b_price)
-                .map((r) => ({
-                  color: r.color,
-                  size: r.size,
-                  b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
-                  b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
-                })),
-            },
-            inventory: {
-              overrides: includedVariantRows
-                .filter((r) => r.qty)
-                .map((r) => ({ color: r.color, size: r.size, available_qty: parseInt(r.qty, 10) })),
-            },
+            variants: buildVariantConfiguration(uploadedColorImages),
+            pricing: { mrp: mrp ? parseFloat(mrp) : undefined, channels, overrides: priceOverrides },
+            inventory: { overrides: stockOverrides },
+            images: imageUrls.length > 0 ? imageUrls : undefined,
           });
           pendingProductIdRef.current = created.product_id;
           if (created.images_failed) {
@@ -930,6 +797,10 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       toast.error("Article number is required");
       return;
     }
+    if (!description.trim()) {
+      toast.error("Description is required");
+      return;
+    }
     if (!isEditMode) {
       if (!gender) {
         toast.error("Gender is required");
@@ -956,16 +827,8 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       toast.error("At least one image is required");
       return;
     }
-    if (selectedColors.length === 0) {
+    if (!isLegacy && colorBlocks.length === 0) {
       toast.error("Select at least one color");
-      return;
-    }
-    if (selectedSizes.size === 0) {
-      toast.error("Select at least one size");
-      return;
-    }
-    if (includedVariantRows.length === 0) {
-      toast.error("At least one color/size combination must be included");
       return;
     }
     if (qtyRangeInvalid) {
@@ -989,28 +852,37 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       toast.error("Enter a valid MRP");
       return;
     }
-    for (const row of includedVariantRows) {
-      const label = `${row.color} / ${row.size}`;
-      if (channels !== "b2b") {
-        const b2c = parseFloat(row.b2c_price);
-        if (!row.b2c_price.trim() || isNaN(b2c) || b2c <= 0) {
-          toast.error(`Enter a valid B2C price for "${label}"`);
+    if (!isLegacy) {
+      for (const block of colorBlocks) {
+        if (block.sizes.length === 0) {
+          toast.error(`Add at least one size for "${block.color}"`);
           return;
         }
-        if (b2c > mrpNum) {
-          toast.error(`B2C price for "${label}" cannot exceed MRP`);
-          return;
-        }
-      }
-      if (channels !== "b2c") {
-        const b2b = parseFloat(row.b2b_price);
-        if (!row.b2b_price.trim() || isNaN(b2b) || b2b <= 0) {
-          toast.error(`Enter a valid B2B price for "${label}"`);
-          return;
-        }
-        if (b2b > mrpNum) {
-          toast.error(`B2B price for "${label}" cannot exceed MRP`);
-          return;
+        for (const size of block.sizes) {
+          const cell = block.cells[size] ?? { b2c_price: "", b2b_price: "", qty: "" };
+          const label = `${block.color} / ${size}`;
+          if (channels !== "b2b") {
+            const b2c = parseFloat(cell.b2c_price);
+            if (!cell.b2c_price.trim() || isNaN(b2c) || b2c <= 0) {
+              toast.error(`Enter a valid B2C price for "${label}"`);
+              return;
+            }
+            if (b2c > mrpNum) {
+              toast.error(`B2C price for "${label}" cannot exceed MRP`);
+              return;
+            }
+          }
+          if (channels !== "b2c") {
+            const b2b = parseFloat(cell.b2b_price);
+            if (!cell.b2b_price.trim() || isNaN(b2b) || b2b <= 0) {
+              toast.error(`Enter a valid B2B price for "${label}"`);
+              return;
+            }
+            if (b2b > mrpNum) {
+              toast.error(`B2B price for "${label}" cannot exceed MRP`);
+              return;
+            }
+          }
         }
       }
     }
@@ -1022,13 +894,12 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       const imageUrls = images.length > 0
         ? await uploadImagesToStorage(images.map((i) => i.file))
         : [];
+      const uploadedColorImages = isLegacy ? {} : await uploadColorImages();
 
       if (isEditMode && initialProduct) {
         await updateProduct(initialProduct.id, {
           product: buildProductUpdateSection(),
-          variants: variantSelectionChanged
-            ? buildUpdateVariantConfiguration(imageUrls)
-            : undefined,
+          variants: isLegacy ? undefined : buildVariantConfiguration(uploadedColorImages),
           pricing: buildPricingUpdateSection(),
           inventory: buildInventoryUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
@@ -1040,26 +911,13 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         // reuse the existing product_id instead of creating a duplicate.
         let productIdToPublish = pendingProductIdRef.current;
         if (!productIdToPublish) {
+          const { priceOverrides, stockOverrides } = buildOverridesFromColorBlocks(colorBlocks);
           const created = await createProduct({
             product: buildCreateProductDefinition(description.trim() || productName.trim()),
-            variants: buildCreateVariantConfiguration(imageUrls),
-            pricing: {
-              mrp: mrpNum,
-              channels,
-              overrides: includedVariantRows.map((r) => ({
-                color: r.color,
-                size: r.size,
-                b2c_price: r.b2c_price ? parseFloat(r.b2c_price) : undefined,
-                b2b_price: r.b2b_price ? parseFloat(r.b2b_price) : undefined,
-              })),
-            },
-            inventory: {
-              overrides: includedVariantRows.map((r) => ({
-                color: r.color,
-                size: r.size,
-                available_qty: r.qty ? parseInt(r.qty, 10) : 0,
-              })),
-            },
+            variants: buildVariantConfiguration(uploadedColorImages),
+            pricing: { mrp: mrpNum, channels, overrides: priceOverrides },
+            inventory: { overrides: stockOverrides },
+            images: imageUrls.length > 0 ? imageUrls : undefined,
           });
           pendingProductIdRef.current = created.product_id;
           productIdToPublish = created.product_id;
@@ -1270,7 +1128,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
           </Card>
         </div>
 
-        {!isEditMode && !isLegacy && subcategorySlug && attributeSlugs.length > 0 && (
+        {!isLegacy && subcategorySlug && attributeSlugs.length > 0 && (
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
               <CardTitle className="text-base font-normal">Attributes</CardTitle>
@@ -1300,15 +1158,15 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
           </Card>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="border bg-white shadow-sm">
-            <CardHeader className="border-b pb-4">
-              <CardTitle className="flex items-center gap-2 text-base font-normal">
-                Size Selection
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-5">
-              {isLegacy ? (
+        {isLegacy && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border bg-white shadow-sm">
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="flex items-center gap-2 text-base font-normal">
+                  Size Selection
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-5">
                 <div className="space-y-3">
                   <p className="text-xs text-muted-foreground">
                     This is a legacy product — it predates the taxonomy system, so sizes
@@ -1353,118 +1211,63 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                     )}
                   </div>
                 </div>
-              ) : (
-                <>
-                  {isEditMode && (
-                    <p className="text-xs text-muted-foreground">
-                      Changing the selected sizes rebuilds this product&apos;s color × size
-                      variants when you save. Prices and stock for new combinations start empty —
-                      set them in Variant Pricing &amp; Stock after saving.
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    {sizeOptions.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">
-                        {gender && categorySlug ? "Loading sizes…" : "Select gender and category to see available sizes."}
-                      </span>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-white shadow-sm">
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="flex items-center gap-2 text-base font-normal">
+                  Color Options
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-5">
+                <div className="min-w-0 space-y-3">
+                  <span className="text-sm font-medium">Color</span>
+                  <p className="text-xs text-muted-foreground">
+                    Adding or removing colors on a legacy product isn&apos;t supported — it
+                    predates the color/size taxonomy system.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {selectedColors.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">No color selected</span>
                     ) : (
-                      sizeOptions.map((size) => {
-                        const on = selectedSizes.has(size);
-                        return (
-                          <button
-                            key={size}
-                            type="button"
-                            onClick={() => toggleSize(size)}
-                            className={cn(
-                              "min-w-[2.5rem] rounded-md border px-3 py-2 text-sm font-medium transition-colors",
-                              on
-                                ? "border-black bg-black text-white"
-                                : "border-input bg-white text-foreground hover:bg-muted/40"
-                            )}
-                          >
-                            {size}
-                          </button>
-                        );
-                      })
+                      selectedColors.map((color) => (
+                        <span
+                          key={color}
+                          className="inline-flex items-center gap-2 rounded-xs bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
+                        >
+                          {color}
+                        </span>
+                      ))
                     )}
                   </div>
-                  <div>
-                    <p className="mb-2 text-sm text-muted-foreground">Selected Sizes :</p>
-                    <div className="flex flex-wrap gap-2">
-                      {[...selectedSizes].sort((a, b) => sizeOptions.indexOf(a) - sizeOptions.indexOf(b)).map((s) => (
-                        <span
-                          key={s}
-                          className="inline-flex rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
-                        >
-                          {s}
-                        </span>
-                      ))}
-                      {selectedSizes.size === 0 && (
-                        <span className="text-xs text-muted-foreground">None selected</span>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
+        {!isLegacy && (
           <Card className="border bg-white shadow-sm">
             <CardHeader className="border-b pb-4">
               <CardTitle className="flex items-center gap-2 text-base font-normal">
-                Color Options
+                Colors, Sizes, Pricing &amp; Images
+                <RequiredMark />
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 pt-5">
-              <div className="min-w-0 space-y-3">
-                <span className="text-sm font-medium">
-                  Color <RequiredMark />
-                </span>
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3">
-                  <ColorSelect
-                    className="w-full min-w-0"
-                    placeholder="Select color."
-                    value={activeColorSelection}
-                    onChange={selectColor}
-                    open={isColorDropdownOpen}
-                    onOpenChange={setIsColorDropdownOpen}
-                    options={colorSelectOptions}
-                  />
-                  <Button
-                    type="button"
-                    className="h-9 whitespace-nowrap bg-[#122130] px-3 text-xs hover:bg-[#0d1a28]"
-                    onClick={() => setIsColorDropdownOpen(true)}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add more color
-                  </Button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {selectedColors.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">No color selected</span>
-                  ) : (
-                    selectedColors.map((color) => (
-                      <span
-                        key={color}
-                        className="inline-flex items-center gap-2 rounded-xs bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
-                      >
-                        {color}
-                        <button
-                          type="button"
-                          className="rounded p-0.5 hover:bg-background"
-                          aria-label={`Remove ${color}`}
-                          onClick={() => removeColor(color)}
-                        >
-                          <span className="text-muted-foreground">×</span>
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
-              </div>
+            <CardContent className="pt-5">
+              <VariantMatrixEditor
+                blocks={colorBlocks}
+                onBlocksChange={setColorBlocks}
+                colorOptions={colorSelectOptions}
+                sizeOptions={sizeOptions}
+                channels={channels}
+                mrp={mrp}
+                isPublished={isPublished}
+              />
             </CardContent>
           </Card>
-        </div>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card className="border bg-white shadow-sm">
@@ -1513,88 +1316,15 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                   className="bg-white"
                 />
               </div>
-              {variantPricing.length > 0 ? (
-                <div className="space-y-3 sm:col-span-2">
-                  <p className="text-sm font-medium">
-                    Variant Pricing <RequiredMark />
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {isEditMode
-                      ? "Unchecked rows are color/size combinations this product doesn't have. Check one to add it; uncheck an existing row to remove that combination."
-                      : "Uncheck a row to exclude that color/size combination — it won't be created."}
-                  </p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-2 pr-3 font-medium">Included</th>
-                          <th className="pb-2 pr-3 font-medium">Color</th>
-                          <th className="pb-2 pr-3 font-medium">Size</th>
-                          {channels !== "b2b" && <th className="pb-2 pr-3 font-medium">B2C Price (₹)</th>}
-                          {channels !== "b2c" && <th className="pb-2 pr-3 font-medium">B2B Price (₹)</th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {variantPricing.map((row, idx) => {
-                          const excluded = isCellExcluded(row.color, row.size);
-                          return (
-                          <tr
-                            key={`${row.color} ${row.size}`}
-                            className={cn("border-b last:border-0", excluded && "opacity-40")}
-                          >
-                            <td className="py-2 pr-3">
-                              <input
-                                type="checkbox"
-                                checked={!excluded}
-                                aria-label={`Include ${row.color} ${row.size}`}
-                                onChange={() => toggleCellExclusion(row.color, row.size)}
-                                className="h-4 w-4 rounded border-input"
-                              />
-                            </td>
-                            <td className="py-2 pr-3 text-xs font-medium">{row.color}</td>
-                            <td className="py-2 pr-3 text-xs font-medium">{row.size}</td>
-                            {channels !== "b2b" && (
-                              <td className="py-2 pr-3">
-                                <Input
-                                  inputMode="decimal"
-                                  placeholder="0.00"
-                                  disabled={excluded}
-                                  value={row.b2c_price}
-                                  onChange={(e) =>
-                                    setVariantPricing((prev) =>
-                                      prev.map((r, i) => i === idx ? { ...r, b2c_price: e.target.value } : r)
-                                    )
-                                  }
-                                  className="h-8 w-24 bg-white"
-                                />
-                              </td>
-                            )}
-                            {channels !== "b2c" && (
-                              <td className="py-2 pr-3">
-                                <Input
-                                  inputMode="decimal"
-                                  placeholder="0.00"
-                                  disabled={excluded}
-                                  value={row.b2b_price}
-                                  onChange={(e) =>
-                                    setVariantPricing((prev) =>
-                                      prev.map((r, i) => i === idx ? { ...r, b2b_price: e.target.value } : r)
-                                    )
-                                  }
-                                  className="h-8 w-24 bg-white"
-                                />
-                              </td>
-                            )}
-                          </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
+              {isLegacy && (
                 <p className="text-xs text-muted-foreground sm:col-span-2">
-                  Select colors and sizes above to configure per-variant pricing.
+                  Per-variant price and stock for this legacy product are set in the Variant
+                  Pricing &amp; Stock table below, saved immediately per row.
+                </p>
+              )}
+              {!isLegacy && colorBlocks.length === 0 && (
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  Add a color below to configure per-variant pricing.
                 </p>
               )}
             </CardContent>
@@ -1659,15 +1389,27 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                   />
                 </div>
               </div>
-              <div className="space-y-3">
-                <label htmlFor="ships-from" className="text-sm font-medium">Ships From</label>
-                <Input
-                  id="ships-from"
-                  placeholder="e.g. Tiruppur, Tamil Nadu"
-                  value={shipsFrom}
-                  onChange={(e) => setShipsFrom(e.target.value)}
-                  className="bg-white"
-                />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-3">
+                  <label htmlFor="ships-from" className="text-sm font-medium">Ships From</label>
+                  <Input
+                    id="ships-from"
+                    placeholder="e.g. Tiruppur, Tamil Nadu"
+                    value={shipsFrom}
+                    onChange={(e) => setShipsFrom(e.target.value)}
+                    className="bg-white"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <label htmlFor="shipping-days" className="text-sm font-medium">Delivery Timeline</label>
+                  <Input
+                    id="shipping-days"
+                    placeholder="e.g. 3-5 business days"
+                    value={shippingDays}
+                    onChange={(e) => setShippingDays(e.target.value)}
+                    className="bg-white"
+                  />
+                </div>
               </div>
 
               {/* Minimum/Maximum Quantity — business ordering policy, kept
@@ -1825,7 +1567,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         </Card>
       </form>
 
-      {isEditMode && productVariants.length > 0 && (
+      {isEditMode && isLegacy && productVariants.length > 0 && (
         <Card className="border bg-white shadow-sm">
           <CardHeader className="border-b pb-4">
             <CardTitle className="text-base font-normal">Variant Pricing &amp; Stock</CardTitle>
@@ -1908,7 +1650,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         <Button
           type="submit"
           form="add-product-form"
-          disabled={isSubmitting || isFetchingProduct || !isFormValid}
+          disabled={isSubmitting || isFetchingProduct}
           className="bg-[#122130] hover:bg-[#0d1a28]"
         >
           {isFetchingProduct

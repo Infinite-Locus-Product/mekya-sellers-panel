@@ -49,29 +49,42 @@ type FetchPageParams = {
   pageSize: number;
   categoryIds?: string[];
   cursor?: string;
+  search?: string;
+  inventoryTypes?: string[];
 };
 
 /** The backend fetches a fixed-size batch from Saleor, then filters it by
- * channel/status in Python — a single batch can come back with fewer rows
- * than `pageSize` even though Saleor's own cursor says more data exists.
- * Left alone, that surfaces as a near-empty "extra page." Keep pulling
- * subsequent cursor batches and merging until we have a full page's worth
- * or the backend genuinely runs out — never fewer rows than are actually
- * available just because one raw batch happened to be sparse after filtering. */
-async function fetchFullPage(params: FetchPageParams): Promise<PageSlice> {
+ * channel/status/inventory_type in Python — a single batch
+ * can come back with fewer rows than `pageSize` even though Saleor's own
+ * cursor says more data exists. Left alone, that surfaces as a near-empty
+ * "extra page." Keep pulling subsequent cursor batches and merging until we
+ * have a full page's worth or the backend genuinely runs out — never fewer
+ * rows than are actually available just because one raw batch happened to
+ * be sparse after filtering. Every filter/search control on this page must
+ * be passed through here (not applied afterward in React state) so it
+ * participates in this same fetch-until-full loop instead of shrinking an
+ * already-fetched page. */
+export async function fetchFullPage(params: FetchPageParams): Promise<PageSlice> {
   const merged: ProductRow[] = [];
   let cursor = params.cursor;
   let hasNext = true;
   const MAX_FETCHES = 20; // safety cap against a pathological all-filtered-out backend response
   for (let i = 0; i < MAX_FETCHES && merged.length < params.pageSize && hasNext; i++) {
+    // Request only what's still needed, not always a full pageSize — the
+    // backend's `limit` caps its raw pre-filter fetch, so this guarantees
+    // `merged` can never grow past pageSize even when a batch comes back
+    // less-filtered than expected. Without this, a page could render more
+    // rows than the selected page size.
     const res = await listProducts({
       channels: params.channels,
       status: params.status,
       sort_by: params.sortBy,
       sort_order: params.sortOrder,
-      limit: params.pageSize,
+      limit: params.pageSize - merged.length,
       category_ids: params.categoryIds,
       cursor,
+      search: params.search,
+      inventory_types: params.inventoryTypes,
     });
     merged.push(...res.products.map(toProductRow));
     hasNext = res.has_next;
@@ -94,9 +107,8 @@ export function ProductListingClient() {
   // ── Categories (fetched once for the filter dropdown) ─────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
 
-  // ── Filters ────────────────────────────────────────────────────────────────
+  // ── Filters (all backend-driven — folded into the fetch-until-full loop) ───
   const [searchInput, setSearchInput] = useState("");
-  const [searchPage, setSearchPage] = useState(1);
   const [listingStatus, setListingStatus] = useState("all");
   /**
    * Multi-select. An empty selection sends no `channel` query param, so the listing shows
@@ -107,9 +119,14 @@ export function ProductListingClient() {
    */
   const [channelFilter, setChannelFilter] = useState<ProductChannel[]>([]);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-
-  // ── Client-side filters (applied to current page only) ────────────────────
   const [selectedInventoryTypes, setSelectedInventoryTypes] = useState<string[]>([]);
+
+  // Debounce search so the listing doesn't refetch the backend on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   // ── Modals ────────────────────────────────────────────────────────────────
   const [productToDelete, setProductToDelete] = useState<ProductRow | null>(null);
@@ -131,7 +148,7 @@ export function ProductListingClient() {
     getCategories().then(setCategories).catch(() => {});
   }, []);
 
-  // ── Main fetch — resets to page 1 on any backend filter change ─────────────
+  // ── Main fetch — resets to page 1 on any backend filter/search change ──────
   useEffect(() => {
     const gen = ++fetchGenRef.current;
     setIsLoading(true);
@@ -142,6 +159,8 @@ export function ProductListingClient() {
       sortOrder,
       pageSize,
       categoryIds: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
+      search: debouncedSearch || undefined,
+      inventoryTypes: selectedInventoryTypes.length > 0 ? selectedInventoryTypes : undefined,
     })
       .then((slice) => {
         if (gen !== fetchGenRef.current) return;
@@ -152,7 +171,16 @@ export function ProductListingClient() {
       .finally(() => {
         if (gen === fetchGenRef.current) setIsLoading(false);
       });
-  }, [channelFilter, listingStatus, sortBy, sortOrder, pageSize, selectedCategoryIds]);
+  }, [
+    listingStatus,
+    sortBy,
+    sortOrder,
+    pageSize,
+    selectedCategoryIds,
+    debouncedSearch,
+    channelFilter,
+    selectedInventoryTypes,
+  ]);
 
   // ── Pagination helpers ─────────────────────────────────────────────────────
   const currentSlice = stack[pageIndex];
@@ -178,6 +206,8 @@ export function ProductListingClient() {
         pageSize,
         categoryIds: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
         cursor: slice.nextCursor,
+        search: debouncedSearch || undefined,
+        inventoryTypes: selectedInventoryTypes.length > 0 ? selectedInventoryTypes : undefined,
       });
       if (gen !== fetchGenRef.current) return;
       setStack((prev) => [...prev, newSlice]);
@@ -197,6 +227,8 @@ export function ProductListingClient() {
     sortOrder,
     pageSize,
     selectedCategoryIds,
+    debouncedSearch,
+    selectedInventoryTypes,
   ]);
 
   const goToPage = useCallback(
@@ -211,66 +243,20 @@ export function ProductListingClient() {
     [stack, pageIndex, goNextPage],
   );
 
-  // ── All loaded products across the full cursor stack ───────────────────────
-  const allStackProducts = useMemo(() => stack.flatMap((s) => s.products), [stack]);
-
-  // Search is active when the user has typed something
-  const isSearching = searchInput.trim().length > 0;
-
-  // ── Search: client-side icontains across all loaded products ───────────────
-  const filteredSearchProducts = useMemo(() => {
-    if (!isSearching) return [];
-    const q = searchInput.toLowerCase().trim();
-    return allStackProducts.filter((p) => {
-      const nameOk =
-        p.name.toLowerCase().includes(q) ||
-        p.articleNumber.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q) ||
-        p.sizes.some((s) => s.toLowerCase().includes(q)) ||
-        p.colors.some((c) => c.toLowerCase().includes(q)) ||
-        PRODUCT_INVENTORY_TYPE_LABELS[p.inventoryType].toLowerCase().includes(q);
-      const invOk =
-        selectedInventoryTypes.length === 0 ||
-        selectedInventoryTypes.includes(p.inventoryType);
-      return nameOk && invOk;
-    });
-  }, [isSearching, searchInput, allStackProducts, selectedInventoryTypes]);
-
-  // ── Search pagination ──────────────────────────────────────────────────────
-  const searchTotalPages = Math.max(1, Math.ceil(filteredSearchProducts.length / pageSize));
-  const searchEffectivePage = Math.min(searchPage, searchTotalPages);
-
   // ── Category options ───────────────────────────────────────────────────────
   const categoryOptions = useMemo(
     () => categories.map((c) => ({ label: c.name, value: c.id })),
     [categories],
   );
 
-  // ── Display products: search mode (all stack, icontains) vs cursor mode ────
-  const displayProducts = useMemo(() => {
-    if (isSearching) {
-      const start = (searchEffectivePage - 1) * pageSize;
-      return filteredSearchProducts.slice(start, start + pageSize);
-    }
-    // Cursor mode: apply non-search client-side filters on current page
-    const currentProducts = currentSlice?.products ?? [];
-    return currentProducts.filter(
-      (p) =>
-        selectedInventoryTypes.length === 0 ||
-        selectedInventoryTypes.includes(p.inventoryType)
-    );
-  }, [
-    isSearching,
-    filteredSearchProducts,
-    searchEffectivePage,
-    pageSize,
-    currentSlice,
-    selectedInventoryTypes,
-  ]);
+  // ── Display products: search/channel/inventory-type are all backend
+  // filters now (folded into fetchFullPage above), so the current cursor
+  // page's products are exactly what should render — no further filtering. ─
+  const displayProducts = currentSlice?.products ?? [];
 
   // ── Status toggle ─────────────────────────────────────────────────────────
   const handleListingToggle = (row: ProductRow, newStatus: "active" | "inactive") => {
-    // Update across all slices so the change is visible in both cursor and search modes
+    // Update across all cached slices so the change is visible on every loaded page
     setStack((prev) =>
       prev.map((slice) => ({
         ...slice,
@@ -313,7 +299,7 @@ export function ProductListingClient() {
   const handleConfirmDelete = () => {
     if (!productToDelete || isDeleting) return;
     const deleted = productToDelete;
-    // Find which slice contains this product (works in both cursor and search modes)
+    // Find which cached slice contains this product
     const deletedSliceIndex = stack.findIndex((s) => s.products.some((p) => p.id === deleted.id));
     const deletedProductIndex =
       deletedSliceIndex >= 0
@@ -356,7 +342,6 @@ export function ProductListingClient() {
     setChannelFilter([]);
     setSelectedInventoryTypes([]);
     setSearchInput("");
-    setSearchPage(1);
   };
 
   /**
@@ -371,6 +356,7 @@ export function ProductListingClient() {
     name: "w-[24%]",
     articleNumber: "w-[17%]",
     category: "w-[15%]",
+    price: "w-[7%]",
     toggle: "w-[8%]",
     actions: "w-[10%]",
   };
@@ -418,6 +404,7 @@ export function ProductListingClient() {
         );
       },
     },
+    { key: "price", header: "Price", sortable: true, className: colWidth.price },
     {
       key: "status",
       header: "Status",
@@ -527,7 +514,7 @@ export function ProductListingClient() {
     },
   ];
 
-  // ── Cursor pagination props (non-search mode) ──────────────────────────────
+  // ── Cursor pagination props ─────────────────────────────────────────────────
   const cursorTotalPages = Math.max(1, stack.length + (currentSlice?.hasNext ? 1 : 0));
 
   return (
@@ -571,7 +558,7 @@ export function ProductListingClient() {
                 type="search"
                 placeholder="Search Products"
                 value={searchInput}
-                onChange={(e) => { setSearchInput(e.target.value); setSearchPage(1); }}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="w-full rounded-md border border-input bg-[#E8E9E8] px-10 py-2 text-md focus:outline-none focus:ring-2 focus:ring-ring"
                 aria-label="Search products"
               />
@@ -600,7 +587,10 @@ export function ProductListingClient() {
                 className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
               />
 
-              {/* Channel — backend filter; selecting none sends no `channel` param */}
+              {/* Channel — backend filter; selecting none sends no `channel` param.
+                  "Both" is a distinct, real product state (listed on B2C and B2B
+                  simultaneously), and the three values are disjoint, so a
+                  multi-selection returns exactly their union. */}
               <MultiSelectFilter
                 placeholder="All Channels"
                 options={[
@@ -612,7 +602,11 @@ export function ProductListingClient() {
                 onChange={(values) => setChannelFilter(values as ProductChannel[])}
               />
 
-              {/* Inventory type — client-side filter on current page */}
+              {/* Inventory type — backend filter (folded into the fetch-until-full
+                  loop). "sale_or_return" is intentionally excluded from the offered
+                  choices (see #16); it remains a valid, displayable value for any
+                  pre-existing product still tagged with it (PRODUCT_INVENTORY_TYPE_LABELS
+                  keeps the label so those rows still render correctly). */}
               <MultiSelectFilter
                 placeholder="All Inventory Types"
                 options={SELECTABLE_PRODUCT_INVENTORY_TYPES.map((value) => ({
@@ -670,27 +664,15 @@ export function ProductListingClient() {
                   onServerSortColumn={handleServerSortColumn}
                   serverSortKey={serverSortKey}
                   serverSortDirection={serverSortDirection}
-                  pagination={
-                    isSearching
-                      ? {
-                          currentPage: searchEffectivePage,
-                          totalPages: searchTotalPages,
-                          onPageChange: setSearchPage,
-                          pageSize,
-                          onPageSizeChange: setPageSize,
-                          totalRowCount: filteredSearchProducts.length,
-                          pageSizeOptions: [10, 20, 50] as const,
-                        }
-                      : {
-                          currentPage: pageIndex + 1,
-                          totalPages: cursorTotalPages,
-                          onPageChange: goToPage,
-                          pageSize,
-                          onPageSizeChange: setPageSize,
-                          totalRowCount: displayProducts.length,
-                          pageSizeOptions: [10, 20, 50] as const,
-                        }
-                  }
+                  pagination={{
+                    currentPage: pageIndex + 1,
+                    totalPages: cursorTotalPages,
+                    onPageChange: goToPage,
+                    pageSize,
+                    onPageSizeChange: setPageSize,
+                    totalRowCount: displayProducts.length,
+                    pageSizeOptions: [10, 20, 50] as const,
+                  }}
                 />
               </div>
             </div>
