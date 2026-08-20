@@ -1,7 +1,9 @@
 import type { ApiExchangeOrder, ExchangeOrderStatus, ExchangeSettlementStatus } from "@/lib/api/orders";
 
-/** A real EXC-... order created on qc_pass for an exchange-type return — distinct from AllOrder,
- * with its own processing→ready→shipped→delivered status machine and settlement fields. */
+/** An exchange created on qc_pass for an exchange-type return. Its replacement is a real Saleor
+ * order that rides the ordinary pipeline (pending→processing→ready→shipped→delivered), so this row
+ * mostly links to that order — `replacementOrderId` is the ORD- id whose detail page is where the
+ * warehouse and quantities get assigned. */
 export interface ExchangeOrderRow {
     id: string;
     returnId: string;
@@ -21,6 +23,9 @@ export interface ExchangeOrderRow {
     extraPaymentDue: number | null;
     refundDue: number | null;
     settlementStatus: ExchangeSettlementStatus;
+    /** ORD- id of the replacement order. Null when no replacement exists (an exchange raised
+     *  before replacements became real orders, or one whose creation failed). */
+    replacementOrderId: string | null;
     createdAt: string;
 }
 
@@ -44,6 +49,7 @@ export function mapApiExchangeOrder(r: ApiExchangeOrder): ExchangeOrderRow {
         extraPaymentDue: r.extra_payment_due,
         refundDue: r.refund_due,
         settlementStatus: r.settlement_status,
+        replacementOrderId: r.exchange_display_order_id ?? null,
         createdAt: r.created_at,
     };
 }

@@ -38,7 +38,9 @@ export function OrderShipmentsExpandedRow({
 }: Readonly<OrderShipmentsExpandedRowProps>) {
     const [data, setData] = useState<ExpandedRowShipmentData | null>(shipmentsCache.get(orderId) ?? null);
     const [loading, setLoading] = useState(!shipmentsCache.has(orderId));
-    const [error, setError] = useState(false);
+    // The real message, not just a flag: a generic line here hid whether the fetch was
+    // refused, the order was missing, or the mapper threw — three very different fixes.
+    const [error, setError] = useState<string | null>(null);
     const [refreshToken, setRefreshToken] = useState(0);
 
     useEffect(() => {
@@ -49,7 +51,7 @@ export function OrderShipmentsExpandedRow({
         queueMicrotask(() => {
             if (cancelled) return;
             setLoading(true);
-            setError(false);
+            setError(null);
         });
         getOrderDetail(orderId)
             .then((detail) => {
@@ -65,8 +67,9 @@ export function OrderShipmentsExpandedRow({
                 shipmentsCache.set(orderId, next);
                 setData(next);
             })
-            .catch(() => {
-                if (!cancelled) setError(true);
+            .catch((err: unknown) => {
+                if (cancelled) return;
+                setError(err instanceof Error ? err.message : String(err));
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -85,7 +88,11 @@ export function OrderShipmentsExpandedRow({
         );
     }
     if (error) {
-        return <p className="p-4 text-xs text-muted-foreground">Couldn&apos;t load shipment details.</p>;
+        return (
+            <p className="p-4 text-xs text-muted-foreground">
+                Couldn&apos;t load shipment details{error ? `: ${error}` : "."}
+            </p>
+        );
     }
     if (!data) {
         return <p className="p-4 text-xs text-muted-foreground">No shipments yet.</p>;
@@ -100,6 +107,11 @@ export function OrderShipmentsExpandedRow({
                 customOrder={data.customOrder}
                 orderStatus={data.orderStatus}
                 onRefresh={() => {
+                    // Drop the cached entry, don't just bump the token: onOrderChanged
+                    // refetches the list, which remounts this row and resets refreshToken
+                    // to 0 — and the cache guard would then serve the pre-shipment data
+                    // straight back, still offering to fulfil a line that just shipped.
+                    shipmentsCache.delete(orderId);
                     setRefreshToken((t) => t + 1);
                     onOrderChanged?.();
                 }}

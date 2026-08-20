@@ -26,7 +26,6 @@ import { getOrderProductNames } from "./helpers";
 import { CUSTOM_ORDER_REQUEST_STATUS_LABEL, type CustomOrderRequestRow } from "./customOrderTypes";
 import type { ExchangeOrderRow } from "./exchangeOrderTypes";
 import type { CancellationRow } from "./cancellationTypes";
-import { ExchangeStatusActions } from "./ExchangeStatusActions";
 import { CancellationReceivedAction } from "./CancellationReceivedAction";
 import { MarkDemandFulfilledAction } from "./MarkDemandFulfilledAction";
 
@@ -47,6 +46,7 @@ function renderOrderStatusCell(row: AllOrder) {
 }
 
 const EXCHANGE_STATUS_VARIANT: Record<ExchangeOrderStatus, StatusVariant> = {
+    pending: "pending",
     processing: "processing",
     ready: "pending",
     shipped: "shipped",
@@ -119,6 +119,8 @@ export interface UseOrderManagementSegmentColumnsParams {
     readonly segment: "b2c" | "b2b";
     readonly openCustomOrderDetails: (customOrderId: string) => void;
     readonly handleOrderClick: (orderId: string) => void;
+    readonly onToggleExchangeExpand?: (exchangeId: string) => void;
+    readonly expandedExchangeIds?: ReadonlySet<string>;
     readonly openReturnDetails: (order: AllOrder) => void;
     readonly openExchangeDetails: (exchangeId: string) => void;
     readonly handleInvoice: (orderId: string) => void;
@@ -134,12 +136,13 @@ export function useOrderManagementSegmentColumns({
     segment,
     openCustomOrderDetails,
     handleOrderClick,
+    onToggleExchangeExpand,
+    expandedExchangeIds,
     openReturnDetails,
     openExchangeDetails,
     handleInvoice,
     expandedOrderIds,
     onToggleOrderExpand,
-    onExchangeChanged,
     onCancellationChanged,
     onCancelledItemsChanged,
     onCustomOrderChanged,
@@ -289,6 +292,40 @@ export function useOrderManagementSegmentColumns({
             ),
         }),
         [expandedOrderIds, onToggleOrderExpand]
+    );
+
+    /** Same chevron the Orders list uses, so an exchange expands to its replacement order's
+     *  shipments — and the warehouse/qty panel — exactly as an ordinary order does. Only
+     *  offered when a replacement order exists; without one there is nothing to expand. */
+    const exchangeExpandColumn: TableColumn<ExchangeOrderRow> = useMemo(
+        () => ({
+            key: "expand",
+            header: "",
+            className: "w-7",
+            cell: (row) =>
+                row.replacementOrderId ? (
+                    <button
+                        type="button"
+                        className="inline-flex size-6 items-center justify-center text-muted-foreground"
+                        aria-label={
+                            expandedExchangeIds?.has(row.id)
+                                ? `Collapse ${row.id}`
+                                : `Expand ${row.id}`
+                        }
+                        aria-expanded={expandedExchangeIds?.has(row.id) ?? false}
+                        onClick={() => onToggleExchangeExpand?.(row.id)}
+                    >
+                        <ChevronRight
+                            className={cn(
+                                "size-4 transition-transform",
+                                expandedExchangeIds?.has(row.id) && "rotate-90"
+                            )}
+                            aria-hidden
+                        />
+                    </button>
+                ) : null,
+        }),
+        [expandedExchangeIds, onToggleExchangeExpand]
     );
 
     // Single-item rows go straight to the order detail page; multi-item rows toggle the shipment
@@ -581,6 +618,7 @@ export function useOrderManagementSegmentColumns({
     // (EXC-... id), not an AllOrder/filtered-Returns row.
     const exchangeColumns: TableColumn<ExchangeOrderRow>[] = useMemo(
         () => [
+            exchangeExpandColumn,
             {
                 key: "id",
                 header: "Exchange ID",
@@ -662,12 +700,11 @@ export function useOrderManagementSegmentColumns({
                         >
                             <OrderViewIcon />
                         </button>
-                        <ExchangeStatusActions exchangeId={row.id} status={row.status} onDone={onExchangeChanged} />
                     </div>
                 ),
             },
         ],
-        [onExchangeChanged, openExchangeDetails]
+        [exchangeExpandColumn, openExchangeDetails]
     );
 
     // Dedicated to Cancellation (not reused from Orders) — Cancellations is its own real resource,

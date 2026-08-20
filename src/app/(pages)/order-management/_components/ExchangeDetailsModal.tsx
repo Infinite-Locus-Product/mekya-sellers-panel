@@ -33,6 +33,7 @@ export interface ExchangeDetailsData {
 }
 
 const STATUS_VARIANT: Record<ExchangeOrderStatus, StatusVariant> = {
+  pending: "pending",
   processing: "processing",
   ready: "pending",
   shipped: "shipped",
@@ -40,6 +41,7 @@ const STATUS_VARIANT: Record<ExchangeOrderStatus, StatusVariant> = {
 }
 
 const STATUS_LABEL: Record<ExchangeOrderStatus, string> = {
+  pending: "Pending",
   processing: "Processing",
   ready: "Ready for pickup",
   shipped: "Shipped",

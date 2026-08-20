@@ -142,24 +142,31 @@ export function getOrderStatusFilterOptions(
     return (ORDER_STATUS_LABELS_BY_SUBTAB[subtab] ?? ALL_ORDER_STATUS_LABELS).map(orderStatusOption);
 }
 
-// ─── Exchange Status filter — Exchange's own 4-state shipment lifecycle, not the Orders ─────
-// pipeline. An exchange shipment is a single replacement item (no multi-line partial-fulfillment
-// concept), so unlike Orders there are no "Partially X" states, no Pending, and no Returned/
-// Cancelled — those simply can't occur for an ExchangeOrder row (DB-enforced 4-value enum).
+// ─── Exchange Status filter — the replacement order's shipment lifecycle ────────────────────
+// A replacement is a real Saleor order now, so it starts Pending (QC passed, shipment owed) and
+// advances on the same pipeline as Orders. An exchange is still a single item, so there are no
+// "Partially X" states, and Returned/Cancelled remain outside the DB-enforced enum.
 const EXCHANGE_STATUS_DISPLAY_LABEL: Record<ExchangeOrderStatus, string> = {
+    pending: "Pending",
     processing: "Processing",
     ready: "Packed",
     shipped: "Shipped",
     delivered: "Completed",
 };
 
-const ALL_EXCHANGE_STATUSES: readonly ExchangeOrderStatus[] = ["processing", "ready", "shipped", "delivered"];
+const ALL_EXCHANGE_STATUSES: readonly ExchangeOrderStatus[] = [
+    "pending",
+    "processing",
+    "ready",
+    "shipped",
+    "delivered",
+];
 
-/** Exchange sub-tabs (ORDER_SUBTABS in tableTypes.ts) reuse the OrderSubtabId shape but only
- * ever set to "all" | "processing" | "ready" | "shipped" | "delivered" — "pending" is unreachable
- * since no exchange row is ever in that state. */
+/** Exchange sub-tabs share the Orders vocabulary (ORDER_SUBTABS aliases ORDERS_TAB_SUBTABS).
+ * Pending is a real bucket: a newly QC-passed exchange sits there until a warehouse is picked. */
 const EXCHANGE_STATUSES_BY_SUBTAB: Partial<Record<OrderSubtabId, readonly ExchangeOrderStatus[]>> = {
     all: ALL_EXCHANGE_STATUSES,
+    pending: ["pending"],
     processing: ["processing"],
     ready: ["ready"],
     shipped: ["shipped"],

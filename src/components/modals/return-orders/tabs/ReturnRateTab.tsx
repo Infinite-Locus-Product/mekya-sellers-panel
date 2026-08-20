@@ -11,7 +11,8 @@ export interface ReturnRateDataPoint {
 }
 
 interface ReturnRateTabProps {
-  /** Completed (qc_passed) vs still-in-progress return requests. */
+  /** Delivered vs returned *items*, from the shared per-unit status derivation — not a
+   *  count of return requests, so these no longer sum to the Returns KPI. */
   data?: ReturnRateDataPoint[]
 }
 
@@ -21,8 +22,8 @@ export function ReturnRateTab({ data }: Readonly<ReturnRateTabProps>) {
       data={data}
       title="Return Rate"
       detailsTitle="Return Rate Details"
-      unitLabel="Returns"
-      emptyMessage="No returns in this period"
+      unitLabel="Items"
+      emptyMessage="No delivered or returned items in this period"
     />
   )
 }

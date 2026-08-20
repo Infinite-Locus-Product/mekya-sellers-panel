@@ -313,18 +313,6 @@ export type MekyaOrderStatus =
   | "partially_returned"
   | "partially_cancelled";
 
-/** Exchange tab subtab vocabulary — ExchangeOrderStatus has no "pending" state, so this stays
- * separate from ORDERS_TAB_SUBTABS below rather than gaining a Pending tab that could never match
- * any row. "delivered" is labeled "Completed" (not "Delivered") to match the Orders tab's own
- * final-stage wording in the filter spec — the id is unchanged, only the display label. */
-export const ORDER_SUBTABS = [
-  { id: "all", label: "All orders" },
-  { id: "processing", label: "Processing" },
-  { id: "ready", label: "Ready for pickup" },
-  { id: "shipped", label: "Shipped" },
-  { id: "delivered", label: "Completed" },
-] as const;
-
 /** Orders tab subtab vocabulary, in pipeline order. Pending is its own bucket (orders with no
  * shipment activity yet at all), distinct from Processing (packing has started). */
 export const ORDERS_TAB_SUBTABS = [
@@ -337,6 +325,14 @@ export const ORDERS_TAB_SUBTABS = [
 ] as const;
 
 export type OrderSubtabId = (typeof ORDERS_TAB_SUBTABS)[number]["id"];
+
+/** Exchange tab subtabs. Identical to ORDERS_TAB_SUBTABS because an exchange replacement is
+ * now a real Saleor order that rides the same pipeline: it starts Pending when QC passes, and
+ * picking a warehouse (creating its shipment) moves it to Processing exactly as for any order.
+ * Kept as an alias rather than a second list so the two can never drift apart again — this used
+ * to omit Pending, on the since-invalidated assumption that no exchange row could be in it. */
+export const ORDER_SUBTABS = ORDERS_TAB_SUBTABS;
+
 
 export type UserStatus = "active" | "inactive" | "pending" | "suspended";
 export type UserRole = "Brand" | "Agent" | "Retailer" | "Institutional Buyer";

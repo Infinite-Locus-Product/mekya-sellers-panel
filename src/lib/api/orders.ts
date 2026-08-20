@@ -1056,7 +1056,9 @@ export async function shipBackReturn(
 // machine, and a price-difference settlement (extra_payment_due / refund_due) the customer's
 // original order never has.
 
-export type ExchangeOrderStatus = "processing" | "ready" | "shipped" | "delivered";
+/** An exchange replacement starts "pending" (QC passed, shipment owed) and advances through
+ * the ordinary order pipeline — picking a warehouse moves it to "processing". */
+export type ExchangeOrderStatus = "pending" | "processing" | "ready" | "shipped" | "delivered";
 export type ExchangeSettlementStatus = "not_applicable" | "pending" | "settled";
 
 export interface ApiExchangeOrder {
@@ -1072,6 +1074,9 @@ export interface ApiExchangeOrder {
   replacement_sku?: string | null;
   replacement_variant_id?: string | null;
   status: ExchangeOrderStatus;
+  /** The replacement order's own Saleor id and ORD- display id. */
+  exchange_saleor_order_id?: string | null;
+  exchange_display_order_id?: string | null;
   tracking_number: string | null;
   courier: string | null;
   estimated_delivery_at: string | null;
@@ -1122,7 +1127,9 @@ export async function getExchangeOrder(exchangeId: string): Promise<ApiExchangeO
 
 export interface UpdateExchangeStatusRequest {
   /** "processing" is the initial state set on creation — not a valid target here. */
-  status: Exclude<ExchangeOrderStatus, "processing">;
+  // "pending" is the starting state and "processing" is set by creating the shipment, so
+  // neither is a manual choice.
+  status: Exclude<ExchangeOrderStatus, "pending" | "processing">;
   /** Required when status is "shipped". */
   tracking_number?: string;
   courier?: string;
