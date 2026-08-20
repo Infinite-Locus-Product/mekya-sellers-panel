@@ -7,7 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { updateExchangeStatus, type ExchangeOrderStatus } from "@/lib/api/orders";
 
-const NEXT_STATUS: Record<ExchangeOrderStatus, Exclude<ExchangeOrderStatus, "processing"> | null> = {
+type ManualExchangeStatus = Exclude<ExchangeOrderStatus, "pending" | "processing">;
+
+/** Pending has no manual advance on purpose: a replacement leaves Pending by having its
+ * shipment created (which is where the warehouse is chosen), exactly as an ordinary order
+ * does. Offering a button here would let the status run ahead of the real fulfillment. */
+const NEXT_STATUS: Record<ExchangeOrderStatus, ManualExchangeStatus | null> = {
+    pending: null,
     processing: "ready",
     ready: "shipped",
     shipped: "delivered",
@@ -15,6 +21,7 @@ const NEXT_STATUS: Record<ExchangeOrderStatus, Exclude<ExchangeOrderStatus, "pro
 };
 
 const STATUS_LABEL: Record<ExchangeOrderStatus, string> = {
+    pending: "Pending",
     processing: "Processing",
     ready: "Ready for pickup",
     shipped: "Shipped",

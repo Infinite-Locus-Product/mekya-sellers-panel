@@ -13,7 +13,6 @@ import {
   deleteReel,
   getReelById,
   getReelSchedule,
-  getSellerProducts,
   listReels,
   presignThumbnailUpload,
   presignVideoUpload,
@@ -209,24 +208,21 @@ export function ReelsLibraryClient({ initialReels }: Readonly<ReelsLibraryClient
         setReelAudience(detail.audience ?? "b2c");
         setEditingReel(detail);
 
-        const ids = detail.product_ids ?? [];
-        if (ids.length === 0) return;
-
-        getSellerProducts({ limit: 200 })
-          .then(({ products }) => {
-            const idSet = new Set(ids);
-            setTaggedProducts(
-              products
-                .filter((p) => idSet.has(p.product_id))
-                .map((p) => ({
-                  id: p.product_id,
-                  name: p.name,
-                  sku: p.sku,
-                  imageUrl: p.thumbnail_url ?? "",
-                })),
-            );
-          })
-          .catch(() => {});
+        // Straight from the reel detail. This used to re-fetch the seller's catalogue with
+        // `limit: 200` and filter it down — but that endpoint caps limit at 50, so the request
+        // 422'd, the `.catch` swallowed it, and taggedProducts stayed empty. Every save then
+        // posted `product_ids: []`, which deletes the reel's tags server-side: the reported
+        // "tagged product is not getting saved" on draft save, resubmit and every other save
+        // path. Reading the tags the API already returns also can't miss a tag whose product
+        // sits outside one page of the catalogue.
+        setTaggedProducts(
+          (detail.tagged_products ?? []).map((p) => ({
+            id: p.product_id,
+            name: p.name,
+            sku: p.sku,
+            imageUrl: p.thumbnail_url,
+          })),
+        );
       })
       .catch(() => {
         // Dialog already open with list data — silently ignore

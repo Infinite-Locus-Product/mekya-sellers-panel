@@ -165,6 +165,9 @@ export function OrderManagementSegmentClient({
     const [sortBy, setSortBy] = useState<NonNullable<ListOrdersParams["sort_by"]>>("created");
     const [sortDir, setSortDir] = useState<NonNullable<ListOrdersParams["sort_dir"]>>("desc");
     const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(() => new Set());
+    // Exchange rows expand in place too, so assigning a warehouse happens on the listing
+    // exactly as it does for an ordinary order — keyed by exchange id, not order id.
+    const [expandedExchangeIds, setExpandedExchangeIds] = useState<Set<string>>(() => new Set());
     const [orderKpis, setOrderKpis] = useState<OrderKpis | null>(null);
     // Bumped when a shipment action inside a row's expanded panel (OrderShipmentsExpandedRow)
     // changes an order's status — that panel only refreshes its own local shipment data, so
@@ -447,9 +450,11 @@ export function OrderManagementSegmentClient({
             if (!cancelled) setLoadingExchange(true);
         });
         listExchangeOrders({
+            // "pending" is a real bucket now — a QC-passed exchange sits there until its
+            // shipment is created — so it must filter rather than fall through to "all".
             status: exchangeStatusesParam
                 ? undefined
-                : exchangeSubtab === "all" || exchangeSubtab === "pending"
+                : exchangeSubtab === "all"
                   ? undefined
                   : exchangeSubtab,
             statuses: exchangeStatusesParam,
@@ -741,6 +746,15 @@ export function OrderManagementSegmentClient({
             .catch(() => {});
     }, []);
 
+    const handleToggleExchangeExpand = useCallback((exchangeId: string) => {
+        setExpandedExchangeIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(exchangeId)) next.delete(exchangeId);
+            else next.add(exchangeId);
+            return next;
+        });
+    }, []);
+
     const handleToggleOrderExpand = useCallback((orderId: string) => {
         setExpandedOrderIds((prev) => {
             const next = new Set(prev);
@@ -828,6 +842,8 @@ export function OrderManagementSegmentClient({
         handleInvoice,
         expandedOrderIds,
         onToggleOrderExpand: handleToggleOrderExpand,
+        onToggleExchangeExpand: handleToggleExchangeExpand,
+        expandedExchangeIds,
         onExchangeChanged: () => setExchangeRefreshToken((t) => t + 1),
         onCancellationChanged: () => setCancellationsRefreshToken((t) => t + 1),
         onCancelledItemsChanged: () => setCancelledItemsRefreshToken((t) => t + 1),
@@ -1074,6 +1090,19 @@ export function OrderManagementSegmentClient({
                                 data={displayedExchangeOrders}
                                 striped
                                 emptyMessage={viewCopy.emptyMessage}
+                                getRowId={(row) => row.id}
+                                expandedRowIds={expandedExchangeIds}
+                                // The replacement is an ordinary order, so its shipments — and the
+                                // warehouse/qty panel — render from its ORD- id using the very same
+                                // component the orders list expands.
+                                renderExpandedRow={(row) =>
+                                    row.replacementOrderId ? (
+                                        <OrderShipmentsExpandedRow
+                                            orderId={row.replacementOrderId}
+                                            onOrderChanged={() => setExchangeRefreshToken((t) => t + 1)}
+                                        />
+                                    ) : null
+                                }
                                 pagination={{
                                     currentPage: exchangePagination.currentPage,
                                     totalPages: exchangePagination.totalPages,

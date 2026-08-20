@@ -281,19 +281,41 @@ export async function listReels(params?: {
 }
 
 interface ApiReelDetail extends ApiReel {
-  product_tags?: Array<{ saleor_product_id: string }>;
+  product_tags?: Array<{
+    saleor_product_id: string;
+    name?: string;
+    sku?: string;
+    thumbnail_url?: string;
+  }>;
+}
+
+/** A tagged product, already resolved by the API — no second catalogue fetch needed. */
+export interface ReelTaggedProduct {
+  product_id: string;
+  name: string;
+  sku: string;
+  thumbnail_url: string;
 }
 
 export interface ReelDetail extends CmsReel {
   product_ids: string[];
+  /** Same tags as `product_ids`, with the labels needed to render them. */
+  tagged_products: ReelTaggedProduct[];
 }
 
 export async function getReelById(reelId: string): Promise<ReelDetail> {
   const res = await authService.api.get<ApiReelDetail>(`/seller/reels/${reelId}`);
   const r = res.data;
+  const tags = r.product_tags ?? [];
   return {
     ...mapApiReel(r),
-    product_ids: (r.product_tags ?? []).map((t) => t.saleor_product_id),
+    product_ids: tags.map((t) => t.saleor_product_id),
+    tagged_products: tags.map((t) => ({
+      product_id: t.saleor_product_id,
+      name: t.name ?? "",
+      sku: t.sku ?? "",
+      thumbnail_url: t.thumbnail_url ?? "",
+    })),
   };
 }
 
