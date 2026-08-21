@@ -7,7 +7,7 @@ import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { KPICard } from "@/components/shared/KPICard";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { Card, CardContent } from "@/components/ui/card";
-import { Clock, Eye, Heart, MessageCircle, Share2, Trophy } from "lucide-react";
+import { Bookmark, Eye, Heart, Share2, Trophy } from "lucide-react";
 import type {
   CmsAnalyticsKpis,
   CmsAudienceByDeviceSlice,
@@ -126,7 +126,7 @@ export function CmsAnalyticsClient({ initialData }: Readonly<CmsAnalyticsClientP
       {/* Dimmed while a refetch is in flight so stale numbers read as stale, not final. */}
       <div
         className={cn(
-          "grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5 min-[1920px]:gap-4 transition-opacity duration-200",
+          "grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 min-[1920px]:gap-4 transition-opacity duration-200",
           isLoading && "opacity-50"
         )}
       >
@@ -145,10 +145,10 @@ export function CmsAnalyticsClient({ initialData }: Readonly<CmsAnalyticsClientP
           className="m-4"
         />
         <KPICard
-          title="Total Comments"
-          value={formatNumber(kpis.totalComments)}
+          title="Saves"
+          value={formatNumber(kpis.totalSaves)}
           kpiType={3}
-          icon={<MessageCircle className="text-[#004C5E]" aria-hidden />}
+          icon={<Bookmark className="text-[#004C5E]" aria-hidden />}
           className="m-4"
         />
         <KPICard
@@ -156,13 +156,6 @@ export function CmsAnalyticsClient({ initialData }: Readonly<CmsAnalyticsClientP
           value={formatNumber(kpis.totalShares)}
           kpiType={4}
           icon={<Share2 className="text-[#004C5E]" aria-hidden />}
-          className="m-4"
-        />
-        <KPICard
-          title="Avg. Watch Time"
-          value={`${kpis.avgWatchSeconds} seconds`}
-          kpiType={5}
-          icon={<Clock className="text-[#004C5E]" aria-hidden />}
           className="m-4"
         />
       </div>

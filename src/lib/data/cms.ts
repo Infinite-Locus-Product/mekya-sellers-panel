@@ -24,7 +24,8 @@ export interface Schedule {
 
 export interface CmsReelEngagement {
   likes: number | null;
-  comments: number | null;
+  /** Times buyers bookmarked the reel. Null until the list endpoint reports it. */
+  saves: number | null;
   shares: number | null;
 }
 
@@ -56,7 +57,7 @@ export interface CmsReel {
 export interface CmsAnalyticsKpis {
   totalViews: number;
   totalLikes: number;
-  totalComments: number;
+  totalSaves: number;
   totalShares: number;
   avgWatchSeconds: number;
   engagementRatePercent: number;
