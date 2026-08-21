@@ -61,7 +61,12 @@ export function EditReelTagProductsStep({
     const timer = setTimeout(() => {
       getSellerProducts({
         search: q,
-        channel: reelAudience === "both" ? "all" : reelAudience,
+        // Passed straight through, including "both". The three backend channel values are
+        // disjoint — "both" means dual-listed, not "either" — so a reel targeting both
+        // platforms can only tag products that are actually live on both. Sending "all"
+        // here (as this used to) offered up b2c-only and b2b-only products for a reel that
+        // would then render on a platform where they cannot be bought.
+        channel: reelAudience,
         limit: 10,
       })
         .then((res) => setSearchResults(res.products))
@@ -91,11 +96,16 @@ export function EditReelTagProductsStep({
   const PLATFORM_OPTIONS: { label: string; value: ReelAudience }[] = [
     { label: "B2C Only", value: "b2c" },
     { label: "B2B Only", value: "b2b" },
-    { label: "Both", value: "both" },
+    { label: "B2C & B2B", value: "both" },
   ];
 
+  // No scroll container of its own: the dialog body already scrolls this step, and a nested
+  // one clipped every focus ring. Per spec a non-visible overflow on one axis makes the other
+  // `auto`, so `overflow-y-auto` here clipped horizontally too — and a ring paints outside the
+  // input's box, so its left and right edges were cut off on click. The parent supplies both
+  // the scrolling and the px-6 the rings need.
   return (
-    <div className="flex flex-col gap-5 overflow-y-auto">
+    <div className="flex flex-col gap-5">
       <div>
         <h3 className="text-base font-bold text-[#2A2A2A]">Tag Products</h3>
         <p className="mt-0.5 text-sm text-[#666666]">

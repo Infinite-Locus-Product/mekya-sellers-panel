@@ -90,6 +90,6 @@ export function syntheticCmsReelFromUploadedFile(file: File): CmsReel {
       minute: "2-digit",
     }),
     views: null,
-    engagement: { likes: null, comments: null, shares: null },
+    engagement: { likes: null, saves: null, shares: null },
   };
 }

@@ -220,6 +220,8 @@ interface ApiReel {
   duration_seconds: number;
   views: number | null;
   likes: number | null;
+  saves: number | null;
+  shares: number | null;
   thumbnail_url: string | null;
   video_url: string | null;
   rejection_reason: string | null;
@@ -248,7 +250,7 @@ function mapApiReel(r: ApiReel): CmsReel {
       minute: "2-digit",
     }),
     views: r.views ?? null,
-    engagement: { likes: r.likes ?? null, comments: null, shares: null },
+    engagement: { likes: r.likes ?? null, saves: r.saves ?? null, shares: r.shares ?? null },
     thumbnail_url: r.thumbnail_url ?? undefined,
     s3_url: r.video_url ?? undefined,
     description: r.description,
@@ -342,7 +344,9 @@ export type AnalyticsDateRange = "7d" | "30d" | "90d" | "all";
 interface ApiAnalyticsSummaryKpis {
   total_views: number;
   total_likes: number;
-  total_comments: number;
+  /** Explicit saves, from user_saved_reel.is_saved — not row existence, which liking
+   *  also creates. */
+  total_saves: number;
   total_shares: number;
   avg_watch_time_seconds: number;
   engagement_rate_percent: number;
@@ -374,7 +378,7 @@ export async function getReelAnalyticsSummary(
     kpis: {
       totalViews: data.kpis.total_views,
       totalLikes: data.kpis.total_likes,
-      totalComments: data.kpis.total_comments,
+      totalSaves: data.kpis.total_saves ?? 0,
       totalShares: data.kpis.total_shares,
       avgWatchSeconds: data.kpis.avg_watch_time_seconds,
       engagementRatePercent: data.kpis.engagement_rate_percent,

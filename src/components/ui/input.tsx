@@ -9,7 +9,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <input
         type={type}
         className={cn(
-          "flex h-10 w-full rounded-md border border-input px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+          // The focus ring is explicit on purpose. With no focus style of its own this
+          // input fell through to the browser's native outline, which macOS paints in the
+          // system accent blue -- off-palette, and drawn outside the border box so a
+          // scrolling dialog clipped it. `ring-inset` keeps it within the box, so no
+          // ancestor's overflow can cut it off. Matches select.tsx / button.tsx.
+          "flex h-10 w-full rounded-md border border-input px-3 py-2 text-sm transition-[color,box-shadow] file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         ref={ref}

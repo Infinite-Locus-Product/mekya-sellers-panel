@@ -49,6 +49,6 @@ export const MAX_TAGGED_PRODUCTS = 5;
 export const AUDIENCE_OPTIONS = [
   { label: "B2C (Consumers)", value: "b2c" as const },
   { label: "B2B (Businesses)", value: "b2b" as const },
-  { label: "Both", value: "both" as const },
+  { label: "B2C & B2B", value: "both" as const },
 ] as const;
 

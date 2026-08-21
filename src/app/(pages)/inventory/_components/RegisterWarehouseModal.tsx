@@ -154,7 +154,9 @@ export function RegisterWarehouseModal({
                 <DialogHeader>
                     <DialogTitle className="text-base font-semibold">Register warehouse</DialogTitle>
                 </DialogHeader>
-                <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
+                {/* px-1, not pr-1: an overflow container clips at its padding edge, so with no left
+                    padding a focus ring on a full-width control was cut off down the left side. */}
+                <div className="max-h-[70vh] space-y-3 overflow-y-auto px-1">
                     <div className="space-y-1.5">
                         <FieldLabel required>Warehouse name</FieldLabel>
                         <Input
