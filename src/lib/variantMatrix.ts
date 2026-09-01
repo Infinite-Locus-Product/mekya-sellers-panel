@@ -4,9 +4,9 @@
  * calls. Mirrors the backend's own independent-per-color model exactly
  * (ProductColor/ColorVariant): colors are never forced into a uniform
  * cross-product, and a color's images are its own, never shared. */
-import type { ColorVariant, PriceOverrideInput, StockOverrideInput } from "@/lib/api/products";
+import type { ColorVariant, PriceOverrideInput } from "@/lib/api/products";
 
-export type MatrixCell = { b2c_price: string; b2b_price: string; qty: string };
+export type MatrixCell = { b2c_price: string; b2b_price: string };
 
 export type PendingImage = { id: string; url: string; file: File };
 
@@ -25,7 +25,7 @@ export type ColorBlock = {
 };
 
 export function emptyCell(): MatrixCell {
-  return { b2c_price: "", b2b_price: "", qty: "" };
+  return { b2c_price: "", b2b_price: "" };
 }
 
 export function emptyColorBlock(color: string): ColorBlock {
@@ -44,7 +44,6 @@ export function colorBlocksFromColorVariants(colors: ColorVariant[]): ColorBlock
       cells[s.size] = {
         b2c_price: s.b2c_price != null ? String(s.b2c_price) : "",
         b2b_price: s.b2b_price != null ? String(s.b2b_price) : "",
-        qty: s.available_qty != null ? String(s.available_qty) : "",
       };
     }
     return {
@@ -80,17 +79,19 @@ export function buildVariantConfigurationColors(
   }));
 }
 
-/** Every (color, size) cell becomes one price + one stock override — same
- * shape Create already sends, now reused for Edit. A blank qty defaults to
- * 0 (matches the pre-existing create-mode convention); a blank price is
- * omitted (`undefined`) so the backend leaves that channel's price alone
- * rather than zeroing it. */
+/** Every (color, size) cell becomes one price override — the same shape Create
+ * already sends, reused for Edit. A blank price is omitted (`undefined`) so the
+ * backend leaves that channel's price alone rather than zeroing it.
+ *
+ * Stock is deliberately absent. Quantity is set per warehouse on the product's
+ * own page after publishing, so this form has no quantity to send — and sending
+ * a 0 would be worse than sending nothing: the backend writes stock overrides
+ * through _broadcast_stock_rows, which would zero a single-warehouse variant's
+ * real stock on every save. */
 export function buildOverridesFromColorBlocks(blocks: ColorBlock[]): {
   priceOverrides: PriceOverrideInput[];
-  stockOverrides: StockOverrideInput[];
 } {
   const priceOverrides: PriceOverrideInput[] = [];
-  const stockOverrides: StockOverrideInput[] = [];
   for (const b of blocks) {
     for (const size of b.sizes) {
       const cell = b.cells[size] ?? emptyCell();
@@ -100,21 +101,16 @@ export function buildOverridesFromColorBlocks(blocks: ColorBlock[]): {
         b2c_price: cell.b2c_price ? parseFloat(cell.b2c_price) : undefined,
         b2b_price: cell.b2b_price ? parseFloat(cell.b2b_price) : undefined,
       });
-      stockOverrides.push({
-        color: b.color,
-        size,
-        available_qty: cell.qty ? parseInt(cell.qty, 10) : 0,
-      });
     }
   }
-  return { priceOverrides, stockOverrides };
+  return { priceOverrides };
 }
 
 export function cellKey(color: string, size: string): string {
   return `${color}::${size}`;
 }
 
-/** Copy/paste — copies only the editable fields (price/qty), never
+/** Copy/paste — copies only the editable fields (prices), never
  * color/size/SKU/variant identity, onto every targeted cell. Pure so the
  * paste logic is unit-testable without mounting the editor. */
 export function pasteCellIntoTargets(

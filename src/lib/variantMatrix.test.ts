@@ -37,19 +37,19 @@ describe("colorBlocksFromColorVariants", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[0].color).toBe("Red");
     expect(blocks[0].sizes).toEqual(["S", "M"]);
-    expect(blocks[0].cells.S).toEqual({ b2c_price: "500", b2b_price: "400", qty: "10" });
-    expect(blocks[0].cells.M).toEqual({ b2c_price: "550", b2b_price: "", qty: "5" });
+    expect(blocks[0].cells.S).toEqual({ b2c_price: "500", b2b_price: "400" });
+    expect(blocks[0].cells.M).toEqual({ b2c_price: "550", b2b_price: "" });
     expect(blocks[0].existingImages).toEqual([{ id: "img-1", url: "https://x/red.jpg" }]);
     expect(blocks[0].newImages).toEqual([]);
     // Independent sizes: Black only has S, Red has S and M — never forced to match.
     expect(blocks[1].sizes).toEqual(["S"]);
   });
 
-  it("renders null price/qty as blank strings, not '0' or 'null'", () => {
+  it("renders null prices as blank strings, not '0' or 'null'", () => {
     const blocks = colorBlocksFromColorVariants([
       colorVariant({ sizes: [{ size: "S", variant_id: "v1", sku: "s", b2c_price: null, b2b_price: null, available_qty: null }] }),
     ]);
-    expect(blocks[0].cells.S).toEqual({ b2c_price: "", b2b_price: "", qty: "" });
+    expect(blocks[0].cells.S).toEqual({ b2c_price: "", b2b_price: "" });
   });
 });
 
@@ -59,7 +59,7 @@ describe("buildVariantConfigurationColors", () => {
       {
         color: "Red",
         sizes: ["S"],
-        cells: { S: { b2c_price: "500", b2b_price: "400", qty: "10" } },
+        cells: { S: { b2c_price: "500", b2b_price: "400" } },
         existingImages: [{ id: "img-1", url: "https://x/already-saved.jpg" }],
         newImages: [{ id: "new-1", url: "blob:local-preview", file: new File([], "new.jpg") }],
       },
@@ -77,7 +77,7 @@ describe("buildVariantConfigurationColors", () => {
       {
         color: "Red",
         sizes: ["S"],
-        cells: { S: { b2c_price: "500", b2b_price: "400", qty: "10" } },
+        cells: { S: { b2c_price: "500", b2b_price: "400" } },
         existingImages: [{ id: "img-1", url: "https://x/already-saved.jpg" }],
         newImages: [],
       },
@@ -89,7 +89,7 @@ describe("buildVariantConfigurationColors", () => {
   });
 
   it("keeps a color with zero sizes — it's a legitimate sizeless ('Default') variant, not an incomplete entry", () => {
-    const blocks: ColorBlock[] = [emptyColorBlock("Red"), { ...emptyColorBlock("Black"), sizes: ["M"], cells: { M: { b2c_price: "", b2b_price: "", qty: "" } } }];
+    const blocks: ColorBlock[] = [emptyColorBlock("Red"), { ...emptyColorBlock("Black"), sizes: ["M"], cells: { M: { b2c_price: "", b2b_price: "" } } }];
 
     const payload = buildVariantConfigurationColors(blocks);
 
@@ -99,55 +99,54 @@ describe("buildVariantConfigurationColors", () => {
 });
 
 describe("buildOverridesFromColorBlocks", () => {
-  it("produces one price override and one stock override per (color, size) cell", () => {
+  it("produces one price override per (color, size) cell and no stock at all", () => {
     const blocks: ColorBlock[] = [
       {
         color: "Red",
         sizes: ["S", "M"],
         cells: {
-          S: { b2c_price: "500", b2b_price: "400", qty: "10" },
-          M: { b2c_price: "", b2b_price: "", qty: "" },
+          S: { b2c_price: "500", b2b_price: "400" },
+          M: { b2c_price: "", b2b_price: "" },
         },
         existingImages: [],
         newImages: [],
       },
     ];
 
-    const { priceOverrides, stockOverrides } = buildOverridesFromColorBlocks(blocks);
+    const result = buildOverridesFromColorBlocks(blocks);
 
-    expect(priceOverrides).toEqual([
+    expect(result.priceOverrides).toEqual([
       { color: "Red", size: "S", b2c_price: 500, b2b_price: 400 },
       { color: "Red", size: "M", b2c_price: undefined, b2b_price: undefined },
     ]);
-    // A blank qty defaults to 0 rather than being omitted — StockOverride.available_qty is required.
-    expect(stockOverrides).toEqual([
-      { color: "Red", size: "S", available_qty: 10 },
-      { color: "Red", size: "M", available_qty: 0 },
-    ]);
+    // Quantity is set per warehouse on the product page, so this form sends no stock.
+    // Sending 0 would be worse than sending nothing: the backend's stock override path
+    // would zero a single-warehouse variant's real stock on every save.
+    expect("stockOverrides" in result).toBe(false);
   });
 });
 
 describe("pasteCellIntoTargets", () => {
-  it("copies only price/qty fields onto every targeted cell, never color/size identity", () => {
+  it("copies only price fields onto every targeted cell, never color/size identity", () => {
     const blocks: ColorBlock[] = [
       {
         color: "Red",
         sizes: ["S", "M", "L"],
         cells: {
-          S: { b2c_price: "999", b2b_price: "888", qty: "1" },
-          M: { b2c_price: "1", b2b_price: "1", qty: "1" },
-          L: { b2c_price: "1", b2b_price: "1", qty: "1" },
+          S: { b2c_price: "999", b2b_price: "888" },
+          M: { b2c_price: "1", b2b_price: "1" },
+          L: { b2c_price: "1", b2b_price: "1" },
         },
         existingImages: [],
         newImages: [],
       },
     ];
-    const clipboard = { b2c_price: "999", b2b_price: "888", qty: "1" };
+    const clipboard = { b2c_price: "999", b2b_price: "888" };
     const targets = new Set([cellKey("Red", "M"), cellKey("Red", "L")]);
 
     const result = pasteCellIntoTargets(blocks, clipboard, targets);
 
-    expect(result[0].cells.S).toEqual({ b2c_price: "999", b2b_price: "888", qty: "1" }); // untouched (not a target)
+    expect(result[0].cells.S).toEqual({ b2c_price: "999", b2b_price: "888" }); // untouched (not a target)
     expect(result[0].cells.M).toEqual(clipboard);
     expect(result[0].cells.L).toEqual(clipboard);
     expect(result[0].color).toBe("Red"); // identity fields never touched
@@ -156,7 +155,7 @@ describe("pasteCellIntoTargets", () => {
 
   it("is a no-op when there are no targets", () => {
     const blocks: ColorBlock[] = [emptyColorBlock("Red")];
-    const result = pasteCellIntoTargets(blocks, { b2c_price: "1", b2b_price: "1", qty: "1" }, new Set());
+    const result = pasteCellIntoTargets(blocks, { b2c_price: "1", b2b_price: "1" }, new Set());
     expect(result).toBe(blocks);
   });
 });
