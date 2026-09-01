@@ -166,7 +166,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
   // products use colorBlocks + the main Update button exclusively instead.
   const [productVariants, setProductVariants] = useState<FlatVariant[]>([]);
   const [variantEdits, setVariantEdits] = useState<
-    Record<string, { b2c_price: string; b2b_price: string; quantity: string }>
+    Record<string, { b2c_price: string; b2b_price: string }>
   >({});
   const [savingVariantId, setSavingVariantId] = useState<string | null>(null);
   const [colorBlocks, setColorBlocks] = useState<ColorBlock[]>([]);
@@ -335,12 +335,11 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
 
   useEffect(() => {
     if (productVariants.length === 0) return;
-    const edits: Record<string, { b2c_price: string; b2b_price: string; quantity: string }> = {};
+    const edits: Record<string, { b2c_price: string; b2b_price: string }> = {};
     for (const v of productVariants) {
       edits[v.id] = {
         b2c_price: v.b2c_price != null ? String(v.b2c_price) : "",
         b2b_price: v.b2b_price != null ? String(v.b2b_price) : "",
-        quantity: v.quantity != null ? String(v.quantity) : "",
       };
     }
     setVariantEdits(edits);
@@ -566,7 +565,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       await updateProductVariant(initialProduct.id, variantId, {
         b2c_price: edit.b2c_price ? parseFloat(edit.b2c_price) : undefined,
         b2b_price: edit.b2b_price ? parseFloat(edit.b2b_price) : undefined,
-        available_qty: edit.quantity ? parseInt(edit.quantity, 10) : undefined,
       });
       toast.success("Variant updated.");
     } catch {
@@ -617,14 +615,15 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     };
   }
 
-  /** Shared pricing/inventory broadcast sections for edit-mode updates —
-   * identical between Save Draft and Publish/Update, so both call sites
-   * build from here rather than duplicating the same object literal. */
-  /** mrp/channels only — per-variant price now lives entirely in
-   * colorBlocks' overrides (see buildPricingUpdateSection/
-   * buildInventoryUpdateSection below), matching Create's own architecture:
-   * there is no broadcast "set every variant to this price" field in either
-   * mode anymore, only explicit per-(color,size) values. */
+  /** Shared pricing section for edit-mode updates — identical between Save
+   * Draft and Publish/Update, so both call sites build from here rather than
+   * duplicating the same object literal.
+   *
+   * mrp/channels only: per-variant price lives entirely in colorBlocks'
+   * overrides, matching Create's own architecture — there is no broadcast
+   * "set every variant to this price" field in either mode, only explicit
+   * per-(color,size) values. No inventory section is sent at all, because
+   * quantity is set per warehouse on the product page after publishing. */
   function buildPricingUpdateSection() {
     const { priceOverrides } = buildOverridesFromColorBlocks(colorBlocks);
     return {
@@ -634,11 +633,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     };
   }
 
-  function buildInventoryUpdateSection() {
-    if (isLegacy) return {};
-    const { stockOverrides } = buildOverridesFromColorBlocks(colorBlocks);
-    return { overrides: stockOverrides };
-  }
 
   /** Create-time ProductDefinition — shared between Save Draft and Publish,
    * which submit the exact same taxonomy/attribute/tag fields. */
@@ -747,19 +741,17 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
           product: { ...buildProductUpdateSection(), description: draftDescription },
           variants: isLegacy ? undefined : buildVariantConfiguration(uploadedColorImages),
           pricing: buildPricingUpdateSection(),
-          inventory: buildInventoryUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
           legacy_sizes: isLegacy ? [...selectedSizes] : undefined,
         });
         toast.success("Draft updated successfully.");
       } else {
         if (!pendingProductIdRef.current) {
-          const { priceOverrides, stockOverrides } = buildOverridesFromColorBlocks(colorBlocks);
+          const { priceOverrides } = buildOverridesFromColorBlocks(colorBlocks);
           const created = await createProduct({
             product: buildCreateProductDefinition(draftDescription),
             variants: buildVariantConfiguration(uploadedColorImages),
             pricing: { mrp: mrp ? parseFloat(mrp) : undefined, channels, overrides: priceOverrides },
-            inventory: { overrides: stockOverrides },
             images: imageUrls.length > 0 ? imageUrls : undefined,
           });
           pendingProductIdRef.current = created.product_id;
@@ -859,7 +851,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
           return;
         }
         for (const size of block.sizes) {
-          const cell = block.cells[size] ?? { b2c_price: "", b2b_price: "", qty: "" };
+          const cell = block.cells[size] ?? { b2c_price: "", b2b_price: "" };
           const label = `${block.color} / ${size}`;
           if (channels !== "b2b") {
             const b2c = parseFloat(cell.b2c_price);
@@ -901,7 +893,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
           product: buildProductUpdateSection(),
           variants: isLegacy ? undefined : buildVariantConfiguration(uploadedColorImages),
           pricing: buildPricingUpdateSection(),
-          inventory: buildInventoryUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
           legacy_sizes: isLegacy ? [...selectedSizes] : undefined,
         });
@@ -911,12 +902,11 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         // reuse the existing product_id instead of creating a duplicate.
         let productIdToPublish = pendingProductIdRef.current;
         if (!productIdToPublish) {
-          const { priceOverrides, stockOverrides } = buildOverridesFromColorBlocks(colorBlocks);
+          const { priceOverrides } = buildOverridesFromColorBlocks(colorBlocks);
           const created = await createProduct({
             product: buildCreateProductDefinition(description.trim() || productName.trim()),
             variants: buildVariantConfiguration(uploadedColorImages),
             pricing: { mrp: mrpNum, channels, overrides: priceOverrides },
-            inventory: { overrides: stockOverrides },
             images: imageUrls.length > 0 ? imageUrls : undefined,
           });
           pendingProductIdRef.current = created.product_id;
@@ -1570,7 +1560,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       {isEditMode && isLegacy && productVariants.length > 0 && (
         <Card className="border bg-white shadow-sm">
           <CardHeader className="border-b pb-4">
-            <CardTitle className="text-base font-normal">Variant Pricing &amp; Stock</CardTitle>
+            <CardTitle className="text-base font-normal">Variant Pricing</CardTitle>
           </CardHeader>
           <CardContent className="pt-5">
             <div className="overflow-x-auto">
@@ -1586,7 +1576,7 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
                 </thead>
                 <tbody>
                   {productVariants.map((variant) => {
-                    const edit = variantEdits[variant.id] ?? { b2c_price: "", b2b_price: "", quantity: "" };
+                    const edit = variantEdits[variant.id] ?? { b2c_price: "", b2b_price: "" };
                     return (
                       <tr key={variant.id} className="border-b last:border-0">
                         <td className="py-2 pr-4 font-medium">{variant.color ?? "—"}</td>

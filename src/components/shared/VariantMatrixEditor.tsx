@@ -210,8 +210,8 @@ export function VariantMatrixEditor({
       {clipboard && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
           <span>
-            Copied — B2C {clipboard.b2c_price || "—"} / B2B {clipboard.b2b_price || "—"} / Qty{" "}
-            {clipboard.qty || "—"}. Select target rows, then Paste.
+            Copied — B2C {clipboard.b2c_price || "—"} / B2B {clipboard.b2b_price || "—"}. Select
+            target rows, then Paste.
           </span>
           <div className="flex shrink-0 gap-2">
             <Button
@@ -282,7 +282,7 @@ export function VariantMatrixEditor({
               )}
             </div>
 
-            {/* Price / qty table */}
+            {/* Per-size price table */}
             {block.sizes.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -294,7 +294,6 @@ export function VariantMatrixEditor({
                       <th className="pb-2 pr-3 font-medium">Size</th>
                       {channels !== "b2b" && <th className="pb-2 pr-3 font-medium">B2C Price (₹)</th>}
                       {channels !== "b2c" && <th className="pb-2 pr-3 font-medium">B2B Price (₹)</th>}
-                      <th className="pb-2 pr-3 font-medium">Qty</th>
                       <th className="pb-2 font-medium" />
                     </tr>
                   </thead>
@@ -350,24 +349,13 @@ export function VariantMatrixEditor({
                               )}
                             </td>
                           )}
-                          <td className="py-2 pr-3">
-                            <Input
-                              inputMode="numeric"
-                              placeholder="0"
-                              value={cell.qty}
-                              onChange={(e) =>
-                                updateCell(block.color, size, { qty: e.target.value.replace(/\D/g, "") })
-                              }
-                              className="h-8 w-20 bg-white"
-                            />
-                          </td>
                           <td className="py-2">
                             <button
                               type="button"
                               className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                               aria-label={`Copy ${block.color} ${size}`}
                               onClick={() => copyCell(block.color, size, cell)}
-                              title="Copy this row's price/quantity"
+                              title="Copy this row's prices"
                             >
                               <Copy className="h-3.5 w-3.5" />
                             </button>
