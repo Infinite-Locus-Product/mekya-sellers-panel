@@ -1,53 +1,61 @@
-import { XCircle } from "lucide-react";
+import { XCircle, RefreshCw } from "lucide-react";
 import { KPICard } from "@/components/shared/KPICard";
-import {
-    KpiOrdersBagIcon,
-    KpiReturnUndoIcon,
-    KpiTotalRevenueIcon,
-    KpiPendingOrdersIcon,
-    KpiDeliveredOrdersIcon,
-} from "@/assets/icons";
+import { KpiOrdersBagIcon, KpiReturnUndoIcon, KpiDeliveredOrdersIcon } from "@/assets/icons";
 import type { OrderKpis } from "@/lib/api/orders";
 
 export interface OrderManagementKpiGridProps {
     readonly stats: OrderKpis | null;
 }
 
-/** Tiles mirror GET /seller/orders/kpis exactly — no client-side derivation. Returns and
- *  Cancellations get one tile each; they used to be two return tiles (initiated / in process)
- *  split across the same lifecycle, which left cancellations with no tile at all. */
+/** Tiles mirror GET /seller/orders/kpis exactly — no client-side derivation.
+ *
+ *  These count *items*, not orders: every figure is items x quantity, so an order of three
+ *  shirts contributes three. They replaced per-status order tiles (Pending / Processing /
+ *  Ready for Dispatch / Shipped / Returns / Cancellations), which answered "how many orders
+ *  sit here" rather than "how much stock has moved".
+ *
+ *  Delivered, Exchange, Returned and Cancelled are mutually exclusive per unit, so they add
+ *  up to at most Total — a unit delivered and then returned counts only under Returned. */
 export function OrderManagementKpiGrid({ stats }: Readonly<OrderManagementKpiGridProps>) {
     const s = stats ?? {
-        pending: 0,
-        processing: 0,
-        ready_for_dispatch: 0,
-        shipped: 0,
-        returns: 0,
-        cancellations: 0,
+        total_items: 0,
+        delivered_items: 0,
+        exchange_items: 0,
+        returned_items: 0,
+        cancelled_items: 0,
     };
 
     return (
-        <div className="grid min-w-0 grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-3 xl:grid-cols-6 min-[1920px]:gap-3">
-            <KPICard title="Pending" value={String(s.pending)} icon={<KpiPendingOrdersIcon />} kpiType={1} />
-            <KPICard title="Processing" value={String(s.processing)} icon={<KpiOrdersBagIcon />} kpiType={2} />
+        <div className="grid min-w-0 grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-3 xl:grid-cols-5 min-[1920px]:gap-3">
             <KPICard
-                title="Ready for Dispatch"
-                value={String(s.ready_for_dispatch)}
+                title="Total Order Items"
+                value={String(s.total_items)}
+                icon={<KpiOrdersBagIcon />}
+                kpiType={1}
+            />
+            <KPICard
+                title="Delivered Items"
+                value={String(s.delivered_items)}
                 icon={<KpiDeliveredOrdersIcon />}
+                kpiType={2}
+            />
+            <KPICard
+                title="Exchange Items"
+                value={String(s.exchange_items)}
+                icon={<RefreshCw aria-hidden />}
                 kpiType={3}
             />
-            <KPICard title="Shipped" value={String(s.shipped)} icon={<KpiTotalRevenueIcon />} kpiType={4} />
             <KPICard
-                title="Returns"
-                value={String(s.returns)}
+                title="Returned Items"
+                value={String(s.returned_items)}
                 icon={<KpiReturnUndoIcon />}
                 kpiType={5}
             />
             <KPICard
-                title="Cancellations"
-                value={String(s.cancellations)}
+                title="Cancelled Items"
+                value={String(s.cancelled_items)}
                 icon={<XCircle aria-hidden />}
-                kpiType={3}
+                kpiType={4}
             />
         </div>
     );

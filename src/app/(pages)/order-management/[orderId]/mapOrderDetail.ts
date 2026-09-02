@@ -68,11 +68,20 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
   // genuinely pending unit invisible to both the cancel action and the create-shipment
   // picker (it looked "already accounted for" when it wasn't accounted for at all).
   const shippedQtyByLine = new Map<string, number>();
+  // Same walk, but keeping *which* state each unit is in rather than only how many left.
+  // A line's units can sit in several shipments at different steps, so this is a count per
+  // label, not a single status. Voided parcels are skipped for the same reason as above —
+  // their units are back in the pending pool and would otherwise be counted twice.
+  const stateQtyByLine = new Map<string, Map<string, number>>();
   for (const shipment of shipments) {
     if (shipment.kind === "cancelled") continue;
     for (const item of shipment.items) {
       if (!item.orderLineId) continue;
       shippedQtyByLine.set(item.orderLineId, (shippedQtyByLine.get(item.orderLineId) ?? 0) + item.quantity);
+      const byLabel = stateQtyByLine.get(item.orderLineId) ?? new Map<string, number>();
+      const label = shipment.stepper.currentStep;
+      byLabel.set(label, (byLabel.get(label) ?? 0) + item.quantity);
+      stateQtyByLine.set(item.orderLineId, byLabel);
     }
   }
 
@@ -84,6 +93,15 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
     // still needs someone to either ship or cancel it. Surfaced separately from
     // cancellableQuantity so the UI can flag it instead of silently folding it into "pending".
     const pendingQuantity = Math.max(0, line.quantity - shipped - cancelledQuantity);
+    // Shipment states first (they are the order the parcels appear in), then the two states
+    // that belong to no parcel. Quantities sum to line.quantity, so a partially-cancelled
+    // line reads e.g. "2 Delivered · 1 Cancelled" instead of silently showing only the part
+    // that shipped.
+    const statuses = [
+      ...(line.id ? (stateQtyByLine.get(line.id) ?? new Map<string, number>()) : new Map<string, number>()),
+    ].map(([label, quantity]) => ({ label, quantity }));
+    if (cancelledQuantity > 0) statuses.push({ label: "Cancelled", quantity: cancelledQuantity });
+    if (pendingQuantity > 0) statuses.push({ label: "Pending", quantity: pendingQuantity });
     return {
       product: line.variant_name ? `${line.product_name} (${line.variant_name})` : line.product_name,
       sku: line.sku ?? "—",
@@ -94,6 +112,7 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
       orderLineId: line.id,
       cancelledQuantity,
       pendingQuantity,
+      statuses,
       // Only unshipped, not-already-cancelled units can be cancelled. Mirrors the
       // backend's own NOTHING_TO_CANCEL guard.
       cancellableQuantity: pendingQuantity,
@@ -128,6 +147,18 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
     }))
     .filter((line) => line.quantity > 0);
 
+  // The counterpart to unfulfilledLines: units that will never be packed because they were
+  // cancelled. Excluded from unfulfilledLines above (correctly — they must not be offered for
+  // shipment), which left them with nowhere to appear at all.
+  const cancelledLines = detail.lines
+    .filter((line) => line.id && (line.cancelled_quantity ?? 0) > 0)
+    .map((line) => ({
+      orderLineId: line.id as string,
+      productName: line.variant_name ? `${line.product_name} (${line.variant_name})` : line.product_name,
+      sku: line.sku ?? null,
+      quantity: line.cancelled_quantity as number,
+    }));
+
   return {
     id: detail.invoice_number,
     placedDate,
@@ -158,6 +189,7 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
     orderType,
     shipments,
     unfulfilledLines,
+    cancelledLines,
     deliveryPincode: detail.customer.shipping_address?.postal_code ?? null,
     customOrder: detail.custom_order
       ? {

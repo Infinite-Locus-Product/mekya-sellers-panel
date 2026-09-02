@@ -7,6 +7,18 @@ import type { B2BFulfillmentStats, B2BOrderLineDisplay, OrderItem } from "./type
 import { B2BOrderLinesSection } from "./B2BOrderLinesSection"
 import { CancelLineItemAction } from "./CancelLineItemAction"
 
+/** Cancelled and still-unaddressed units have to be visually distinct from ones that moved,
+ *  otherwise the column reads as "all fine" at a glance. Matched on the label because the
+ *  shipment states come through as their display step, not a code. */
+function itemStatusClass(label: string): string {
+  const l = label.toLowerCase()
+  if (l === "cancelled" || l === "canceled") return "bg-red-100 text-red-800"
+  if (l === "returned") return "bg-orange-100 text-orange-800"
+  if (l === "delivered") return "bg-green-100 text-green-800"
+  if (l === "pending") return "bg-amber-100 text-amber-800"
+  return "bg-slate-100 text-slate-700"
+}
+
 export function OrderItemSection({
   orderType,
   items,
@@ -63,6 +75,7 @@ export function OrderItemSection({
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">Product</th>
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">SKU</th>
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">Quantity</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">Price</th>
                   <th className="p-3 text-right text-xs font-medium text-muted-foreground">Total</th>
                   {showActions ? (
@@ -72,8 +85,8 @@ export function OrderItemSection({
               </thead>
               <tbody>
                 {items.map((item) => {
-                  const cancelledQty = item.cancelledQuantity ?? 0
                   const cancellableQty = item.cancellableQuantity ?? 0
+                  const statuses = item.statuses ?? []
                   // Neither shipped nor cancelled — e.g. a packed parcel for this line was
                   // voided and only part of it was subsequently cancelled, so a remainder is
                   // still sitting unaddressed. Unlike the cancelled count, nothing else on this
@@ -98,9 +111,6 @@ export function OrderItemSection({
                       </div>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">{item.sku}</td>
-                    {/* Quantity only. The cancelled count is deliberately not repeated here —
-                        the order's own status badge at the top of the page already carries it.
-                        A stray pending remainder gets its own callout since nothing else does. */}
                     <td className="p-3 text-sm text-muted-foreground">
                       {item.quantity}
                       {hasStrayPending ? (
@@ -108,6 +118,29 @@ export function OrderItemSection({
                           ({pendingQty} needs action)
                         </span>
                       ) : null}
+                    </td>
+                    {/* Where the units actually are. The order badge alone was not enough: a
+                        "Partially Cancelled" order listed three items with no state on any of
+                        them, so the cancelled unit was indistinguishable from the delivered
+                        ones. Counts are shown only when the line is split, since "1 Delivered"
+                        on a single-unit line is just noise. */}
+                    <td className="p-3 text-sm">
+                      {statuses.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {statuses.map((s) => (
+                            <span
+                              key={s.label}
+                              className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${itemStatusClass(s.label)}`}
+                            >
+                              {statuses.length > 1 || s.quantity !== item.quantity
+                                ? `${s.quantity} ${s.label}`
+                                : s.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">{formatCurrency(item.price)}</td>
                     <td className="p-3 text-sm text-foreground text-right">{formatCurrency(item.total)}</td>
@@ -122,9 +155,7 @@ export function OrderItemSection({
                             onDone={onRefresh}
                           />
                         ) : (
-                          <span className="text-[11px] text-muted-foreground">
-                            {cancelledQty > 0 && cancelledQty >= item.quantity ? "Cancelled" : "—"}
-                          </span>
+                          <span className="text-[11px] text-muted-foreground">—</span>
                         )}
                       </td>
                     ) : null}
@@ -133,7 +164,7 @@ export function OrderItemSection({
                 })}
                 <tr className="border-t-2">
                   <td
-                    colSpan={showActions ? 5 : 4}
+                    colSpan={showActions ? 6 : 5}
                     className="p-3 text-sm font-semibold text-foreground text-right bg-[#E8E9E8]"
                   >
                     TOTAL

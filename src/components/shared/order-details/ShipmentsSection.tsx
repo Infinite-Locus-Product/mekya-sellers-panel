@@ -13,7 +13,7 @@ import {
   type WarehouseCandidate,
 } from "@/lib/api/orders"
 import { StatusBadge, type StatusVariant } from "@/components/shared/StatusBadge"
-import type { OrderDetailUnfulfilledLine, ShipmentDisplay , OrderCustomOrderLink } from "./types"
+import type { OrderDetailCancelledLine, OrderDetailUnfulfilledLine, ShipmentDisplay , OrderCustomOrderLink } from "./types"
 import { ShipmentActions } from "./ShipmentActions"
 import { CancelShipmentItemAction } from "./CancelShipmentItemAction"
 import { ConfirmCustomOrderFulfilledModal } from "./ConfirmCustomOrderFulfilledModal"
@@ -279,6 +279,40 @@ function MakeShipmentPanel({
   )
 }
 
+/** Units that were cancelled instead of shipped. They belong to no parcel, so the shipments
+ *  list would otherwise account for only part of the order: ORD-20260821-SDC1VN showed two
+ *  Delivered parcels and nothing else, which read as "everything was delivered" on an order
+ *  badged Partially Cancelled. Read-only — there is no action left to take on a cancelled
+ *  unit, it is here so the order adds up. */
+function CancelledLinesPanel({ lines }: Readonly<{ lines: OrderDetailCancelledLine[] }>) {
+  return (
+    <div className="rounded-md border border-border bg-white p-3 sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-xs font-medium text-foreground sm:text-sm">Not shipped</span>
+        <StatusBadge variant="canceled" className="w-auto px-3">
+          Cancelled
+        </StatusBadge>
+      </div>
+      <ul className="mt-3 divide-y divide-border border-t border-border">
+        {lines.map((line) => (
+          <li
+            key={line.orderLineId}
+            className="flex flex-wrap items-center justify-between gap-2 py-2"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-xs text-foreground sm:text-sm">{line.productName}</p>
+              {line.sku ? (
+                <p className="truncate text-[11px] text-muted-foreground">{line.sku}</p>
+              ) : null}
+            </div>
+            <span className="text-xs text-muted-foreground sm:text-sm">Qty: {line.quantity}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 /** One flat row per Saleor fulfillment — a status badge and a single contextual action button, no
  *  stepper. Orders with no shipments yet skip the "Shipments" card wrapper entirely and go
  *  straight to the item-selection + warehouse-CTA flow (matches the mockup). */
@@ -286,6 +320,7 @@ export function ShipmentsSection({
   shipments,
   orderId,
   unfulfilledLines,
+  cancelledLines,
   deliveryPincode,
   customOrder,
   orderStatus,
@@ -294,6 +329,8 @@ export function ShipmentsSection({
   shipments: ShipmentDisplay[]
   orderId: string
   unfulfilledLines?: OrderDetailUnfulfilledLine[]
+  /** Cancelled units — listed so the section covers every ordered unit, not just packed ones. */
+  cancelledLines?: OrderDetailCancelledLine[]
   deliveryPincode?: string | null
   /** Origin custom request, when the order came from one — forwarded to the fulfil panel. */
   customOrder?: OrderCustomOrderLink | null
@@ -318,6 +355,8 @@ export function ShipmentsSection({
             customOrder={customOrder}
             onDone={onRefresh}
           />
+        ) : cancelledLines && cancelledLines.length > 0 ? (
+          <CancelledLinesPanel lines={cancelledLines} />
         ) : (
           <div className="rounded-md border border-dashed border-border bg-white p-4">
             <p className="text-xs text-muted-foreground sm:text-sm">
@@ -433,6 +472,9 @@ export function ShipmentsSection({
               </div>
             );
           })}
+          {cancelledLines && cancelledLines.length > 0 ? (
+            <CancelledLinesPanel lines={cancelledLines} />
+          ) : null}
           {unfulfilledLines && unfulfilledLines.length > 0 ? (
             <MakeShipmentPanel
               orderId={orderId}

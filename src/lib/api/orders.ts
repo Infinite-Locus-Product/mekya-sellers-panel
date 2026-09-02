@@ -183,25 +183,32 @@ export async function listOrders(params?: ListOrdersParams): Promise<ListOrdersR
 
 // ─── GET /seller/orders/kpis ──────────────────────────────────────────────────
 
+/** Item counts, not order or shipment counts: every field is items x quantity, and counts
+ *  only the lines this seller owns. delivered/returned/exchange/cancelled are mutually
+ *  exclusive per unit, so they sum to at most total_items. */
 export interface OrderKpis {
-  pending: number;
-  processing: number;
-  /**
-   * Named `ready_for_dispatch` intentionally, even though every other endpoint (and the DB) now
-   * uses "ready" — this is a deliberate frontend display-label decision on the backend's KPI
-   * endpoint specifically. Do not rename this key.
-   */
-  ready_for_dispatch: number;
-  shipped: number;
-  /** Open return requests only (pending/approved/received/defect-check/QC-failed) — a to-do
-   *  count, not a lifetime total. Replaces the old returns_initiated + returns_in_process pair. */
-  returns: number;
-  /** Line-level cancellations recorded against this seller. */
-  cancellations: number;
+  /** Every unit this seller has sold, whatever state it is now in. */
+  total_items: number;
+  /** Units currently sitting delivered. A unit later returned moves out of this figure. */
+  delivered_items: number;
+  /** Units on QC-passed exchange requests. Pending or rejected exchanges count for nothing
+   *  here — they have not produced an exchanged item. */
+  exchange_items: number;
+  /** Units on QC-passed return requests, the same rule the returns analytics uses. */
+  returned_items: number;
+  /** Units cancelled, whether by Saleor or by a seller-side line cancellation. */
+  cancelled_items: number;
 }
 
-export async function getOrderKpis(): Promise<OrderKpis> {
-  const res = await authService.api.get<OrderKpis>(`/seller/orders/kpis`);
+/** `channel` scopes the figures so the B2C and B2B pages each report their own; omitted,
+ *  the backend counts both. */
+export async function getOrderKpis(channel?: "b2c" | "b2b"): Promise<OrderKpis> {
+  const query = new URLSearchParams();
+  if (channel) query.set("channel", channel);
+  const qs = query.toString();
+  const res = await authService.api.get<OrderKpis>(
+    `/seller/orders/kpis${qs ? `?${qs}` : ""}`,
+  );
   return res.data;
 }
 

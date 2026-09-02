@@ -14,6 +14,7 @@ function detail(
         items: Array<{ order_line_id?: string; quantity: number }>;
         saleor_status?: string;
         id?: string;
+        current_step?: string;
     }> = [],
 ): ApiOrderDetail {
     return {
@@ -42,7 +43,7 @@ function detail(
                 product_name: "P",
                 quantity: it.quantity,
             })),
-            stepper: { current_step: "processing", steps: [] },
+            stepper: { current_step: s.current_step ?? "processing", steps: [] },
         })),
     } as unknown as ApiOrderDetail;
 }
@@ -183,5 +184,93 @@ describe("mapOrderDetail — shipment display order", () => {
             ]),
         );
         expect(d.shipments?.every((s) => s.kind === "returned")).toBe(true);
+    });
+});
+
+describe("mapOrderDetail — per-item status", () => {
+    /** ORD-20260821-SDC1VN: 3 single-unit lines, 2 delivered in their own parcels and 1
+     *  cancelled. The order badged "Partially Cancelled" while the items table showed no
+     *  state at all, so the cancelled unit was indistinguishable from the delivered ones. */
+    it("gives a partially-cancelled order a distinct state per line", () => {
+        const d = mapApiOrderDetailToOrderDetailsData(
+            detail(
+                [
+                    { id: "L1", quantity: 1 },
+                    { id: "L2", quantity: 1 },
+                    { id: "L3", quantity: 1, cancelled_quantity: 1 },
+                ],
+                [
+                    { items: [{ order_line_id: "L1", quantity: 1 }], current_step: "Delivered" },
+                    { items: [{ order_line_id: "L2", quantity: 1 }], current_step: "Delivered" },
+                ],
+            ),
+        );
+        expect(d.items[0].statuses).toEqual([{ label: "Delivered", quantity: 1 }]);
+        expect(d.items[1].statuses).toEqual([{ label: "Delivered", quantity: 1 }]);
+        expect(d.items[2].statuses).toEqual([{ label: "Cancelled", quantity: 1 }]);
+    });
+
+    it("splits one line across the states its units are actually in", () => {
+        const d = mapApiOrderDetailToOrderDetailsData(
+            detail(
+                [{ id: "L1", quantity: 4, cancelled_quantity: 1 }],
+                [
+                    { items: [{ order_line_id: "L1", quantity: 2 }], current_step: "Delivered" },
+                    { items: [{ order_line_id: "L1", quantity: 1 }], current_step: "Shipped" },
+                ],
+            ),
+        );
+        expect(d.items[0].statuses).toEqual([
+            { label: "Delivered", quantity: 2 },
+            { label: "Shipped", quantity: 1 },
+            { label: "Cancelled", quantity: 1 },
+        ]);
+    });
+
+    it("sums units sharing a state rather than repeating the label", () => {
+        const d = mapApiOrderDetailToOrderDetailsData(
+            detail(
+                [{ id: "L1", quantity: 3 }],
+                [
+                    { items: [{ order_line_id: "L1", quantity: 1 }], current_step: "Delivered" },
+                    { items: [{ order_line_id: "L1", quantity: 2 }], current_step: "Delivered" },
+                ],
+            ),
+        );
+        expect(d.items[0].statuses).toEqual([{ label: "Delivered", quantity: 3 }]);
+    });
+
+    it("shows an untouched line as pending", () => {
+        const d = mapApiOrderDetailToOrderDetailsData(detail([{ id: "L1", quantity: 2 }]));
+        expect(d.items[0].statuses).toEqual([{ label: "Pending", quantity: 2 }]);
+    });
+
+    it("returns a voided parcel's units to pending instead of showing them twice", () => {
+        // A cancelled fulfillment hands its units back to quantityToFulfill, so counting it
+        // as a shipment state would claim the unit is both in a parcel and unshipped.
+        const d = mapApiOrderDetailToOrderDetailsData(
+            detail(
+                [{ id: "L1", quantity: 1 }],
+                [
+                    {
+                        items: [{ order_line_id: "L1", quantity: 1 }],
+                        saleor_status: "CANCELED",
+                        current_step: "Cancelled",
+                    },
+                ],
+            ),
+        );
+        expect(d.items[0].statuses).toEqual([{ label: "Pending", quantity: 1 }]);
+    });
+
+    it("accounts for every ordered unit exactly once", () => {
+        const d = mapApiOrderDetailToOrderDetailsData(
+            detail(
+                [{ id: "L1", quantity: 5, cancelled_quantity: 2 }],
+                [{ items: [{ order_line_id: "L1", quantity: 1 }], current_step: "Delivered" }],
+            ),
+        );
+        const counted = (d.items[0].statuses ?? []).reduce((n, s) => n + s.quantity, 0);
+        expect(counted).toBe(5);
     });
 });
