@@ -55,6 +55,28 @@ export interface OrderItem {
    *  remainder that still needs someone to ship or cancel it. Surfaced to the seller so an
    *  order sitting in the Pending filter has a visible reason instead of looking "done". */
   pendingQuantity?: number
+  /** Where this line's units actually stand, one entry per distinct state, quantities
+   *  summing to `quantity`. A line is not necessarily in one state: units can sit in
+   *  different shipments, and a partially-cancelled line has both cancelled and shipped
+   *  units. Without this the items table showed no state at all, so an order badged
+   *  "Partially Cancelled" listed items that read as though everything had shipped. */
+  statuses?: OrderItemStatusCount[]
+}
+
+/** A line's units that were cancelled rather than shipped. They belong to no parcel, so
+ *  without listing them separately the shipments view accounts for only part of the order —
+ *  ORD-20260821-SDC1VN showed two Delivered parcels and no trace of its cancelled unit. */
+export interface OrderDetailCancelledLine {
+  orderLineId: string
+  productName: string
+  sku: string | null
+  quantity: number
+}
+
+export interface OrderItemStatusCount {
+  /** Display label — a shipment's current step ("Delivered"), or "Cancelled"/"Pending". */
+  label: string
+  quantity: number
 }
 
 export interface FulfillmentTimelineItem {
@@ -211,6 +233,7 @@ export interface OrderDetailsData {
   /** Lines with quantity not yet attached to any shipment — drives the "make shipment with
    *  selected items" warehouse-splitting flow. Undefined for legacy/mock data. */
   unfulfilledLines?: OrderDetailUnfulfilledLine[]
+  cancelledLines?: OrderDetailCancelledLine[]
   /** Shipping address postal code — looks up warehouse candidates for a new shipment. */
   deliveryPincode?: string | null
   /** The custom-order request this order came from, when it came from one. Undefined for

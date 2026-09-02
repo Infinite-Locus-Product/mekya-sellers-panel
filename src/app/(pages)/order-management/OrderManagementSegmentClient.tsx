@@ -712,12 +712,12 @@ export function OrderManagementSegmentClient({
         };
     }, [isCustomOrdersView, customOrdersRefreshToken]);
 
-    // GET /seller/orders/kpis has no channel/segment query param — refetched on segment switch in
-    // case the backend scopes it implicitly, and whenever a returns action could change the counts.
+    // The item KPIs are channel-scoped, so the B2C and B2B pages each report their own
+    // figures. Refetched whenever a returns action could change the counts.
     useEffect(() => {
         if (isCustomOrdersView) return;
         let cancelled = false;
-        getOrderKpis()
+        getOrderKpis(segment)
             .then((kpis) => {
                 if (!cancelled) setOrderKpis(kpis);
             })
