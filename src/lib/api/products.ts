@@ -19,7 +19,7 @@ export interface ProductListItem {
   name: string;
   thumbnail_url: string | null;
   sku: string | null;
-  status: "published" | "draft";
+  status: "published" | "draft" | "inactive";
   article_number: string;
   category: string;
   sizes: string[];
@@ -122,7 +122,7 @@ export interface ProductDetail {
   variant_list: FlatVariant[];
   /** Color x size matrix — null for legacy products. */
   variants: { colors: ColorVariant[] } | null;
-  status: "published" | "draft";
+  status: "published" | "draft" | "inactive";
   metadata: Record<string, string>;
   is_legacy: boolean;
   product: ProductDefinitionDto;

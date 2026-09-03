@@ -40,14 +40,17 @@ function colorHex(name: string): string | undefined {
 
 // ─── Small presentational helpers ────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: "published" | "draft" }) {
-  return status === "published" ? (
-    <span className="rounded-full bg-[#DCFCE7] px-3 py-1 text-xs font-medium text-[#166534]">
-      Active
-    </span>
-  ) : (
+function StatusBadge({ status }: { status: "published" | "draft" | "inactive" }) {
+  if (status === "published") {
+    return (
+      <span className="rounded-full bg-[#DCFCE7] px-3 py-1 text-xs font-medium text-[#166534]">
+        Active
+      </span>
+    );
+  }
+  return (
     <span className="rounded-full bg-[#E5E7EB] px-3 py-1 text-xs font-medium text-[#374151]">
-      Draft
+      {status === "inactive" ? "Inactive" : "Draft"}
     </span>
   );
 }

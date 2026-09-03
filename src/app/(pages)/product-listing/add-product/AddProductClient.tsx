@@ -682,95 +682,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
     return result;
   }
 
-  const handleSaveDraft = async () => {
-    if (isSubmitting) return;
-    if (productId && !initialProduct) {
-      toast.error(
-        isFetchingProduct
-          ? "Product is still loading, please wait a moment."
-          : "Failed to load product. Please refresh the page."
-      );
-      return;
-    }
-    if (!productName.trim()) {
-      toast.error("Product name is required to save a draft.");
-      return;
-    }
-    if (!isEditMode && (!categorySlug || !subcategorySlug || !gender)) {
-      toast.error("Gender, category, and subcategory are required to save a draft.");
-      return;
-    }
-    if (!inventoryType) {
-      toast.error("Inventory type is required to save a draft.");
-      return;
-    }
-    if (!isLegacy && colorBlocks.length === 0) {
-      toast.error("Select at least one color");
-      return;
-    }
-    if (mrp && !isLegacy) {
-      const mrpNum = parseFloat(mrp);
-      if (!isNaN(mrpNum) && mrpNum > 0) {
-        for (const block of colorBlocks) {
-          for (const size of block.sizes) {
-            const cell = block.cells[size];
-            if (!cell) continue;
-            const label = `${block.color} / ${size}`;
-            if (channels !== "b2b" && cell.b2c_price && parseFloat(cell.b2c_price) > mrpNum) {
-              toast.error(`B2C price for "${label}" cannot exceed MRP`);
-              return;
-            }
-            if (channels !== "b2c" && cell.b2b_price && parseFloat(cell.b2b_price) > mrpNum) {
-              toast.error(`B2B price for "${label}" cannot exceed MRP`);
-              return;
-            }
-          }
-        }
-      }
-    }
-
-    setIsSubmitting(true);
-    try {
-      const imageUrls = images.length > 0
-        ? await uploadImagesToStorage(images.map((i) => i.file))
-        : [];
-      const uploadedColorImages = isLegacy ? {} : await uploadColorImages();
-      const draftDescription = description.trim() || productName.trim();
-      if (isEditMode && initialProduct) {
-        await updateProduct(initialProduct.id, {
-          product: { ...buildProductUpdateSection(), description: draftDescription },
-          variants: isLegacy ? undefined : buildVariantConfiguration(uploadedColorImages),
-          pricing: buildPricingUpdateSection(),
-          images: imageUrls.length > 0 ? imageUrls : undefined,
-          legacy_sizes: isLegacy ? [...selectedSizes] : undefined,
-        });
-        toast.success("Draft updated successfully.");
-      } else {
-        if (!pendingProductIdRef.current) {
-          const { priceOverrides } = buildOverridesFromColorBlocks(colorBlocks);
-          const created = await createProduct({
-            product: buildCreateProductDefinition(draftDescription),
-            variants: buildVariantConfiguration(uploadedColorImages),
-            pricing: { mrp: mrp ? parseFloat(mrp) : undefined, channels, overrides: priceOverrides },
-            images: imageUrls.length > 0 ? imageUrls : undefined,
-          });
-          pendingProductIdRef.current = created.product_id;
-          if (created.images_failed) {
-            toast.warning(`${created.images_failed} image(s) failed to attach. You can re-upload them after editing.`);
-          }
-        }
-        toast.success("Draft saved successfully.");
-      }
-      submittedRef.current = true;
-      try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
-      router.push("/product-listing");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save draft.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (productId && !initialProduct) {
@@ -1629,14 +1540,6 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       )}
 
       <div className="flex flex-wrap gap-2 justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={isSubmitting || isFetchingProduct}
-          onClick={handleSaveDraft}
-        >
-          {isSubmitting ? "Saving…" : "Save as Draft"}
-        </Button>
         <Button
           type="submit"
           form="add-product-form"
