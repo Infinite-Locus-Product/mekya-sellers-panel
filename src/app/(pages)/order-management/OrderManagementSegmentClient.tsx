@@ -847,7 +847,6 @@ export function OrderManagementSegmentClient({
         onExchangeChanged: () => setExchangeRefreshToken((t) => t + 1),
         onCancellationChanged: () => setCancellationsRefreshToken((t) => t + 1),
         onCancelledItemsChanged: () => setCancelledItemsRefreshToken((t) => t + 1),
-        onCustomOrderChanged: () => setCustomOrdersRefreshToken((t) => t + 1),
     });
 
     // "Orders" is fully filtered/sorted/paginated server-side, including the Orders subtab (sent

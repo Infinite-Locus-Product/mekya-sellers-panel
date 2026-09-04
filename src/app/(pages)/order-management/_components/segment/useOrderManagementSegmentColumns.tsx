@@ -27,7 +27,6 @@ import { CUSTOM_ORDER_REQUEST_STATUS_LABEL, type CustomOrderRequestRow } from ".
 import type { ExchangeOrderRow } from "./exchangeOrderTypes";
 import type { CancellationRow } from "./cancellationTypes";
 import { CancellationReceivedAction } from "./CancellationReceivedAction";
-import { MarkDemandFulfilledAction } from "./MarkDemandFulfilledAction";
 
 const CANCELLED_ITEM_SETTLEMENT_LABEL: Record<CancelledItemSettlementStatus, string> = {
     not_applicable: "No refund due",
@@ -129,7 +128,6 @@ export interface UseOrderManagementSegmentColumnsParams {
     readonly onExchangeChanged: () => void;
     readonly onCancellationChanged: () => void;
     readonly onCancelledItemsChanged: () => void;
-    readonly onCustomOrderChanged: () => void;
 }
 
 export function useOrderManagementSegmentColumns({
@@ -145,7 +143,6 @@ export function useOrderManagementSegmentColumns({
     onToggleOrderExpand,
     onCancellationChanged,
     onCancelledItemsChanged,
-    onCustomOrderChanged,
 }: UseOrderManagementSegmentColumnsParams): {
     customOrdersColumns: TableColumn<CustomOrderRequestRow>[];
     allOrdersColumns: TableColumn<AllOrder>[];
@@ -169,8 +166,12 @@ export function useOrderManagementSegmentColumns({
             {
                 key: "id",
                 header: "Custom Order ID",
+                // The request's own CUST- reference. This rendered the raw UUID before, which
+                // is unreadable and unquotable; the UUID stays the value the API is keyed on.
                 cell: (row) => (
-                    <span className="text-[11px] font-medium text-foreground min-[1920px]:text-sm">{row.id}</span>
+                    <span className="text-[11px] font-medium text-foreground min-[1920px]:text-sm">
+                        {row.customDisplayId ?? row.id}
+                    </span>
                 ),
             },
             {
@@ -261,14 +262,11 @@ export function useOrderManagementSegmentColumns({
                                 <span className="absolute -bottom-1 left-[68%] h-2 w-2 -translate-x-1/2 rotate-45 bg-black" />
                             </div>
                         </div>
-                        {row.status === "buyer_confirmed" && row.linkedSaleorOrderId ? (
-                            <MarkDemandFulfilledAction orderId={row.linkedSaleorOrderId} onDone={onCustomOrderChanged} />
-                        ) : null}
                     </div>
                 ),
             },
         ],
-        [openCustomOrderDetails, onCustomOrderChanged]
+        [openCustomOrderDetails]
     );
 
     const expandColumn: TableColumn<AllOrder> = useMemo(

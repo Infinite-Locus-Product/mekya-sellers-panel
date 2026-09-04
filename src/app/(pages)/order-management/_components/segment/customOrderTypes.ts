@@ -27,6 +27,9 @@ export const CUSTOM_ORDER_REQUEST_STATUS_LABEL: Record<CustomOrderRequestStatus,
 
 export interface CustomOrderRequestRow {
     id: string;
+    /** Human reference for the request itself ("CUST-20260902-K8M2N1"). Shown in place of
+     *  the raw UUID, which is what the ID column used to render. */
+    customDisplayId: string | null;
     status: CustomOrderRequestStatus;
     saleorOrderId: string;
     displayOrderId: string | null;
@@ -47,6 +50,7 @@ export interface CustomOrderRequestRow {
 export function mapApiCustomOrderRequest(r: ApiCustomOrderRequest): CustomOrderRequestRow {
     return {
         id: r.id,
+        customDisplayId: r.custom_display_id ?? null,
         status: r.custom_status,
         saleorOrderId: r.saleor_order_id,
         displayOrderId: r.display_order_id ?? null,

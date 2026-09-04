@@ -159,14 +159,18 @@ function CustomOrderDetailsModalInner({
         <div className="flex max-h-[85vh] flex-col gap-4 overflow-hidden p-1">
             <DialogHeader className="shrink-0 space-y-1 text-left">
                 <DialogTitle className="text-lg font-semibold">Custom order request</DialogTitle>
+{/* The request's own CUST- reference. The Saleor order used to be printed here too,
+                    falling back to the raw base64 global ID when no number existed — opaque, and
+                    absent entirely until buyer-confirm creates an order. The linked order stays,
+                    as its readable ORD- number, since that is what a seller follows through to
+                    the real order once one exists. */}
                 <p className="text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">{data.id}</span>
-                    {" · Saleor order "}
-                    <span className="font-medium text-foreground">{data.saleorOrderNumber ?? data.saleorOrderId}</span>
+                    <span className="font-medium text-foreground">
+                        {data.customDisplayId ?? data.id}
+                    </span>
                     {data.linkedDisplayOrderId ? (
                         <>
-                            {" "}
-                            · Linked order{" "}
+                            {" · Linked order "}
                             <span className="font-medium text-foreground">{data.linkedDisplayOrderId}</span>
                         </>
                     ) : null}

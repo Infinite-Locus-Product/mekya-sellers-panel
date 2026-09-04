@@ -1553,6 +1553,9 @@ export type CustomOrderRequestStatus =
 
 export interface ApiCustomOrderRequest {
   id: string;
+  /** This request's own reference, "CUST-20260902-K8M2N1" — derived from its UUID, so it
+   *  exists from intake and does not depend on a Saleor order being created. */
+  custom_display_id?: string | null;
   saleor_order_id: string;
   display_order_id?: string | null;
   saleor_order_number?: string | null;
