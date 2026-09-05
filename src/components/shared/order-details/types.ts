@@ -213,6 +213,20 @@ export interface OrderCustomOrderLink {
   customerEmail: string | null
 }
 
+/** Where a replacement order came from. Absent on ordinary orders — a replacement is only
+ *  distinguishable by this, since on its own it looks like any other order with a zero
+ *  total, the goods having been paid for on the original order. */
+export interface OrderExchangeLink {
+  /** This order's own id; an exchange and its replacement order share one identifier. */
+  exchangeId: string | null
+  /** The order the exchange was raised against. */
+  originalOrderId: string | null
+  /** The request holding the item that was sent back. */
+  returnId: string | null
+  itemName: string | null
+  sku: string | null
+}
+
 export interface OrderDetailsData {
   id: string
   placedDate: string
@@ -239,6 +253,8 @@ export interface OrderDetailsData {
   /** The custom-order request this order came from, when it came from one. Undefined for
    *  ordinary orders, which fulfil in one click with no confirmation. */
   customOrder?: OrderCustomOrderLink | null
+  /** The exchange this order replaces, when it is a replacement. Undefined otherwise. */
+  exchange?: OrderExchangeLink | null
   invoiceNumber?: string
   orderNumber?: string
   channel?: "b2b" | "b2c"

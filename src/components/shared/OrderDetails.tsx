@@ -88,6 +88,37 @@ export function OrderDetails({
             <p className="text-sm text-muted-foreground">
               Placed on {order.placedDate}, {order.placedTime}
             </p>
+            {/* A replacement order is otherwise indistinguishable from an ordinary one —
+                same shape, same lines, a total that is zero only because the goods were
+                already paid for on the original order. This says where it came from. */}
+            {order.exchange ? (
+              <div className="mt-2 text-sm">
+                <dl className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                  <span className="font-medium text-foreground">Exchange replacement</span>
+                  {order.exchange.originalOrderId ? (
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground">Raised against</dt>
+                      <dd className="font-medium text-foreground">{order.exchange.originalOrderId}</dd>
+                    </div>
+                  ) : null}
+                  {order.exchange.returnId ? (
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground">Exchange request</dt>
+                      <dd className="font-medium text-foreground">{order.exchange.returnId}</dd>
+                    </div>
+                  ) : null}
+                  {order.exchange.itemName ? (
+                    <div className="flex gap-2">
+                      <dt className="text-muted-foreground">Item exchanged</dt>
+                      <dd className="font-medium text-foreground">
+                        {order.exchange.itemName}
+                        {order.exchange.sku ? ` (${order.exchange.sku})` : ""}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-2">

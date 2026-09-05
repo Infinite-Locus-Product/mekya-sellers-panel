@@ -455,6 +455,21 @@ export interface ApiOrderDetail {
   /** Set only when this order was created by a buyer confirming a custom-order request.
    *  Null for ordinary orders, which is what keeps the fulfilment confirmation off them. */
   custom_order?: ApiOrderCustomOrderLink | null;
+  /** Set only when this order is an exchange replacement. Null for ordinary orders. */
+  exchange?: ApiOrderExchangeLink | null;
+}
+
+/** Where a replacement order came from: the order the exchange was raised against, and the
+ *  request holding the item that was sent back. */
+export interface ApiOrderExchangeLink {
+  exchange_id: string | null;
+  return_id: string | null;
+  original_order_id: string | null;
+  original_saleor_order_id?: string | null;
+  item_name: string | null;
+  sku: string | null;
+  status?: string | null;
+  settlement_status?: string | null;
 }
 
 export interface ApiOrderCustomOrderLink {
