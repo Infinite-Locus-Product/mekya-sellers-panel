@@ -199,6 +199,15 @@ export function mapApiOrderDetailToOrderDetailsData(detail: ApiOrderDetail): Ord
           customerEmail: detail.custom_order.customer_email,
         }
       : null,
+    exchange: detail.exchange
+      ? {
+          exchangeId: detail.exchange.exchange_id,
+          originalOrderId: detail.exchange.original_order_id,
+          returnId: detail.exchange.return_id,
+          itemName: detail.exchange.item_name,
+          sku: detail.exchange.sku,
+        }
+      : null,
     invoiceNumber: detail.invoice_number,
     orderNumber: detail.order_number,
     channel: isB2B ? "b2b" : "b2c",
