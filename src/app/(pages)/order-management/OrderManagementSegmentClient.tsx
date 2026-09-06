@@ -642,9 +642,18 @@ export function OrderManagementSegmentClient({
     useEffect(() => {
         setCustomOrdersPageRef.current = customOrdersPagination.setPage;
     }, [customOrdersPagination.setPage]);
+    // Narrowing the list has to return to page 1, or a search run from page 2 asks the API
+    // for the second page of a result set that may only have one -- and renders empty.
     useEffect(() => {
         setCustomOrdersPageRef.current(1);
-    }, [customOrderSubtab, customStatusesParam, customOrdersPaymentStatusParam]);
+    }, [
+        customOrderSubtab,
+        customStatusesParam,
+        customOrdersPaymentStatusParam,
+        debouncedSearch,
+        allViewDateFrom,
+        allViewDateTo,
+    ]);
 
     useEffect(() => {
         if (!isCustomOrdersView) return;
@@ -660,6 +669,9 @@ export function OrderManagementSegmentClient({
                   : (customOrderSubtab as CustomOrderRequestStatus),
             custom_statuses: customStatusesParam,
             payment_status: customOrdersPaymentStatusParam,
+            search: debouncedSearch.trim() || undefined,
+            date_from: allViewDateFrom,
+            date_to: allViewDateTo,
             limit: customOrdersPagination.pageSize,
             offset: customOrdersPagination.startIndex,
         })
@@ -680,6 +692,9 @@ export function OrderManagementSegmentClient({
         customOrderSubtab,
         customStatusesParam,
         customOrdersPaymentStatusParam,
+        debouncedSearch,
+        allViewDateFrom,
+        allViewDateTo,
         customOrdersPagination.pageSize,
         customOrdersPagination.startIndex,
         customOrdersRefreshToken,
@@ -877,12 +892,12 @@ export function OrderManagementSegmentClient({
     // Scoped Status/Type filter options for the toolbar — computed per active tab (and, for
     // Status, per sub-tab too) so the toolbar itself stays generic/tab-agnostic.
     const toolbarStatusFilterOptions = useMemo(() => {
-        if (showsOrdersList) return getOrderStatusFilterOptions(orderSubtab);
+        if (showsOrdersList) return getOrderStatusFilterOptions(orderSubtab, segment);
         if (isExchangeView) return getExchangeStatusFilterOptions(exchangeSubtab);
         if (showsReturnsList) return getReturnStatusFilterOptions(returnSubtab);
         if (isCustomOrdersView) return getCustomOrderStatusFilterOptions(customOrderSubtab);
         return undefined;
-    }, [showsOrdersList, isExchangeView, showsReturnsList, isCustomOrdersView, orderSubtab, exchangeSubtab, returnSubtab, customOrderSubtab]);
+    }, [showsOrdersList, isExchangeView, showsReturnsList, isCustomOrdersView, orderSubtab, exchangeSubtab, returnSubtab, customOrderSubtab, segment]);
 
     const toolbarTypeFilterOptions = useMemo(() => {
         if (showsReturnsList) return RETURN_TYPE_FILTER_OPTIONS;
@@ -1035,7 +1050,7 @@ export function OrderManagementSegmentClient({
             {isCustomOrdersView ? (
                 <CustomOrdersKpiGrid stats={customOrderKpis} />
             ) : (
-                <OrderManagementKpiGrid stats={orderKpis} />
+                <OrderManagementKpiGrid stats={orderKpis} segment={segment} />
             )}
 
             <Card className="min-w-0 overflow-hidden">

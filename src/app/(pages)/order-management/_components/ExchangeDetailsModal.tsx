@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { StatusBadge, type StatusVariant } from "@/components/shared/StatusBadge"
 import type { ExchangeOrderStatus, ExchangeSettlementStatus } from "@/lib/api/orders"
+import { EXCHANGE_STATUS_LABEL } from "./segment/constants"
 import { X } from "lucide-react"
 
 export interface ExchangeDetailsData {
@@ -38,14 +39,7 @@ const STATUS_VARIANT: Record<ExchangeOrderStatus, StatusVariant> = {
   ready: "pending",
   shipped: "shipped",
   delivered: "delivered",
-}
-
-const STATUS_LABEL: Record<ExchangeOrderStatus, string> = {
-  pending: "Pending",
-  processing: "Processing",
-  ready: "Ready for pickup",
-  shipped: "Shipped",
-  delivered: "Delivered",
+  cancelled: "canceled",
 }
 
 function formatDateTime(iso: string | null): string {
@@ -110,7 +104,7 @@ export function ExchangeDetailsModal({ open, onOpenChange, data }: ExchangeDetai
                 <div>
                   <dt className="text-muted-foreground">Status</dt>
                   <dd className="mt-0.5">
-                    <StatusBadge variant={STATUS_VARIANT[data.status]}>{STATUS_LABEL[data.status]}</StatusBadge>
+                    <StatusBadge variant={STATUS_VARIANT[data.status]}>{EXCHANGE_STATUS_LABEL[data.status]}</StatusBadge>
                   </dd>
                 </div>
                 <div>

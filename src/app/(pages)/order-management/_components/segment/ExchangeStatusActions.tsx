@@ -6,8 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { updateExchangeStatus, type ExchangeOrderStatus } from "@/lib/api/orders";
+import { EXCHANGE_STATUS_LABEL } from "./constants";
 
-type ManualExchangeStatus = Exclude<ExchangeOrderStatus, "pending" | "processing">;
+/** "cancelled" is excluded alongside the two entry states: it is terminal and reached only
+ * by cancelling the replacement order's lines, never by advancing the exchange from here. */
+type ManualExchangeStatus = Exclude<
+    ExchangeOrderStatus,
+    "pending" | "processing" | "cancelled"
+>;
 
 /** Pending has no manual advance on purpose: a replacement leaves Pending by having its
  * shipment created (which is where the warehouse is chosen), exactly as an ordinary order
@@ -18,14 +24,8 @@ const NEXT_STATUS: Record<ExchangeOrderStatus, ManualExchangeStatus | null> = {
     ready: "shipped",
     shipped: "delivered",
     delivered: null,
-};
-
-const STATUS_LABEL: Record<ExchangeOrderStatus, string> = {
-    pending: "Pending",
-    processing: "Processing",
-    ready: "Ready for pickup",
-    shipped: "Shipped",
-    delivered: "Delivered",
+    // Terminal: the replacement order was cancelled, so there is no shipment left to advance.
+    cancelled: null,
 };
 
 /** Single "advance to next stage" action for an exchange order's own status machine, mirroring
@@ -61,7 +61,7 @@ export function ExchangeStatusActions({
         setIsSubmitting(true);
         try {
             await updateExchangeStatus(exchangeId, { status: next, ...extra });
-            toast.success(`Exchange marked as ${STATUS_LABEL[next].toLowerCase()}`);
+            toast.success(`Exchange marked as ${EXCHANGE_STATUS_LABEL[next].toLowerCase()}`);
             setModalOpen(false);
             onDone?.();
         } catch (err) {
@@ -180,7 +180,7 @@ export function ExchangeStatusActions({
             disabled={isSubmitting}
             onClick={() => advance()}
         >
-            {isSubmitting ? "Updating…" : `Mark ${STATUS_LABEL[next]}`}
+            {isSubmitting ? "Updating…" : `Mark ${EXCHANGE_STATUS_LABEL[next]}`}
         </Button>
     );
 }

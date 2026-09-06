@@ -136,22 +136,62 @@ const ORDER_STATUS_LABELS_BY_SUBTAB: Record<OrderSubtabId, readonly string[]> = 
     ],
 };
 
+/** Statuses a return can leave behind. Offered on B2C only — see below. */
+const RETURNED_STATUS_LABELS: readonly string[] = ["Returned", "Partially Returned"];
+
 export function getOrderStatusFilterOptions(
-    subtab: OrderSubtabId
+    subtab: OrderSubtabId,
+    segment: "b2c" | "b2b" = "b2c"
 ): ReadonlyArray<{ label: string; value: string }> {
-    return (ORDER_STATUS_LABELS_BY_SUBTAB[subtab] ?? ALL_ORDER_STATUS_LABELS).map(orderStatusOption);
+    const labels = ORDER_STATUS_LABELS_BY_SUBTAB[subtab] ?? ALL_ORDER_STATUS_LABELS;
+    // The B2B section has no Returns tab (see getOrderManagementTabs), so a seller cannot
+    // raise or work a return from there and the two returned statuses read as dead options.
+    //
+    // Note this hides the filter, not the data: a B2B order that *is* returned still appears
+    // in the list with its Returned badge, it just can't be filtered to. Returns against B2B
+    // orders do exist — they are raised elsewhere (admin portal / API) — so if that becomes
+    // something sellers need to find, this is the line to revisit.
+    const filtered =
+        segment === "b2b" ? labels.filter((l) => !RETURNED_STATUS_LABELS.includes(l)) : labels;
+    return filtered.map(orderStatusOption);
 }
 
 // ─── Exchange Status filter — the replacement order's shipment lifecycle ────────────────────
 // A replacement is a real Saleor order now, so it starts Pending (QC passed, shipment owed) and
 // advances on the same pipeline as Orders. An exchange is still a single item, so there are no
 // "Partially X" states, and Returned/Cancelled remain outside the DB-enforced enum.
+/** What an exchange's status is *called* — badges, detail panels, action buttons.
+ *
+ * The Exchange table used to render `row.status` itself, so the badge read the raw enum
+ * code: a replacement sitting at the pickup stage showed a lowercase "ready" rather than
+ * the stage's name, while the Orders tab beside it called the same stage "Ready for
+ * Pickup". Two copies of this map already existed (the details modal and the status
+ * action button); this is the one they all share, so the four places an exchange status
+ * appears cannot drift apart again.
+ *
+ * Deliberately the Orders vocabulary, not the filter's below: the badge sits in the same
+ * column position as the Orders tab's own status badge and must read the same way. */
+export const EXCHANGE_STATUS_LABEL: Record<ExchangeOrderStatus, string> = {
+    pending: "Pending",
+    processing: "Processing",
+    ready: "Ready for Pickup",
+    shipped: "Shipped",
+    delivered: "Delivered",
+    cancelled: "Cancelled",
+};
+
+/** What the *filter control* calls each status — deliberately different from the badge.
+ *
+ * Same split, and the same reason, as ORDER_STATUS_DISPLAY_LABEL above: the filter says
+ * "Packed" where the pipeline says "Ready for Pickup". Only the label differs; the value
+ * sent to the API is the real code either way. */
 const EXCHANGE_STATUS_DISPLAY_LABEL: Record<ExchangeOrderStatus, string> = {
     pending: "Pending",
     processing: "Processing",
     ready: "Packed",
     shipped: "Shipped",
     delivered: "Completed",
+    cancelled: "Cancelled",
 };
 
 const ALL_EXCHANGE_STATUSES: readonly ExchangeOrderStatus[] = [
@@ -160,6 +200,7 @@ const ALL_EXCHANGE_STATUSES: readonly ExchangeOrderStatus[] = [
     "ready",
     "shipped",
     "delivered",
+    "cancelled",
 ];
 
 /** Exchange sub-tabs share the Orders vocabulary (ORDER_SUBTABS aliases ORDERS_TAB_SUBTABS).
@@ -170,7 +211,10 @@ const EXCHANGE_STATUSES_BY_SUBTAB: Partial<Record<OrderSubtabId, readonly Exchan
     processing: ["processing"],
     ready: ["ready"],
     shipped: ["shipped"],
-    delivered: ["delivered"],
+    // The "Completed" tab means every terminal outcome, exactly as it does for Orders (see
+    // ORDER_STATUS_LABELS_BY_SUBTAB.delivered) — a cancelled exchange is finished, not owed.
+    // Leaving it out is what kept a dead exchange sitting in the seller's Pending queue.
+    delivered: ["delivered", "cancelled"],
 };
 
 export function getExchangeStatusFilterOptions(

@@ -51,7 +51,10 @@ export function getSegmentViewCopy(segment: "b2c" | "b2b", tab: OrderManagementT
                 cardTitle: "Cancellation",
                 cardDescription:
                     "Cancelled Orders covers whole orders and RTOs; Cancelled Items covers individual line items cancelled before dispatch",
-                searchPlaceholder,
+                // Its own placeholder rather than the shared one: a cancellation row carries no
+                // customer name (it is not on the row or on order_metadata), so promising it
+                // here offered a search that always returned nothing.
+                searchPlaceholder: "Search by order ID, product, or SKU",
                 emptyMessage: "No cancelled orders match your filters",
             };
         case "custom":
