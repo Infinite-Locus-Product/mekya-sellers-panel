@@ -1134,6 +1134,13 @@ export async function listExchangeOrders(params?: {
   statuses?: ExchangeOrderStatus[];
   /** Bucketed settlement-status filter — "pending" verbatim, "completed" maps to "settled". */
   payment_status?: "pending" | "completed";
+  /** Matches exchange id, original order id, customer, item name or SKU — server-side, so it
+   *  filters every match rather than the page already fetched. */
+  search?: string;
+  /** Inclusive, YYYY-MM-DD. */
+  date_from?: string;
+  /** Inclusive, YYYY-MM-DD. */
+  date_to?: string;
   limit?: number;
   offset?: number;
 }): Promise<ListExchangeOrdersResponse> {
@@ -1141,6 +1148,9 @@ export async function listExchangeOrders(params?: {
   if (params?.status) query.set("status", params.status);
   for (const s of params?.statuses ?? []) query.append("statuses", s);
   if (params?.payment_status) query.set("payment_status", params.payment_status);
+  if (params?.search?.trim()) query.set("search", params.search.trim());
+  if (params?.date_from) query.set("date_from", params.date_from);
+  if (params?.date_to) query.set("date_to", params.date_to);
   if (params?.limit) query.set("limit", String(params.limit));
   if (params?.offset !== undefined) query.set("offset", String(params.offset));
   const qs = query.toString();

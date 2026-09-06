@@ -459,6 +459,9 @@ export function OrderManagementSegmentClient({
                   : exchangeSubtab,
             statuses: exchangeStatusesParam,
             payment_status: exchangePaymentStatusParam,
+            search: debouncedSearch.trim() || undefined,
+            date_from: allViewDateFrom,
+            date_to: allViewDateTo,
             limit: exchangePagination.pageSize,
             offset: exchangePagination.startIndex,
         })
@@ -482,31 +485,16 @@ export function OrderManagementSegmentClient({
         exchangePagination.pageSize,
         exchangePagination.startIndex,
         exchangeRefreshToken,
+        debouncedSearch,
+        allViewDateFrom,
+        allViewDateTo,
     ]);
 
-    // Status is filtered server-side (see the effect above); the endpoint has no channel/search/date
-    // query params, so those stay filtered client-side on the fetched page.
-    const displayedExchangeOrders = useMemo(() => {
-        let result = exchangeOrders;
-        const q = debouncedSearch.trim().toLowerCase();
-        if (q) {
-            result = result.filter(
-                (r) =>
-                    r.id.toLowerCase().includes(q) ||
-                    r.originalOrderId.toLowerCase().includes(q) ||
-                    r.customerName.toLowerCase().includes(q)
-            );
-        }
-        if (allViewDateFrom || allViewDateTo) {
-            result = result.filter((r) => {
-                const d = r.createdAt.slice(0, 10);
-                if (allViewDateFrom && d < allViewDateFrom) return false;
-                if (allViewDateTo && d > allViewDateTo) return false;
-                return true;
-            });
-        }
-        return result;
-    }, [exchangeOrders, debouncedSearch, allViewDateFrom, allViewDateTo]);
+    // Status, search and the date range are all filtered server-side now (see the effect
+    // above). They used to be applied here, to the page already fetched, which meant a match
+    // sitting on page 2 simply never appeared — the filters looked like they only worked on
+    // whichever page you happened to be on.
+    const displayedExchangeOrders = exchangeOrders;
 
     // Type/Payment Status only apply to the "orders" sub-resource (whole cancelled orders/RTOs)
     // — "items" (individual cancelled lines) has no Cancelled/RTO distinction and no payment
