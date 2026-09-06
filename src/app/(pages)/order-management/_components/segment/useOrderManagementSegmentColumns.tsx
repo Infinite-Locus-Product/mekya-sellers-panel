@@ -20,7 +20,7 @@ import type {
     CancelledItemSettlementStatus,
     ExchangeOrderStatus,
 } from "@/lib/api/orders";
-import { ORDER_PAYMENT_PILL_BASE } from "./constants";
+import { EXCHANGE_STATUS_LABEL, ORDER_PAYMENT_PILL_BASE } from "./constants";
 import { CancelledItemSettlementAction } from "./CancelledItemSettlementAction";
 import { getOrderProductNames } from "./helpers";
 import { CUSTOM_ORDER_REQUEST_STATUS_LABEL, type CustomOrderRequestRow } from "./customOrderTypes";
@@ -50,6 +50,7 @@ const EXCHANGE_STATUS_VARIANT: Record<ExchangeOrderStatus, StatusVariant> = {
     ready: "pending",
     shipped: "shipped",
     delivered: "delivered",
+    cancelled: "canceled",
 };
 
 const CUSTOM_ORDER_REQUEST_STATUS_VARIANT: Record<CustomOrderRequestRow["status"], StatusVariant> = {
@@ -676,7 +677,9 @@ export function useOrderManagementSegmentColumns({
                 header: "Status",
                 className: TABLE_BADGE_PILL_COLUMN_CLASS,
                 cell: (row) => (
-                    <StatusBadge variant={EXCHANGE_STATUS_VARIANT[row.status]}>{row.status}</StatusBadge>
+                    <StatusBadge variant={EXCHANGE_STATUS_VARIANT[row.status]}>
+                        {EXCHANGE_STATUS_LABEL[row.status]}
+                    </StatusBadge>
                 ),
             },
             {

@@ -1080,7 +1080,17 @@ export async function shipBackReturn(
 
 /** An exchange replacement starts "pending" (QC passed, shipment owed) and advances through
  * the ordinary order pipeline — picking a warehouse moves it to "processing". */
-export type ExchangeOrderStatus = "pending" | "processing" | "ready" | "shipped" | "delivered";
+/** An exchange follows its replacement order's pipeline. "cancelled" is terminal and
+ * never set by hand — it arrives when every line of the replacement order is cancelled
+ * (see _mirror_exchange_status server-side), which is why UpdateExchangeStatusBody
+ * below still excludes it from what a seller can mark. */
+export type ExchangeOrderStatus =
+    | "pending"
+    | "processing"
+    | "ready"
+    | "shipped"
+    | "delivered"
+    | "cancelled";
 export type ExchangeSettlementStatus = "not_applicable" | "pending" | "settled";
 
 export interface ApiExchangeOrder {
