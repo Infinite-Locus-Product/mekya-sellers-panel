@@ -42,6 +42,24 @@ describe("validatePersonalForm", () => {
     expect(validatePersonalForm(form, saved)).toEqual({ company: "Company Name is required." })
   })
 
+  it("blocks actively clearing last name the same way", () => {
+    const saved = personal({ lastName: "Seller" })
+    const form = personal({ lastName: "" })
+    expect(validatePersonalForm(form, saved)).toEqual({ lastName: "Last Name is required." })
+  })
+
+  it("blocks actively clearing address the same way", () => {
+    const saved = personal({ address: "12 MG Road" })
+    const form = personal({ address: "  " })
+    expect(validatePersonalForm(form, saved)).toEqual({ address: "Address is required." })
+  })
+
+  it("does NOT block saving when last name was already blank and untouched", () => {
+    const saved = personal({ lastName: "" })
+    const form = personal({ lastName: "", company: "Renamed Co" })
+    expect(validatePersonalForm(form, saved)).toEqual({})
+  })
+
   it("does NOT block saving an unrelated field when a required field was already blank and untouched", () => {
     // Account onboarded before these fields were required — company was
     // already blank in the saved state, and the user isn't touching it here,
