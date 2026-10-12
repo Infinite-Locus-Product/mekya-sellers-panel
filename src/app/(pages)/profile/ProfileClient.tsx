@@ -59,14 +59,15 @@ const PASSWORD_REQUIREMENTS = [
 const PHONE_DIGITS_RE = /^\d{10}$/
 const AVATAR_FORMAT_ERROR = `Invalid file. Please upload a JPG, JPEG, or PNG image under ${MAX_IMAGE_SIZE_MB} MB.`
 
-type PersonalFieldError = "firstName" | "phone" | "company"
+type PersonalFieldError = "firstName" | "lastName" | "phone" | "company" | "address"
 
 // `saved` is the last-persisted state. A required field is only flagged when
 // clearing it would actually destroy existing data — an account onboarded
-// before these fields were required (legitimately blank first name/phone/
-// company) isn't blocked from saving an unrelated edit (e.g. address) just
-// because it hasn't been backfilled yet. Actively clearing a field that
-// currently holds a value is still caught, same as typing an invalid phone.
+// before these fields were required (legitimately blank) isn't blocked from
+// saving an unrelated edit just because it hasn't been backfilled yet.
+// Actively clearing a field that currently holds a value is caught here:
+// the backend ignores a blank value for these fields and keeps the old one,
+// so letting it through would show a false "saved" success.
 export function validatePersonalForm(
   form: PersonalFormState,
   saved: PersonalFormState
@@ -74,6 +75,9 @@ export function validatePersonalForm(
   const errors: Partial<Record<PersonalFieldError, string>> = {}
   if (!form.firstName.trim() && saved.firstName.trim()) {
     errors.firstName = "First Name is required."
+  }
+  if (!form.lastName.trim() && saved.lastName.trim()) {
+    errors.lastName = "Last Name is required."
   }
   if (form.phone.trim()) {
     if (!PHONE_DIGITS_RE.test(form.phone.trim())) {
@@ -84,6 +88,9 @@ export function validatePersonalForm(
   }
   if (!form.company.trim() && saved.company.trim()) {
     errors.company = "Company Name is required."
+  }
+  if (!form.address.trim() && saved.address.trim()) {
+    errors.address = "Address is required."
   }
   return errors
 }
@@ -452,7 +459,6 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
     if (activeTab === "security") return "Security"
     return "Profile"
   }, [activeTab])
-  const isSellerProfile = useMemo(() => /seller/i.test(profileData.role), [profileData.role])
   const sellerCompanyName = profileData.companyName ?? personalForm.company
 
   return (
@@ -544,7 +550,7 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                   </div>
                   <div className="flex flex-col gap-2 text-start">
                     <h2 className="text-lg font-bold text-foreground sm:text-xl">{profileData.name}</h2>
-                    {isSellerProfile && sellerCompanyName ? (
+                    {sellerCompanyName ? (
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
                         <span>{sellerCompanyName}</span>
                       </div>
@@ -694,7 +700,14 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                       value={personalForm.lastName}
                       onChange={(e) => updatePersonalField("lastName", e.target.value)}
                       disabled={!isPersonalEditing}
+                      aria-invalid={Boolean(personalErrors.lastName)}
+                      aria-describedby={personalErrors.lastName ? "last-name-error" : undefined}
                     />
+                    {personalErrors.lastName && (
+                      <p id="last-name-error" className="text-xs text-destructive">
+                        {personalErrors.lastName}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <label htmlFor="email" className="text-sm font-medium text-foreground">
@@ -777,7 +790,14 @@ export function ProfileClient({ initialData }: Readonly<ProfileClientProps>) {
                       value={personalForm.address}
                       onChange={(e) => updatePersonalField("address", e.target.value)}
                       disabled={!isPersonalEditing}
+                      aria-invalid={Boolean(personalErrors.address)}
+                      aria-describedby={personalErrors.address ? "address-error" : undefined}
                     />
+                    {personalErrors.address && (
+                      <p id="address-error" className="text-xs text-destructive">
+                        {personalErrors.address}
+                      </p>
+                    )}
                   </div>
                 </div>
 
