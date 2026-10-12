@@ -12,10 +12,13 @@ import { DataTable, type TableColumn } from "@/components/shared/DataTable";
 import { COLOR_PALETTE } from "@/components/shared/ColorSelect";
 import { PRODUCT_INVENTORY_TYPE_LABELS } from "@/lib/tableTypes";
 import {
+  describeSkus,
   getProduct,
   getProductInventory,
+  listingStatus,
   updateProductInventory,
   parseProductDescription,
+  type ProductApprovalStatus,
 } from "@/lib/api/products";
 import type {
   ProductDetail,
@@ -40,8 +43,30 @@ function colorHex(name: string): string | undefined {
 
 // ─── Small presentational helpers ────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: "published" | "draft" | "inactive" }) {
-  if (status === "published") {
+function StatusBadge({
+  status,
+  approvalStatus,
+}: {
+  status: "published" | "draft" | "inactive";
+  approvalStatus?: ProductApprovalStatus | null;
+}) {
+  // Same precedence as the listing: an open admin decision wins over the publish state.
+  const display = listingStatus({ status, approval_status: approvalStatus });
+  if (display === "pending_approval") {
+    return (
+      <span className="rounded-full bg-[#FEF3C7] px-3 py-1 text-xs font-medium text-[#92400E]">
+        Pending Approval
+      </span>
+    );
+  }
+  if (display === "rejected") {
+    return (
+      <span className="rounded-full bg-[#FEE2E2] px-3 py-1 text-xs font-medium text-[#991B1B]">
+        Rejected
+      </span>
+    );
+  }
+  if (display === "active") {
     return (
       <span className="rounded-full bg-[#DCFCE7] px-3 py-1 text-xs font-medium text-[#166534]">
         Active
@@ -381,7 +406,7 @@ export function ProductViewClient({ productId }: { productId: string }) {
           Back
         </button>
         <h1 className="flex-1 text-xl font-semibold text-foreground">{product.name}</h1>
-        <StatusBadge status={product.status} />
+        <StatusBadge status={product.status} approvalStatus={product.approval_status} />
         <ChannelBadge channels={channels} />
         {product.is_legacy && <LegacyBadge />}
         <Link
@@ -392,6 +417,43 @@ export function ProductViewClient({ productId }: { productId: string }) {
           Edit Product
         </Link>
       </div>
+
+      {product.approval_status === "rejected" ? (
+        <div
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
+        >
+          <p className="font-medium">This product was not approved.</p>
+          {product.rejection_reason ? (
+            <p className="mt-1">
+              <span className="font-medium">Reason:</span> {product.rejection_reason}
+            </p>
+          ) : null}
+          <p className="mt-1 text-red-800">Edit the product to fix it and resubmit for approval.</p>
+        </div>
+      ) : product.approval_status === "pending" ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Waiting for admin approval. This product goes live once approved.
+        </div>
+      ) : product.change_request?.status === "pending" ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">New options waiting for admin approval</p>
+          <p className="mt-1">
+            {describeSkus(product.change_request.skus)} — buyers will see these once approved. The
+            rest of the product stays live.
+          </p>
+        </div>
+      ) : product.change_request?.status === "rejected" ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <p className="font-medium">New options were not approved and have been removed</p>
+          <p className="mt-1">{describeSkus(product.change_request.skus)}</p>
+          {product.change_request.rejection_reason ? (
+            <p className="mt-1">
+              <span className="font-medium">Reason:</span> {product.change_request.rejection_reason}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Main two-column grid */}
       <div className="grid gap-6 lg:grid-cols-5">
@@ -628,7 +690,17 @@ export function ProductViewClient({ productId }: { productId: string }) {
                       className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}
                     >
                       <td className="px-3 py-2 font-medium">{v.color ?? "—"}</td>
-                      <td className="px-3 py-2 font-medium">{v.size ?? "Default"}</td>
+                      <td className="px-3 py-2 font-medium">
+                        {v.size ?? "Default"}
+                        {v.pending_approval ? (
+                          <span
+                            className="ml-2 rounded bg-[#FEF3C7] px-1.5 py-0.5 text-[10px] font-medium text-[#92400E]"
+                            title="Waiting for admin approval — not visible to buyers yet."
+                          >
+                            Pending approval
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{v.sku ?? "—"}</td>
                       {channels !== "b2b" && (
                         <td className="px-3 py-2 text-right font-medium text-blue-700">

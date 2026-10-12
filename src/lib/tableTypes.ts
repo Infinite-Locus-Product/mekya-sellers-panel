@@ -346,7 +346,9 @@ export interface UserRow {
   onboardingdate: string;
 }
 
-export type ProductListingActiveStatus = "active" | "inactive";
+/** The one badge a listing row shows. An open admin decision (pending or rejected) takes
+ * precedence over whether the product is published. */
+export type ProductListingActiveStatus = "active" | "inactive" | "pending_approval" | "rejected";
 export interface ProductRow {
   id: string;
   name: string;
@@ -359,4 +361,8 @@ export interface ProductRow {
   quantity: number;
   status: ProductListingActiveStatus;
   channels?: "b2c" | "b2b" | "both";
+  /** The admin's reason, only for a rejected product. */
+  rejectionReason?: string | null;
+  /** New colors/sizes on this live product are waiting for admin approval. */
+  hasPendingChange?: boolean;
 }

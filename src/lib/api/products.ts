@@ -14,6 +14,30 @@ export interface Category {
  * dual-listed, not "either", so they partition the catalog. */
 export type ProductChannel = "b2c" | "b2b" | "both";
 
+/** The admin's decision on a product. Null when the backend has no record for it. */
+export type ProductApprovalStatus = "pending" | "approved" | "rejected";
+
+/** New colors/sizes added to an approved product: held until an admin approves them. */
+export interface ProductChangeRequest {
+  status: ProductApprovalStatus;
+  skus: Array<{
+    sku: string | null;
+    color: string | null;
+    size: string | null;
+    b2c_price: number | null;
+    b2b_price: number | null;
+  }>;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  /** Only once rejected. */
+  rejection_reason: string | null;
+}
+
+/** "Navy / M, Navy / L" — how held SKUs are described to the seller. */
+export function describeSkus(skus: ProductChangeRequest["skus"]): string {
+  return skus.map((s) => [s.color, s.size].filter(Boolean).join(" / ") || s.sku || "—").join(", ");
+}
+
 export interface ProductListItem {
   id: string;
   name: string;
@@ -28,6 +52,10 @@ export interface ProductListItem {
   price: string;
   quantity: number;
   channels?: ProductChannel;
+  approval_status?: ProductApprovalStatus | null;
+  rejection_reason?: string | null;
+  /** New colors/sizes on this live product are waiting for admin approval. */
+  has_pending_change?: boolean;
 }
 
 export interface ProductListResponse {
@@ -48,6 +76,8 @@ export interface FlatVariant {
   b2c_price: number | null;
   b2b_price: number | null;
   quantity: number | null;
+  /** Added to a live product and waiting for admin approval (not visible to buyers). */
+  pending_approval?: boolean;
 }
 
 export interface ProductImage {
@@ -63,6 +93,7 @@ export interface ColorVariantSize {
   b2c_price: number | null;
   b2b_price: number | null;
   available_qty: number | null;
+  pending_approval?: boolean;
 }
 
 export interface ColorVariant {
@@ -123,6 +154,11 @@ export interface ProductDetail {
   /** Color x size matrix — null for legacy products. */
   variants: { colors: ColorVariant[] } | null;
   status: "published" | "draft" | "inactive";
+  approval_status?: ProductApprovalStatus | null;
+  /** The admin's reason, only while the product is rejected. */
+  rejection_reason?: string | null;
+  /** The latest review of new colors/sizes added to this product after approval. */
+  change_request?: ProductChangeRequest | null;
   metadata: Record<string, string>;
   is_legacy: boolean;
   product: ProductDefinitionDto;
@@ -246,6 +282,16 @@ export interface PresignImageResponse {
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
 
+/** One badge per row, matching the backend's status filter: an open admin decision
+ * (pending or rejected) wins over the publish state. */
+export function listingStatus(
+  item: Pick<ProductListItem, "status" | "approval_status">,
+): ProductRow["status"] {
+  if (item.approval_status === "rejected") return "rejected";
+  if (item.approval_status === "pending") return "pending_approval";
+  return item.status === "published" ? "active" : "inactive";
+}
+
 export function toProductRow(item: ProductListItem): ProductRow {
   return {
     id: item.id,
@@ -257,8 +303,10 @@ export function toProductRow(item: ProductListItem): ProductRow {
     inventoryType: (item.inventory_type as ProductInventoryType) || "ready_to_ship",
     price: item.price,
     quantity: item.quantity,
-    status: item.status === "published" ? "active" : "inactive",
+    status: listingStatus(item),
     channels: item.channels,
+    rejectionReason: item.approval_status === "rejected" ? (item.rejection_reason ?? null) : null,
+    hasPendingChange: item.has_pending_change === true,
   };
 }
 
@@ -331,14 +379,22 @@ export async function createProduct(
   return res.data;
 }
 
+/** `pending_approval_skus` is set when the save added colors/sizes to a live product: they
+ * are held until an admin approves them. */
 export async function updateProduct(
   productId: string,
   payload: UpdateProductPayload,
-): Promise<{ product_id: string; updated: boolean; images_failed?: number }> {
+): Promise<{
+  product_id: string;
+  updated: boolean;
+  images_failed?: number;
+  pending_approval_skus?: number;
+}> {
   const res = await authService.api.patch<{
     product_id: string;
     updated: boolean;
     images_failed?: number;
+    pending_approval_skus?: number;
   }>(`/seller/products/${productId}`, payload);
   return res.data;
 }
@@ -352,12 +408,17 @@ export async function deleteProduct(
   return res.data;
 }
 
+/** Publishes an approved product. For a product an admin hasn't approved yet this submits
+ * it for approval instead: `status` comes back as "pending_approval" and it stays
+ * unpublished. */
 export async function publishProduct(
   productId: string,
-): Promise<{ product_id: string; status: string }> {
-  const res = await authService.api.post<{ product_id: string; status: string }>(
-    `/seller/products/${productId}/publish`,
-  );
+): Promise<{ product_id: string; status: string; approval_status?: ProductApprovalStatus }> {
+  const res = await authService.api.post<{
+    product_id: string;
+    status: string;
+    approval_status?: ProductApprovalStatus;
+  }>(`/seller/products/${productId}/publish`);
   return res.data;
 }
 
