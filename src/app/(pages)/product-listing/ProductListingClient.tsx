@@ -268,7 +268,21 @@ export function ProductListingClient() {
     setToggleLoadingIds((prev) => new Set([...prev, row.id]));
     const apiCall = newStatus === "active" ? publishProduct(row.id) : unpublishProduct(row.id);
     apiCall
-      .then(() => {
+      .then((res) => {
+        // A product an admin hasn't approved yet is submitted for approval rather than
+        // published, so the row must show that instead of the optimistic "Active".
+        if (res.status === "pending_approval") {
+          setStack((prev) =>
+            prev.map((slice) => ({
+              ...slice,
+              products: slice.products.map((p) =>
+                p.id === row.id ? { ...p, status: "pending_approval" } : p,
+              ),
+            })),
+          );
+          toast.success("Product submitted for admin approval.");
+          return;
+        }
         toast.success(
           newStatus === "active"
             ? "Product marked as Active successfully."
@@ -413,10 +427,47 @@ export function ProductListingClient() {
       cell: (row) => {
         const pill =
           "inline-flex h-[22px] w-full min-w-0 max-w-full items-center justify-center whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[9px] font-medium leading-none sm:h-7 sm:px-2 sm:text-[11px] min-[1920px]:h-8 min-[1920px]:text-sm";
-        return row.status === "active" ? (
-          <span className={`${pill} bg-[#DCFCE7] text-[#166534]`}>Active</span>
-        ) : (
-          <span className={`${pill} bg-[#E5E7EB] text-[#374151]`}>In-active</span>
+        if (row.status === "pending_approval") {
+          return (
+            <span
+              className={`${pill} bg-[#FEF3C7] text-[#92400E]`}
+              title="Waiting for admin approval. It goes live once approved."
+            >
+              Pending Approval
+            </span>
+          );
+        }
+        if (row.status === "rejected") {
+          return (
+            <span
+              className={`${pill} cursor-help bg-[#FEE2E2] text-[#991B1B]`}
+              title={
+                row.rejectionReason
+                  ? `Rejected: ${row.rejectionReason}\nEdit the product to resubmit it.`
+                  : "Rejected. Edit the product to resubmit it."
+              }
+            >
+              Rejected
+            </span>
+          );
+        }
+        const statusPill =
+          row.status === "active" ? (
+            <span className={`${pill} bg-[#DCFCE7] text-[#166534]`}>Active</span>
+          ) : (
+            <span className={`${pill} bg-[#E5E7EB] text-[#374151]`}>In-active</span>
+          );
+        if (!row.hasPendingChange) return statusPill;
+        return (
+          <div className="flex flex-col items-center gap-0.5">
+            {statusPill}
+            <span
+              className="text-[9px] font-medium leading-tight text-[#92400E] sm:text-[10px]"
+              title="New colors/sizes you added are waiting for admin approval. The rest of the product stays live."
+            >
+              New options pending approval
+            </span>
+          </div>
         );
       },
     },
@@ -425,13 +476,27 @@ export function ProductListingClient() {
       header: "Status Switch",
       align: "center",
       className: colWidth.toggle,
-      cell: (row) => (
-        <StatusToggle
-          status={row.status}
-          isLoading={toggleLoadingIds.has(row.id)}
-          onToggle={(newStatus) => handleListingToggle(row, newStatus)}
-        />
-      ),
+      // Only an approved product can be switched on/off by the seller; pending and
+      // rejected products wait on (or answer) an admin decision instead.
+      cell: (row) =>
+        row.status === "active" || row.status === "inactive" ? (
+          <StatusToggle
+            status={row.status}
+            isLoading={toggleLoadingIds.has(row.id)}
+            onToggle={(newStatus) => handleListingToggle(row, newStatus)}
+          />
+        ) : (
+          <span
+            className="text-[11px] text-muted-foreground"
+            title={
+              row.status === "pending_approval"
+                ? "Available once an admin approves the product."
+                : "Edit the product to resubmit it for approval."
+            }
+          >
+            —
+          </span>
+        ),
     },
     {
       key: "actions",
@@ -583,6 +648,8 @@ export function ProductListingClient() {
                   { label: "All Status", value: "all" },
                   { label: "Active", value: "active" },
                   { label: "In-active", value: "inactive" },
+                  { label: "Pending Approval", value: "pending_approval" },
+                  { label: "Rejected", value: "rejected" },
                 ]}
                 className="h-7 min-w-0 flex-1 basis-0 !w-full max-w-full overflow-hidden px-1.5 text-[10px] sm:h-8 sm:text-xs min-[1920px]:h-10 min-[1920px]:px-3 min-[1920px]:text-sm [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
               />

@@ -21,6 +21,7 @@ import {
 } from "@/lib/tableTypes";
 import {
   createProduct,
+  describeSkus,
   getProduct,
   parseProductDescription,
   publishProduct,
@@ -28,6 +29,8 @@ import {
   updateProductVariant,
   uploadImagesToStorage,
   type FlatVariant,
+  type ProductApprovalStatus,
+  type ProductChangeRequest,
   type SetPurchaseMode,
 } from "@/lib/api/products";
 import {
@@ -171,6 +174,12 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
   const [savingVariantId, setSavingVariantId] = useState<string | null>(null);
   const [colorBlocks, setColorBlocks] = useState<ColorBlock[]>([]);
   const [isPublished, setIsPublished] = useState(false);
+  // Admin approval state of the product being edited (null for a new product, or one
+  // that predates approval). Saving a rejected product resubmits it for approval.
+  const [approvalStatus, setApprovalStatus] = useState<ProductApprovalStatus | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+  // The latest review of colors/sizes added after approval (pending or rejected).
+  const [changeRequest, setChangeRequest] = useState<ProductChangeRequest | null>(null);
   const [minQty, setMinQty] = useState(initialProduct?.minQty ?? 0);
   const [maxQty, setMaxQty] = useState(initialProduct?.maxQty ?? 0);
   const [attributeSelections, setAttributeSelections] = useState<Record<string, string[]>>(
@@ -290,6 +299,9 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
             channels: (prod.metadata.channels as "b2c" | "b2b" | "both") ?? "both",
           });
           setIsPublished(prod.status === "published");
+          setApprovalStatus(prod.approval_status ?? null);
+          setRejectionReason(prod.rejection_reason ?? null);
+          setChangeRequest(prod.change_request ?? null);
           if (legacy) {
             // Legacy variants have no color attribute — only the flat,
             // colorless per-row table (below) can edit their price/stock.
@@ -800,14 +812,21 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
       const uploadedColorImages = isLegacy ? {} : await uploadColorImages();
 
       if (isEditMode && initialProduct) {
-        await updateProduct(initialProduct.id, {
+        const updated = await updateProduct(initialProduct.id, {
           product: buildProductUpdateSection(),
           variants: isLegacy ? undefined : buildVariantConfiguration(uploadedColorImages),
           pricing: buildPricingUpdateSection(),
           images: imageUrls.length > 0 ? imageUrls : undefined,
           legacy_sizes: isLegacy ? [...selectedSizes] : undefined,
         });
-        toast.success("Product updated successfully.");
+        const pendingSkus = updated.pending_approval_skus ?? 0;
+        toast.success(
+          approvalStatus === "rejected"
+            ? "Product resubmitted for admin approval."
+            : pendingSkus > 0
+              ? `Product updated. ${pendingSkus} new color/size option${pendingSkus === 1 ? "" : "s"} will go live once an admin approves ${pendingSkus === 1 ? "it" : "them"}.`
+              : "Product updated successfully.",
+        );
       } else {
         // If a previous attempt created the product but publish failed,
         // reuse the existing product_id instead of creating a duplicate.
@@ -826,8 +845,12 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
             toast.warning(`${created.images_failed} image(s) failed to attach. You can re-upload them after editing.`);
           }
         }
-        await publishProduct(productIdToPublish);
-        toast.success("Product published successfully.");
+        const published = await publishProduct(productIdToPublish);
+        toast.success(
+          published.status === "pending_approval"
+            ? "Product submitted for admin approval. It goes live once approved."
+            : "Product published successfully.",
+        );
         redirectTo = `/product-listing/${encodeURIComponent(productIdToPublish)}`;
       }
       submittedRef.current = true;
@@ -871,6 +894,51 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
         </div>
 
       </div>
+
+      {isEditMode && approvalStatus === "rejected" ? (
+        <div
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
+        >
+          <p className="font-medium">This product was not approved.</p>
+          {rejectionReason ? (
+            <p className="mt-1">
+              <span className="font-medium">Reason:</span> {rejectionReason}
+            </p>
+          ) : null}
+          <p className="mt-1 text-red-800">
+            Fix the product and save it — saving sends it back to admin for approval.
+          </p>
+        </div>
+      ) : null}
+      {isEditMode && approvalStatus === "pending" ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This product is waiting for admin approval. It goes live once approved.
+        </div>
+      ) : null}
+      {isEditMode && approvalStatus === "approved" && changeRequest?.status === "pending" ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">New options waiting for admin approval</p>
+          <p className="mt-1">
+            {describeSkus(changeRequest.skus)} — buyers will see these once approved. The rest of
+            the product stays live.
+          </p>
+        </div>
+      ) : null}
+      {isEditMode && approvalStatus === "approved" && changeRequest?.status === "rejected" ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <p className="font-medium">New options were not approved and have been removed</p>
+          <p className="mt-1">{describeSkus(changeRequest.skus)}</p>
+          {changeRequest.rejection_reason ? (
+            <p className="mt-1">
+              <span className="font-medium">Reason:</span> {changeRequest.rejection_reason}
+            </p>
+          ) : null}
+          <p className="mt-1 text-red-800">
+            You can add them again after fixing the issue; they will be reviewed again.
+          </p>
+        </div>
+      ) : null}
 
       {showRestorePrompt && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -1549,8 +1617,10 @@ export function AddProductClient({ initialProduct: initialProductProp, productId
           {isFetchingProduct
             ? "Loading…"
             : isSubmitting
-              ? isEditMode ? "Updating…" : "Publishing…"
-              : isEditMode ? "Update product" : "Publish product"}
+              ? isEditMode ? "Updating…" : "Submitting…"
+              : isEditMode
+                ? approvalStatus === "rejected" ? "Update & resubmit" : "Update product"
+                : "Submit for approval"}
         </Button>
       </div>
     </div>
